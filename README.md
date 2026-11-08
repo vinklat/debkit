@@ -26,8 +26,16 @@ Current version: **0.1.0**. Planned work → [ROADMAP.md](ROADMAP.md).
 Released versions are published to [PyPI](https://pypi.org/project/debkit/). debkit needs Python
 3.13 or newer and a GnuPG binary on `PATH`.
 
+debkit verifies every Release it reads against `./.gnupg/trustedkeys.gpg` by default →
+[CONFIG.md](CONFIG.md#global-flags), so import the Debian archive keys before reading
+deb.debian.org; the keyring file comes from the `debian-archive-keyring` package on Debian and
+Ubuntu.
+
 ```bash
 pip install debkit
+mkdir -m 700 -p .gnupg
+gpg --homedir .gnupg --no-default-keyring --keyring trustedkeys.gpg \
+    --import /usr/share/keyrings/debian-archive-keyring.gpg
 debkit --target-url "https://deb.debian.org/debian bookworm main" stats
 ```
 

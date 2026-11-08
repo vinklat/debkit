@@ -122,8 +122,9 @@ filtered by selection rules and by what the source actually publishes.
 ## Testing notes
 
 `tests/test_release.py` covers `listed_indices` across the three layouts; `tests/test_params.py`
-covers the `indices_path` / `release_key` round trip; `tests/test_storage_url.py` covers
-`is_unsafe_path`; `tests/test_sources.py` covers the `Sources` expansion;
+covers the `indices_path` / `release_key` round trip; `is_unsafe_path` is txstore's and tested there
+→ [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety);
+`tests/test_sources.py` covers the `Sources` expansion;
 `tests/test_index_selection.py` covers `select_index_entry`; `tests/test_repo_sync.py` covers the
 index set, skip, purge, and flat-layout behavior in `build_sync_lists`, and the transfer skip in
 `sync`; `tests/test_argparser.py` and `tests/test_action_sync.py` cover the flag and its hand-off to

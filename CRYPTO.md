@@ -57,7 +57,8 @@ Debian hash-block layer over them is `repo/hashes.py`.
 
 1. `Release`, `InRelease`, and `Release.gpg` are answered by the digests of the bytes the root
    Release load fetched and verified, and by nothing else: no digest block lists them, a stanza
-   cannot vouch for them, and a file the load did not fetch fails.
+   cannot vouch for them, and a file the load did not fetch fails, which a `sync` transfer raises
+   as `ChecksumException` (Distrustful).
 2. A matching entry in any component package index, whatever the path's suffix, but only for a path
    no `Release` digest block lists: each container keys by the `Filename` field it parsed, so a path
    no index names misses and falls through.
@@ -65,7 +66,8 @@ Debian hash-block layer over them is `repo/hashes.py`.
    block answers is not observable.
 
 Step 1 binds a `sync` copy of a root Release file to the bytes its signature and freshness checks
-read; a source that serves other bytes for the copy fails the transfer.
+read; a source that serves other bytes for the copy fails the transfer → `ChecksumException`
+(Distrustful).
 
 A signed `Release` owns every key in its digest block, so step 2 is skipped for such a key and the
 digest decides. A package index is remote metadata, and a stanza naming a listed index would
@@ -75,7 +77,7 @@ Steps 1 and 3 look the path up under its Release key, `RepoParams.release_key()`
 suffix: a Release-listed `.tar.gz` such as a dep11 icon tarball is an index, not a package →
 [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
-Otherwise it returns `False` and the caller raises `ChecksumException` (Distrustful).
+Otherwise it returns `False`; callers differ → [Verification failures](#verification-failures).
 
 ## Release freshness
 
@@ -103,7 +105,9 @@ older Release no longer lists.
 | Path                                                       | Failure                                                                                                                                                                      |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sync` transfer digest mismatch                            | Target object deleted, then `ChecksumException` (Distrustful); the surrounding transaction discards every staged footmark → [STORAGE.md](STORAGE.md#transactions).           |
-| `insert` or `check` finds no index that verifies an object | `ChecksumException` (Distrustful).                                                                                                                                           |
+| `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed. An unfixed error exits `Repository is not consistent.` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
+| `sync --verify-existing` payload digest mismatch | Logged and deleted inside the sync's transaction; the sync copies it again. Nothing is raised. |
+| `insert` payload | Never verified against an index; a `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure                                   | `GPGVerifyException` (Read).                                                                                                                                                 |
 

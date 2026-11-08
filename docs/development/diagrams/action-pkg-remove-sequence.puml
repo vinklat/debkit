@@ -38,8 +38,12 @@ CM -> TStor: history_lock release
 
 ActionPkg --> Caller: brief / json output
 
-alt exception from remove_pkg or save
-  Tgt --> ActionPkg: exception
+alt no match, or exception from remove_pkg or save
+  alt remove_pkg returned False
+    ActionPkg -> ActionPkg: raise ActionException\n("No packages matched the pattern.")
+  else exception from remove_pkg or save
+    Tgt --> ActionPkg: exception
+  end
   ActionPkg -> CM: __exit__(exc)
   CM -> TStor: transaction_discard()
   CM -> TStor: history_lock release\n[no history record written]

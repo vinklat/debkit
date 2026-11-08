@@ -14,10 +14,13 @@ end note
 :fields = pkg_pattern (field -> compiled regex);
 
 partition "with maybe_transaction(target.storage)" {
-  :target.remove_pkg(fields);
-  :ret_diff = target.diff(prev_repo);
-  if (ret_diff is non-empty?) then (yes)
-    :target.save();
+  if (target.remove_pkg(fields) matched?) then (no)
+    :raise ActionException("No packages matched the pattern.");
+  else (yes)
+    :ret_diff = target.diff(prev_repo);
+    if (ret_diff is non-empty?) then (yes)
+      :target.save();
+    endif
   endif
 }
 

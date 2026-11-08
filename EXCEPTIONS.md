@@ -31,7 +31,7 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | `RepoParamsException`       | `repo/params.py`     | Invalid deb source or params                                                                            |
 | `GPGVerifyException`        | `repo/gnupg.py`      | GPG verification or keyring failure                                                                     |
 | `ChecksumException`         | `repo/hashes.py`     | Digest mismatch or distrustful object                                                                   |
-| `StorageException`          | `txstore`            | Backend failure, including a missing S3 credential at construction                                      |
+| `StorageException` | `txstore` | Backend failure; at construction, including a missing S3 credential, re-raised as `RepoReadException` for `--target-url` and `--source-url` → [STORAGE.md](STORAGE.md#construction) |
 | `StorageNotFoundException`  | `txstore`            | Object missing on `get` / `get_stream`; subclass of `StorageException`                                  |
 
 ## CLI exit groups

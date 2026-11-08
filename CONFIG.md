@@ -42,7 +42,7 @@ How they reach txstore → [STORAGE.md](STORAGE.md#construction).
 
 | Flag                | Variable                | Default       | Interpretation                                                                                          |
 | ------------------- | ----------------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `-u`, `--s3-access` | `DEBKIT_S3_ACCESS` | none | Access key ID, an identifier rather than a secret; required for `s3://`, from this flag, its variable, or `TXSTORE_S3_ACCESS` |
+| `-u`, `--s3-access` | `DEBKIT_S3_ACCESS` | none | Access key ID, an identifier rather than a secret; required for `s3://`; unset falls back → [Resolution](#resolution) |
 | `--s3-default-acl`  | `DEBKIT_S3_DEFAULT_ACL` | `public-read` | Object ACL for writes, or `none` to send no ACL; values → [VALIDATION.md](VALIDATION.md#s3-canned-acls) |
 | `--s3-bucket-acl`   | `DEBKIT_S3_BUCKET_ACL`  | none          | Bucket ACL when a run creates the bucket; unset sends none                                              |
 
@@ -53,7 +53,7 @@ Secrets have no flag → [Secrets](#secrets). `--help` lists their variables.
 | Variable | Default | Interpretation |
 | -- | -- | -- |
 | `DEBKIT_GNUPG_PASSPHRASE` | empty string | Passphrase of the signing key → [CRYPTO.md](CRYPTO.md#gpg) |
-| `DEBKIT_S3_SECRET` | none | S3 secret key; required for `s3://`, from this variable or `TXSTORE_S3_SECRET` |
+| `DEBKIT_S3_SECRET` | none | S3 secret key; required for `s3://`; unset falls back → [Resolution](#resolution) |
 
 ## Output flag
 

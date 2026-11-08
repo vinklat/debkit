@@ -6,9 +6,9 @@ commands. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 Storage is the [txstore](https://github.com/vinklat/txstore) package; its contracts own the
 `Storage` interface, backends, transactions, footmarks, history files, retention rules, locking, S3
 ACL handling, and digests → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md).
-This file states only what debkit chooses. Backend failures raise `StorageException`; a missing
-object on `get` or `get_stream` raises `StorageNotFoundException` →
-[EXCEPTIONS.md](EXCEPTIONS.md#domain-exceptions).
+This file states only what debkit chooses. Backend failure → `StorageException` (Generic); object
+missing on `get` or `get_stream` → `StorageNotFoundException` (Generic), unless debkit re-raises
+it, as [construction](#construction) does → [EXCEPTIONS.md](EXCEPTIONS.md#domain-exceptions).
 
 ## Construction
 
@@ -19,12 +19,14 @@ through it or the `attach_storage_*` helpers built on it →
 | Input                    | Rule                                                                                                                                                                            |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | URL                      | A value without `://` is a filesystem path, made absolute and prefixed with `fs://`; any other value passes to txstore unchanged → [VALIDATION.md](VALIDATION.md#storage-urls). |
-| `create_path`            | Set for `insert`, `remove`, and `sync`: creates the target S3 bucket or FS directory when missing.                                                                              |
+| `create_path` | Set on the target for `insert`, `remove`, and `sync`, and always on the `insert` `--incoming-url` storage: creates the S3 bucket or FS directory when missing. |
 | `verify_ssl`             | `not (skip_verify or skip_verify_ssl)` → [CRYPTO.md](CRYPTO.md#verification-switches).                                                                                          |
-| `s3_access`, `s3_secret` | The resolved `--s3-access` and `DEBKIT_S3_SECRET` values; when unset, txstore reads `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET`, and an `s3://` URL resolving neither → `StorageException` (Generic). |
-| `s3_default_acl`         | `--s3-default-acl`, default `public-read`: an apt repository serves its objects anonymously. `none` sends no ACL → [CONFIG.md](CONFIG.md#storage-flags).                        |
+| `s3_access`, `s3_secret` | The resolved `--s3-access` and `DEBKIT_S3_SECRET` values, unset ones left to txstore → [CONFIG.md](CONFIG.md#resolution); an `s3://` URL missing either key is a construction failure below. |
+| `s3_default_acl` | `--s3-default-acl` → [CONFIG.md](CONFIG.md#storage-flags); its default is public because an apt repository serves its objects anonymously. |
 | `s3_bucket_acl`          | `--s3-bucket-acl`, else none; never derived from the object ACL, since a public bucket ACL lists every key.                                                                     |
-| Rejected URL             | txstore's URL rules → `ValueError` (Generic) or `StorageException` (Generic) → [EXCEPTIONS.md](EXCEPTIONS.md#orchestration-vs-repo-semantics).                                  |
+| Rejected URL | A URL txstore's rules reject → `ValueError` (Generic) for every URL → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| Construction failure | `make_storage` raising `StorageException` (empty URL, no host, unresolved S3 key, uncreatable path): `--target-url` or `--source-url` → `RepoReadException` (Read). |
+| Construction failure, plain URL | The same on `--incoming-url` or a `log`, `revert`, or `prune` target → `StorageException` (Generic). |
 | Digest sink              | `RepoSync` builds a `StorageNull` directly to digest a source object without storing it → [ROADMAP.md](ROADMAP.md#known-deviations).                                            |
 
 ## Transactions

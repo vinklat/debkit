@@ -1,8 +1,9 @@
 # Quick how-to
 
 Worked examples for the `debkit` CLI: inspecting, changing, mirroring, checking, and reverting
-Debian repositories. Every flag shown has a `DEBKIT_*` environment variable, listed in
-[CONFIG.md](../../CONFIG.md).
+Debian repositories. Most flags shown have a `DEBKIT_*` environment variable, listed in
+[CONFIG.md](../../CONFIG.md); `--verify-existing`, `--fix`, `--dry-run`, and `--orphans` are flags
+only.
 
 ## Describe a repository
 
@@ -22,7 +23,8 @@ Details → [VALIDATION.md](../../VALIDATION.md#debian-source-strings) and
 
 ### List packages
 
-From a public HTTP repository:
+From a public HTTP repository. Its `Release` is verified against the trusted keyring, so import
+the Debian archive keys first, as in the [quick start](../../README.md#quick-start):
 
 ```bash
 debkit --target-url="https://deb.debian.org/debian bookworm main contrib non-free" list
@@ -61,7 +63,7 @@ Packages:
   main:
     amd64: 22.4 GB, 4083 packages
     arm64: 2.9 GB, 1503 packages
-Indices:
+Indices read:
   1.0 MB, 5 files
 ```
 
@@ -73,11 +75,20 @@ debkit stats -o json
 {
   "packages": {
     "main": {
-      "amd64": {"packages_total": 4083, "packages_bytes": 22414439636},
-      "arm64": {"packages_total": 1503, "packages_bytes": 2889875804}
+      "amd64": {
+        "packages_total": 4083,
+        "packages_bytes": 22414439636
+      },
+      "arm64": {
+        "packages_total": 1503,
+        "packages_bytes": 2889875804
+      }
     }
   },
-  "indices": {"files_total": 5, "files_bytes": 1038860}
+  "indices": {
+    "files_total": 5,
+    "files_bytes": 1038860
+  }
 }
 ```
 
@@ -116,8 +127,10 @@ export DEBKIT_COMPONENT=main
 debkit insert
 ```
 
-`DEBKIT_INCOMING_URL` may point at another bucket or prefix than the repository. Every variable is
-also a flag; see `debkit insert -h` and [CONFIG.md](../../CONFIG.md#insert).
+`DEBKIT_INCOMING_URL` may point at another bucket or prefix than the repository. Every variable
+except the secrets `DEBKIT_S3_SECRET` and `DEBKIT_GNUPG_PASSPHRASE` is also a flag; see
+`debkit insert -h`, [CONFIG.md](../../CONFIG.md#insert), and
+[CONFIG.md](../../CONFIG.md#variable-only-settings).
 
 ### Add a single `.deb` file
 
@@ -154,7 +167,8 @@ rules → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 
 ### Into a local directory
 
-Mirrors a public repository into `debian` under the current working directory:
+Mirrors a public repository into `debian` under the current working directory. The source
+`Release` is verified against the trusted keyring, as for [List packages](#list-packages):
 
 ```bash
 export DEBKIT_SOURCE_URL="https://deb.debian.org/debian bookworm main contrib non-free"
@@ -231,7 +245,8 @@ debkit check
 Deletes orphan files not referenced by any index and files with invalid checksums. A check selects
 indices and packages the way a sync does, so pass it the same `--architectures` and
 `--indices-exclude` the mirror was synced with: anything outside them counts as an orphan and is
-deleted → [CONFIG.md](../../CONFIG.md#check). A mirror synced with `source` needs:
+deleted → [CONFIG.md](../../CONFIG.md#check). The deletions are recorded, so `revert` can undo
+them → [Transaction history](#transaction-history). A mirror synced with `source` needs:
 
 ```bash
 debkit check --fix --architectures amd64,arm64,source
@@ -239,8 +254,8 @@ debkit check --fix --architectures amd64,arm64,source
 
 ## Transaction history
 
-Every `insert`, `remove`, and `sync` that changed something is recorded, on `fs://` and `s3://`
-targets, so the latest change can be undone.
+Every `insert`, `remove`, `sync`, and `check --fix` that changed something is recorded, on `fs://`
+and `s3://` targets, so the latest change can be undone.
 
 ```bash
 debkit --target-url="debian" log

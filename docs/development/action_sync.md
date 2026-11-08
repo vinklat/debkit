@@ -27,8 +27,9 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   [STORAGE.md](../../STORAGE.md#transactions).
 - The target is loaded inside that body, so a peer that commits while this run waits for the lock is
   what every pass plans, floors, and reports against. `--verify-existing` checks that same load
-  before the first pass, so its deletions are staged and recorded with the sync, and the first pass
-  copies each deleted payload again; a failure it could not delete is logged as a warning.
+  before the first pass → [CONFIG.md](../../CONFIG.md#sync); its deletions are recorded with the
+  sync → [STORAGE.md](../../STORAGE.md#transactions), and a failure it could not delete is logged
+  as a warning.
 - The source repository is re-read after each pass until its `Release` hash is stable, so a source
   that changes during the mirror is synced again rather than left inconsistent. After
   `MAX_UPDATED_REPO_RETRIES` passes the run stops re-reading, logs a warning, and commits the last
@@ -43,8 +44,8 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 - A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop; the mismatching target
   object is deleted and every staged footmark is discarded, so no partial commit is produced →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
-- Corrupted target indices are logged, the target is reset, and the sync proceeds, copying every
-  selected index again; `--verify-existing` then has no packages to re-check.
+- Corrupted target indices reset the target, and the sync proceeds →
+  [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - A target with neither `Release` nor `InRelease` is synced as empty; any other read failure stops
   the run → [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - A later pass reloads the target inside the transaction, so it plans against what the previous pass
