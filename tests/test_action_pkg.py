@@ -202,7 +202,12 @@ def _amd64_filenames(storage: StorageFS) -> set[str]:
 
 
 def _insert_into_real_repo(
-    tmp_path: Path, mock_debfile_cls: MagicMock, name: str, *, gpg: MagicMock | None = None
+    tmp_path: Path,
+    mock_debfile_cls: MagicMock,
+    name: str,
+    *,
+    gpg: MagicMock | None = None,
+    output: OutputType = OutputType.brief,
 ) -> ActionPkg:
     """Insert one amd64 deb into an `fs` repository under *tmp_path*, signed only with *gpg*."""
     deb = f"{name}_1.0_amd64.deb"
@@ -210,6 +215,7 @@ def _insert_into_real_repo(
     incoming.put(deb, name.encode())
 
     action = _make_pkg_action()
+    action.output = output
     action.incoming_storage = incoming
     action.deb_filename = deb
     action.target_repo = RepoRW(
@@ -652,3 +658,67 @@ def test_insert_checks_each_deb_against_its_changes_digest(
         action.insert()
     assert not pool.exists()
     assert not (tmp_path / "repo" / "dists" / "bookworm" / "Release").exists()
+
+
+@pytest.mark.parametrize("output", [OutputType.brief, OutputType.json])
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_and_remove_print_their_diff(
+    mock_debfile_cls: MagicMock,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    output: OutputType,
+) -> None:
+    """Pins the stdout of both commands in both formats."""
+    _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo", output=output)
+    inserted_out = capsys.readouterr().out
+    removing = _make_pkg_action()
+    removing.output = output
+    removing.target_repo = RepoRW(StorageFS(str(tmp_path / "repo")), make_params())
+    removing.pkg_pattern = {"Package": re.compile("^foo$")}
+
+    removing.remove()
+    removed_out = capsys.readouterr().out
+
+    if output == OutputType.brief:
+        assert inserted_out.startswith("Inserted 1 packages.\n")
+        assert inserted_out.endswith("transferred.\n")
+        assert removed_out == "Removed 1 packages.\n"
+        return
+    inserted, removed = json.loads(inserted_out), json.loads(removed_out)
+    assert list(inserted) == list(removed) == ["packages", "transfer"]
+    assert inserted["packages"]["added"]["main"]["amd64"][0]["Package"] == "foo"
+    assert removed["packages"]["removed"]["main"]["amd64"][0]["Package"] == "foo"
+
+
+@pytest.mark.parametrize(
+    ("arch", "expected"),
+    [("amd64", ["amd64"]), ("all", ["amd64", "arm64"]), (None, ["amd64", "arm64"])],
+    ids=["own-arch", "all", "arch-less"],
+)
+def test_target_archs_follows_the_control_architecture(
+    arch: str | None, expected: list[str]
+) -> None:
+    fields = {"Architecture": arch} if arch is not None else {}
+    package = make_package("pool/main/f/foo/foo.deb", Package="foo", **fields)
+
+    assert ActionPkg._target_archs("foo.deb", package, ["amd64", "arm64"]) == expected
+
+
+@pytest.mark.parametrize(
+    ("arch", "binary_archs", "message"),
+    [
+        ("../x", ["amd64"], "Invalid architecture"),
+        ("source", ["amd64"], "Source packages are not supported"),
+        ("all", [], "lists no binary architecture"),
+    ],
+    ids=["invalid", "source", "no-binary-arch"],
+)
+def test_target_archs_refuses_an_unusable_architecture(
+    arch: str, binary_archs: list[str], message: str
+) -> None:
+    from debkit.action import ActionException
+
+    package = make_package("pool/main/f/foo/foo.deb", Package="foo", Architecture=arch)
+
+    with pytest.raises(ActionException, match=message):
+        ActionPkg._target_archs("foo.deb", package, binary_archs)

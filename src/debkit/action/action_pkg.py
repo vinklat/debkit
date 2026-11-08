@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from txstore import Storage
 
     from debkit._options import EnvArgumentParser
+    from debkit.repo import Repo
+    from debkit.repo.package import Package
     from debkit.repo.repo_diff import RepoDiff
 
 
@@ -276,27 +278,7 @@ class ActionPkg(Action):
             for filename in filenames:
                 debfile_obj = DebFile(self.incoming_storage, filename, comp=self.component)
                 package = debfile_obj.get_package()
-
-                pkg_arch = package.get_arch()
-                if pkg_arch is not None and not is_valid_arch(pkg_arch):
-                    raise ActionException(f"Invalid architecture in {filename}: {pkg_arch!r}")
-                # the control field is read straight out of the uploaded .deb, so it can
-                # name the source arch; the mirrored source index is read-only, so refuse
-                # before the transfer as the changes path already does
-                if pkg_arch == SOURCE_ARCH:
-                    raise ActionException("Source packages are not supported yet")
-
-                # each package by its own control field, so neither the upload's field
-                # order nor its file order picks the arches
-                # -> [VALIDATION.md](VALIDATION.md#architectures)
-                archs = (
-                    [pkg_arch] if pkg_arch is not None and pkg_arch != ARCH_ANY else binary_archs
-                )
-                if not archs:
-                    raise ActionException(
-                        f"Cannot insert {filename} (Architecture: {pkg_arch or 'none'}): "
-                        "the target Release lists no binary architecture"
-                    )
+                archs = self._target_archs(filename, package, binary_archs)
 
                 digests = self.target_repo.transfer_from(
                     self.incoming_storage, filename, path_dst=debfile_obj.filename_field
@@ -317,15 +299,76 @@ class ActionPkg(Action):
                 for arch in archs:
                     self.target_repo.insert_pkg(self.component, arch, package)
 
-            ret_diff = self.target_repo.diff(prev_repo)
+            ret_diff = self._save_if_changed(prev_repo)
 
-            if not ret_diff.is_empty():
-                self.target_repo.save()
+        self._print_pkg(ret_diff)
 
+    @staticmethod
+    def _target_archs(
+        filename: str, package: "Package", binary_archs: builtins.list[str]
+    ) -> builtins.list[str]:
+        """Get the repository architectures one uploaded package is inserted into.
+
+        Each package goes by its own control field, so neither the upload's field order
+        nor its file order picks the arches -> [VALIDATION.md](VALIDATION.md#architectures).
+
+        Args:
+            filename (str): The `.deb` file, for messages.
+            package (Package): Its control data.
+            binary_archs (List[str]): The target's binary architectures, for `all` or an
+                arch-less package.
+
+        Raises:
+            ActionException: If the control `Architecture` is not an architecture name.
+            ActionException: If it names the source architecture.
+            ActionException: If an `all` or arch-less package finds no binary architecture.
+
+        Returns:
+            List[str]: The architectures to insert into.
+        """
+        pkg_arch = package.get_arch()
+        if pkg_arch is not None and not is_valid_arch(pkg_arch):
+            raise ActionException(f"Invalid architecture in {filename}: {pkg_arch!r}")
+        # the control field is read straight out of the uploaded .deb, so it can name the
+        # source arch; the mirrored source index is read-only, so refuse before the
+        # transfer as the changes path already does
+        if pkg_arch == SOURCE_ARCH:
+            raise ActionException("Source packages are not supported yet")
+
+        archs = [pkg_arch] if pkg_arch is not None and pkg_arch != ARCH_ANY else binary_archs
+        if not archs:
+            raise ActionException(
+                f"Cannot insert {filename} (Architecture: {pkg_arch or 'none'}): "
+                "the target Release lists no binary architecture"
+            )
+        return archs
+
+    def _save_if_changed(self, prev_repo: "Repo") -> "RepoDiff":
+        """Diff the target against its state before the command and save it if it changed.
+
+        Called inside the command's transaction, so the save is staged with the payloads.
+
+        Args:
+            prev_repo (Repo): The target as loaded before the command.
+
+        Returns:
+            RepoDiff: The diff, for the command's output.
+        """
+        ret_diff = self.target_repo.diff(prev_repo)
+        if not ret_diff.is_empty():
+            self.target_repo.save()
+        return ret_diff
+
+    def _print_pkg(self, diff: "RepoDiff") -> None:
+        """Print an insert or remove diff in the selected output format.
+
+        Args:
+            diff (RepoDiff): Repository diff object.
+        """
         if self.output == OutputType.brief:
-            self._print_pkg_brief(ret_diff)
+            self._print_pkg_brief(diff)
         elif self.output == OutputType.json:
-            self._print_pkg_json(ret_diff)
+            self._print_pkg_json(diff)
 
     def remove(self) -> None:
         """Remove the packages matching the parsed ``--pkg-pattern`` from the repository.
@@ -343,15 +386,9 @@ class ActionPkg(Action):
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             if not self.target_repo.remove_pkg(self.pkg_pattern):
                 raise ActionException("No packages matched the pattern.")
-            ret_diff = self.target_repo.diff(prev_repo)
+            ret_diff = self._save_if_changed(prev_repo)
 
-            if not ret_diff.is_empty():
-                self.target_repo.save()
-
-        if self.output == OutputType.brief:
-            self._print_pkg_brief(ret_diff)
-        elif self.output == OutputType.json:
-            self._print_pkg_json(ret_diff)
+        self._print_pkg(ret_diff)
 
     def _print_pkg_brief(self, diff: "RepoDiff") -> None:
         """Print package operation brief output.
