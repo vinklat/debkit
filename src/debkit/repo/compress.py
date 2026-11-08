@@ -16,13 +16,18 @@ class SizeLimitError(ValueError):
     """Decoded data exceeds the size limit the caller set."""
 
 
+class CorruptStreamError(ValueError):
+    """Encoded data is truncated or does not decode."""
+
+
 class Codec(NamedTuple):
     """How an index file named with `suffix` is encoded and decoded.
 
     Attributes:
         suffix: File name suffix, empty for the uncompressed index.
         compress: Encoder.
-        decompress: Decoder; refuses output larger than its second argument with `SizeLimitError`.
+        decompress: Decoder; refuses output larger than its second argument with
+            `SizeLimitError` and a truncated or undecodable stream with `CorruptStreamError`.
     """
 
     suffix: str
@@ -45,8 +50,9 @@ class _Decoder(Protocol):
         """Decode `data`, returning at most `max_length` bytes."""
 
 
-# a fresh decoder first reads a small chunk, doubling up to the largest, so a stream's end
-# copies at most one chunk of what follows into `unused_data`
+# each chunk is at most the bytes already read in this stream plus the first chunk, so the
+# bytes read past a stream's end stay within that stream's size (linear in total), and a
+# large stream still needs few decoder calls
 _FIRST_CHUNK = 256
 _LARGEST_CHUNK = 1 << 20
 _NON_NUL = re.compile(rb"[^\0]")
@@ -56,10 +62,11 @@ def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) ->
     """Decode every concatenated stream in `data` without producing more than `max_size` bytes.
 
     Each decoder call is capped one byte past what is left, so a bomb stops as soon as it
-    overflows instead of after it is fully inflated. NUL padding between streams is
-    skipped, as xz stream padding and the one-shot `gzip.decompress` allow. The input is
-    walked by offset in growing chunks, so many concatenated streams decode in linear time
-    instead of copying the rest of the input at every stream end.
+    overflows instead of after it is fully inflated. Any run of NUL bytes between or after
+    streams is skipped for every codec, a deliberate superset of xz's 4-byte stream padding
+    and of what the one-shot `gzip.decompress` strips. The input is walked by offset in
+    growing chunks, so many concatenated streams decode in linear time instead of copying
+    the rest of the input at every stream end.
 
     Args:
         new_decoder: Factory of a fresh decoder per stream.
@@ -68,7 +75,7 @@ def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) ->
 
     Raises:
         SizeLimitError: The decoded data exceeds `max_size`.
-        EOFError: A stream ends before its end-of-stream marker.
+        CorruptStreamError: A stream ends before its end-of-stream marker or does not decode.
 
     Returns:
         The decoded data of every stream, concatenated.
@@ -76,24 +83,30 @@ def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) ->
     view = memoryview(data)
     out = bytearray()
     offset = 0
-    while offset < len(view):
+    while offset < len(data):
         decoder = new_decoder()
         step = _FIRST_CHUNK
         while True:
             chunk = view[offset : offset + step]
-            out += decoder.decompress(chunk, max_size + 1 - len(out))
+            try:
+                out += decoder.decompress(chunk, max_size + 1 - len(out))
+            except (lzma.LZMAError, OSError, zlib.error) as exc:
+                # bz2 reports garbage as OSError; the decoder does no I/O
+                raise CorruptStreamError(str(exc)) from exc
             if len(out) > max_size:
                 raise SizeLimitError(f"decoded data exceeds {max_size} bytes")
-            # below the cap the decoder consumed the whole chunk unless the stream ended in it
+            # under the cap the decoder consumed the whole chunk unless the stream ended in
+            # it; at the cap zlib keeps input in `unconsumed_tail`, which the offset
+            # arithmetic below would skip, hence the cap check runs first
             if decoder.eof:
                 offset += len(chunk) - len(decoder.unused_data)
                 break
             offset += len(chunk)
-            if offset >= len(view):
-                raise EOFError("Compressed data ended before the end-of-stream marker was reached")
+            if offset >= len(data):
+                raise CorruptStreamError("compressed data ended before the end-of-stream marker")
             step = min(step * 2, _LARGEST_CHUNK)
         match = _NON_NUL.search(data, offset)
-        offset = match.start() if match else len(view)
+        offset = match.start() if match else len(data)
     return bytes(out)
 
 
@@ -103,15 +116,25 @@ def _identity(data: bytes) -> bytes:
 
 
 def _identity_bounded(data: bytes, max_size: int) -> bytes:
-    """Return an uncompressed index as is, refusing one larger than `max_size`."""
+    """Return an uncompressed index as is, refusing one larger than `max_size`.
+
+    Raises:
+        SizeLimitError: `data` exceeds `max_size`.
+    """
     if len(data) > max_size:
         raise SizeLimitError(f"data exceeds {max_size} bytes")
     return data
 
 
+# preset -9 needs a 64 MiB dictionary; a larger one cannot help under `MAX_INDICES_BYTES`,
+# so a stream asking for more fails as corrupt instead of allocating it
+_LZMA_MEMLIMIT = 128 << 20
+
 # `.lzma` is the legacy LZMA-alone format; decoding auto-detects, so an `.lzma`
 # written in xz format by an older debkit still reads
-_lzma_decompress = partial(_bounded, partial(lzma.LZMADecompressor, lzma.FORMAT_AUTO))
+_lzma_decompress = partial(
+    _bounded, partial(lzma.LZMADecompressor, lzma.FORMAT_AUTO, memlimit=_LZMA_MEMLIMIT)
+)
 
 # discovery order: the preferred compression first, the uncompressed index last
 # -> [VALIDATION.md](VALIDATION.md#repository-index-paths)

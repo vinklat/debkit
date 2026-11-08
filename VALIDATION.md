@@ -122,6 +122,8 @@ inherits, through the decoders in `repo/compress.py`.
 | -- | -- | -- |
 | Decompressed size | Decoding stops as soon as the output passes `MAX_INDICES_BYTES` (256 MiB), so a compression bomb is never inflated in full. | → `PackagesException` (Read) |
 | Stream integrity | A compressed index decodes to its end-of-stream marker; truncated or corrupt data is refused. | → `PackagesException` (Read) |
+| LZMA dictionary | An `.xz` or `.lzma` stream asking for a dictionary over 128 MiB is refused before it is allocated. | → `PackagesException` (Read) |
+| Stream padding | Any run of NUL bytes between or after compressed streams is skipped. | — |
 | Stanza separation | A blank or whitespace-only line ends a stanza, as Debian Policy 5.1 allows. | — |
 | Line ends | CRLF line ends are read as LF. | — |
 

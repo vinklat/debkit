@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import lzma
 import re
-import zlib
 from collections.abc import Callable
 from copy import copy
 from typing import (
@@ -15,7 +13,7 @@ from typing import (
 
 from txstore import calc_digests, compare_digests, is_unsafe_path
 
-from debkit.repo.compress import CODECS, SizeLimitError, codec_for
+from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, codec_for
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.release import Release
@@ -282,7 +280,8 @@ class Packages:
         Raises:
             ChecksumException: Checksum mismatch for Packages file.
             PackagesNotFoundException: No Packages* file the Release lists is in storage.
-            PackagesException: The index does not decode or decodes past `MAX_INDICES_BYTES`.
+            PackagesException: The index is truncated or does not decode, or it decodes past
+                `MAX_INDICES_BYTES`; a missing one raises the `PackagesNotFoundException` subclass.
 
         Returns:
             True if the packages indices file is successfully loaded, False otherwise.
@@ -312,8 +311,7 @@ class Packages:
             raise PackagesException(
                 f"Decompressed indices {indices_path} exceeds soft cap ({MAX_INDICES_BYTES} bytes)."
             ) from exc
-        except (EOFError, lzma.LZMAError, OSError, zlib.error) as exc:
-            # truncated or corrupt stream; bz2 reports garbage as OSError
+        except CorruptStreamError as exc:
             raise PackagesException(f"Cannot decode indices {indices_path}: {exc}") from exc
 
         data = raw.decode("utf-8")

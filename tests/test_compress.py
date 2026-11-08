@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import gzip
 import lzma
+import struct
 import tracemalloc
 import zlib
 from collections.abc import Buffer
 
 import pytest
 
-from debkit.repo.compress import CODECS, Codec, SizeLimitError, _bounded, codec_for
+from debkit.repo.compress import (
+    CODECS,
+    Codec,
+    CorruptStreamError,
+    SizeLimitError,
+    _bounded,
+    codec_for,
+)
 
 _DATA = b"Package: foo\nVersion: 1.0\n" * 32
 _COMPRESSED = [codec for codec in CODECS if codec.suffix]
@@ -57,6 +65,7 @@ def test_decompress_reads_concatenated_streams(codec: Codec) -> None:
 
 @pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
 def test_decompress_skips_nul_padding_between_many_streams(codec: Codec) -> None:
+    """Any NUL run between streams is skipped for every codec, a deliberate leniency."""
     encoded = (codec.compress(b"x") + bytes(3)) * 50
     assert codec.decompress(encoded, 50) == b"x" * 50
 
@@ -89,8 +98,48 @@ def test_many_streams_are_fed_to_the_decoders_in_linear_total() -> None:
 
 @pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
 def test_decompress_refuses_a_truncated_stream(codec: Codec) -> None:
-    with pytest.raises(EOFError):
+    with pytest.raises(CorruptStreamError):
         codec.decompress(codec.compress(_DATA)[:-8], len(_DATA))
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_refuses_data_that_does_not_decode(codec: Codec) -> None:
+    with pytest.raises(CorruptStreamError):
+        codec.decompress(b"not a compressed index", len(_DATA))
+
+
+def _xz_with_dictionary(prop: int) -> bytes:
+    """An xz stream of `_DATA` whose block header asks for the LZMA2 dictionary `prop` codes."""
+    encoded = bytearray(codec_for(".xz").compress(_DATA))
+    # stream header (12 bytes), then a 12-byte block header: size, flags, LZMA2 filter id and
+    # props size, the dictionary prop, padding, and the CRC32 of the 8 bytes before it
+    assert encoded[12:16] == b"\x02\x00\x21\x01"
+    encoded[16] = prop
+    encoded[20:24] = zlib.crc32(encoded[12:20]).to_bytes(4, "little")
+    return bytes(encoded)
+
+
+def test_xz_decodes_the_largest_preset_dictionary() -> None:
+    """Preset -9's 64 MiB dictionary (prop 28) stays under the decoder's memory limit."""
+    assert codec_for(".xz").decompress(_xz_with_dictionary(28), len(_DATA)) == _DATA
+
+
+@pytest.mark.parametrize(
+    ("path", "encoded"),
+    [
+        # a 1.5 GiB LZMA2 dictionary (prop 37)
+        ("Packages.xz", _xz_with_dictionary(37)),
+        # an LZMA-alone header asking for a 4 GiB dictionary
+        (
+            "Packages.lzma",
+            b"\x5d" + struct.pack("<I", 0xFFFFFFFF) + codec_for(".lzma").compress(_DATA)[5:],
+        ),
+    ],
+    ids=["xz", "lzma-alone"],
+)
+def test_lzma_refuses_a_dictionary_past_the_memory_limit(path: str, encoded: bytes) -> None:
+    with pytest.raises(CorruptStreamError, match="Memory usage limit"):
+        codec_for(path).decompress(encoded, len(_DATA))
 
 
 def test_xz_skips_stream_padding() -> None:
