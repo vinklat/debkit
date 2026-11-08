@@ -174,8 +174,19 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
     ]
 
 
+def _recording_copy(copies: list[tuple[object, MagicMock]]) -> Any:
+    """A `copy` stand-in returning a fresh mock per call and recording what it copied."""
+
+    def fake_copy(obj: object) -> MagicMock:
+        snapshot = MagicMock(name=f"copy{len(copies)}")
+        copies.append((obj, snapshot))
+        return snapshot
+
+    return fake_copy
+
+
 def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
-    """A staged target reset as corrupt has no Date, so it cannot be the only floor."""
+    """Each pass floors on a snapshot of its own target load and on the first one."""
     action = _make_action(storage=TxnStorageStub())
     hashes = iter(["hash1", "hash2", "hash2"])
 
@@ -183,13 +194,20 @@ def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
         _source(action).release.hash = next(hashes)
 
     _source(action).update.side_effect = update
-    target_before = MagicMock()
+    copies: list[tuple[object, MagicMock]] = []
 
-    with patch("debkit.action.action_sync.copy", return_value=target_before):
+    with patch("debkit.action.action_sync.copy", _recording_copy(copies)):
         action.sync()
 
+    # first load, the report's target_before, then the later pass's load
+    assert [obj for obj, _ in copies] == [
+        _target(action).release,
+        _target(action),
+        _target(action).release,
+    ]
+    first, staged = copies[0][1], copies[2][1]
     floors = [c.args[0] for c in _source(action).release.check_fresh_against.call_args_list]
-    assert floors == [_target(action).release, _target(action).release, target_before.release]
+    assert floors == [first, staged, first]
 
 
 def test_sync_checks_release_freshness_before_planning() -> None:
@@ -199,13 +217,15 @@ def test_sync_checks_release_freshness_before_planning() -> None:
     action = _make_action(storage=TxnStorageStub())
     check = _source(action).release.check_fresh_against
     check.side_effect = ReleaseFreshnessException("stale")
+    copies: list[tuple[object, MagicMock]] = []
 
-    with pytest.raises(ReleaseFreshnessException):
-        action.sync()
+    with patch("debkit.action.action_sync.copy", _recording_copy(copies)):
+        with pytest.raises(ReleaseFreshnessException):
+            action.sync()
 
     check.assert_called_once()
     target, now = check.call_args.args
-    assert target is _target(action).release
+    assert copies[0] == (_target(action).release, target)
     assert now.tzinfo is not None
     _source(action).build_sync_lists.assert_not_called()
 
@@ -440,6 +460,21 @@ def test_sync_to_s3_writes_objects_with_the_default_public_read_acl(
         "Type": "Group",
         "URI": "http://acs.amazonaws.com/groups/global/AllUsers",
     } in [grant["Grantee"] for grant in grants if grant["Permission"] == "READ"]
+
+
+def test_sync_floors_against_the_date_of_a_target_reset_as_corrupt(tmp_path: Path) -> None:
+    """A reset clears the target Release; the Date it carried still floors the source."""
+    from debkit.repo.release import ReleaseFreshnessException
+
+    _write_tree(tmp_path / "src", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_tree(tmp_path / "tgt", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    (tmp_path / "tgt" / _PREFIX / "main/binary-amd64/Packages.gz").write_bytes(b"corrupt")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+
+    with pytest.raises(ReleaseFreshnessException, match="older than the target"):
+        action.sync()
+
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
 
 
 def test_sync_floors_against_a_peer_commit_that_lands_before_the_lock(tmp_path: Path) -> None:

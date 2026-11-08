@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from argparse import Namespace
 
     from debkit._options import EnvArgumentParser
+    from debkit.repo.release import Release
     from debkit.repo.repo_diff import RepoDiff
     from debkit.repo.repo_rw import RepoRW
 
@@ -151,7 +152,7 @@ class ActionSync(Action):
             # a peer may commit before `history_lock` is granted, so the target every pass
             # plans and floors against is read under it -> txstore locking rules
             logging.info("---------- Load target repo (%s)...", self.target_repo.params.url)
-            self._load_target()
+            target_floor = run_floor = self._load_target()
             # the report compares against the target as this run found it
             target_before = copy(self.target_repo)
             if self.verify_existing:
@@ -171,15 +172,15 @@ class ActionSync(Action):
                     logging.info("Source repo modified during synchronisation! Repeat sync...")
                     # reads go through the transaction, so the target now describes the
                     # bytes the previous pass staged -> txstore footmark rules
-                    self._load_target()
+                    target_floor = self._load_target()
 
                 if self.source_repo.params.verify_gpg and not self.allow_release_rollback:
                     now = datetime.now(UTC)
-                    self.source_repo.release.check_fresh_against(self.target_repo.release, now)
+                    self.source_repo.release.check_fresh_against(target_floor, now)
                     if attempt > 0:
-                        # a staged target reset as corrupt has no Date; the run never goes
-                        # below the Release it found -> [CRYPTO.md](CRYPTO.md#release-freshness)
-                        self.source_repo.release.check_fresh_against(target_before.release, now)
+                        # the run never goes below the Release it found
+                        # -> [CRYPTO.md](CRYPTO.md#release-freshness)
+                        self.source_repo.release.check_fresh_against(run_floor, now)
 
                 logging.info("Building filelists...")
                 copy_list, delete_list = self.source_repo.build_sync_lists(
@@ -210,11 +211,16 @@ class ActionSync(Action):
         else:
             self._print_sync_brief(ret_diff)
 
-    def _load_target(self) -> None:
+    def _load_target(self) -> "Release":
         """Load the target repo, treating a missing or corrupt one as empty.
 
         A target that fails a checksum is reset, so nothing it recorded settles an
-        index -> [VALIDATION.md](VALIDATION.md#index-selection).
+        index -> [VALIDATION.md](VALIDATION.md#index-selection). Its Release still
+        floors the source, so the `Date` it carried is kept in the returned snapshot
+        -> [CRYPTO.md](CRYPTO.md#release-freshness).
+
+        Returns:
+            Release: A snapshot of the target Release as read, taken before any reset.
         """
         try:
             self.target_repo.update()
@@ -222,7 +228,10 @@ class ActionSync(Action):
             logging.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
             logging.warning("Target repo corrupted: %s indices IGNORED", exc)
+            floor = copy(self.target_repo.release)
             self.target_repo.reset()
+            return floor
+        return copy(self.target_repo.release)
 
     @staticmethod
     def _verify_existing(target: "RepoRW") -> None:

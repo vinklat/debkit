@@ -35,9 +35,10 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   pass, which matches the Release it loaded → [VALIDATION.md](../../VALIDATION.md#index-selection).
 - With GPG verification on, each pass checks the source Release against the loaded target Release
   before building its lists, so an expired or older source fails the run instead of purging newer
-  target objects. A later pass also checks against the target as the run found it, so a staged
-  target reset as corrupt cannot lower the floor; a failure there discards what earlier passes
-  staged. `--allow-release-rollback` skips the check and warns once →
+  target objects. Each check floors on a snapshot `_load_target` takes before any reset, so a
+  target reset as corrupt keeps the `Date` its Release carried. A later pass also checks against
+  the target as the run found it; a failure there discards what earlier passes staged.
+  `--allow-release-rollback` skips the check and warns once →
   [CRYPTO.md](../../CRYPTO.md#release-freshness).
 - A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop; the mismatching target
   object is deleted and every staged footmark is discarded, so no partial commit is produced →
