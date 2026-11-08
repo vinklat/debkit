@@ -33,11 +33,7 @@ MAX_INDICES_BYTES = 256 * 1024 * 1024
 
 
 class PackagesException(Exception):
-    """Exception raised for errors in the Packages class.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised for errors in the Packages class."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""

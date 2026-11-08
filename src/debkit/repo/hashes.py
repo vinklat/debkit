@@ -38,11 +38,7 @@ def parse_hash_block(text: str) -> list[tuple[str, str, str]]:
 
 
 class ChecksumException(Exception):
-    """Exception raised for digest mismatch or distrustful object failures.
-
-    Attributes:
-        message (str): Explanation of the error.
-    """
+    """Exception raised for digest mismatch or distrustful object failures."""
 
     def __init__(self, message: str) -> None:
         """Initialize the exception with a checksum error message.

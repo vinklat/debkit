@@ -674,7 +674,7 @@ def test_sync_single_surviving_failure_raises() -> None:
     results["f7.deb"] = False
     _patch_transfer(src, results)
 
-    with pytest.raises(RepoSyncException, match="Max retries reached"):
+    with pytest.raises(RepoSyncException, match="^Repo sync: Max retries reached"):
         src.sync(tgt, copy_list=list(results.keys()), delete_list=[])
 
 
@@ -1183,7 +1183,7 @@ def test_sync_fails_on_a_proven_index_the_source_stops_serving(held: bool) -> No
     _serve_all_but(src, index.path)
 
     assert index.path in copy_list
-    with pytest.raises(RepoSyncException, match="Max retries reached"):
+    with pytest.raises(RepoSyncException, match="^Repo sync: Max retries reached"):
         src.sync(tgt, copy_list, delete_list, unproven=unproven)
 
 

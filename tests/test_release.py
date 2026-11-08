@@ -131,6 +131,20 @@ def test_is_empty_true_after_construction() -> None:
     assert r.is_empty() is True
 
 
+@pytest.mark.parametrize(
+    ("exc", "prefix"),
+    [
+        (ReleaseReadException("x"), "Release read: "),
+        (ReleaseNotFoundException("x"), "Release read: "),
+        (ReleaseWriteException("x"), "Release write: "),
+        (ReleaseFreshnessException("x"), "Release freshness: "),
+    ],
+)
+def test_release_exceptions_name_their_failure_in_the_message(exc: Exception, prefix: str) -> None:
+    """The CLI logs the message only, so the prefix is what tells a read from a write failure."""
+    assert str(exc) == f"{prefix}x"
+
+
 def test_save_no_op_when_not_modified() -> None:
     storage = MagicMock()
     r = Release(storage, _params())

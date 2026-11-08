@@ -8,11 +8,7 @@ logger.addHandler(logging.NullHandler())
 
 
 class RepoParamsException(Exception):
-    """Exception raised for errors in the RepoParams class.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised for errors in the RepoParams class."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""

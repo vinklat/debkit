@@ -53,15 +53,11 @@ class IndexEntry(NamedTuple):
 
 
 class ReleaseReadException(Exception):
-    """Exception raised for errors in the Release class.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised when a Release cannot be read, parsed, or verified."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
-        super().__init__(f"Release: {message}")
+        super().__init__(f"Release read: {message}")
 
 
 class ReleaseNotFoundException(ReleaseReadException):
@@ -73,27 +69,19 @@ class ReleaseNotFoundException(ReleaseReadException):
 
 
 class ReleaseWriteException(Exception):
-    """Exception raised for write errors in the Release class.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised when a Release cannot be signed."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
-        super().__init__(f"Release: {message}")
+        super().__init__(f"Release write: {message}")
 
 
 class ReleaseFreshnessException(Exception):
-    """Exception raised when a source Release is stale, expired, or badly dated.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised when a source Release is stale, expired, or badly dated."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
-        super().__init__(f"Release: {message}")
+        super().__init__(f"Release freshness: {message}")
 
 
 # Zone tokens apt accepts in a Release date; any other name would silently read as UTC

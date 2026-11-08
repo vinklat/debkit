@@ -18,11 +18,7 @@ ARMOR_HEADER_RE = re.compile(r"[A-Za-z]+: ")
 
 
 class GPGVerifyException(Exception):
-    """Exception raised for errors in verify the repository via GPG or checksum.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised for errors in verify the repository via GPG or checksum."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""

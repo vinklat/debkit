@@ -53,15 +53,11 @@ class IndexTarget:
 
 
 class RepoSyncException(Exception):
-    """Exception raised for errors in sync to the repository.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised for errors in sync to the repository."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
-        super().__init__(f"{message}")
+        super().__init__(f"Repo sync: {message}")
 
 
 class RepoSync(Repo):

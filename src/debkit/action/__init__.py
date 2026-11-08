@@ -182,11 +182,7 @@ def attach_storage_root(
 
 
 class ActionException(Exception):
-    """Exception raised for errors in the Action class.
-
-    Attributes:
-        message (str): Explanation of the error.
-    """
+    """Exception raised for errors in the Action class."""
 
     def __init__(self, message: str) -> None:
         """Initialize ActionException.

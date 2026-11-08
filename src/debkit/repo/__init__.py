@@ -31,11 +31,7 @@ _BINARY_INDEX_KEY = re.compile(r"binary-(?P<arch>[^/]+)/Packages(?:\.[^/]+)?")
 
 
 class RepoReadException(Exception):
-    """Exception raised for errors in reading the repository.
-
-    Attributes:
-        message (str): explanation of the error
-    """
+    """Exception raised for errors in reading the repository."""
 
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
