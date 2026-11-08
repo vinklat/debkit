@@ -21,6 +21,7 @@ from txstore import (
 
 from debkit.action import OutputType
 from debkit.action.action_pkg import ActionPkg
+from debkit.repo.debfile import DebFileException
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 from debkit.repo.repo_rw import RepoRW
 
@@ -616,6 +617,26 @@ def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
 
     assert wiring.call_args.args[1] == HistoryRetention(keep=2, max_age_days=30)
     assert (tmp_path / "repo" / instance.filename_field).read_bytes() == b"foo"
+
+
+def test_insert_from_a_missing_incoming_directory_fails_without_creating_it(
+    tmp_path: Path,
+) -> None:
+    """The incoming storage is only read, so a mistyped path is never materialised."""
+    from debkit.argparser import parse_cli
+
+    pars = parse_cli(
+        [
+            *("--target-url", f"fs://{tmp_path / 'repo'} bookworm main", "--skip-verify-gpg"),
+            *("insert", "--deb-filename", "foo_1.0_amd64.deb"),
+            *("--incoming-url", f"fs://{tmp_path / 'in'}"),
+        ]
+    )
+
+    with pytest.raises(DebFileException, match="foo_1.0_amd64.deb"):
+        ActionPkg(pars, create_path=True).insert()
+
+    assert not (tmp_path / "in").exists()
 
 
 @pytest.mark.parametrize("swapped", [False, True], ids=["matching", "swapped"])

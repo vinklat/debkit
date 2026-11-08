@@ -64,9 +64,7 @@ class ActionPkg(Action):
         self.component: str = getattr(pars, "component", "main")
 
         self.incoming_storage: Storage | None = (
-            attach_storage_plain(pars, pars.incoming_url, create_path=True)
-            if hasattr(pars, "incoming_url")
-            else None
+            attach_storage_plain(pars, pars.incoming_url) if hasattr(pars, "incoming_url") else None
         )
 
     def dump(self) -> None:
