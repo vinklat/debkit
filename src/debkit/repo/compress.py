@@ -6,10 +6,12 @@ import bz2
 import gzip
 import lzma
 import re
+import subprocess
+import threading
 import zlib
 from collections.abc import Buffer, Callable
 from functools import partial
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from typing import IO, TYPE_CHECKING, NamedTuple, Protocol
 
 from txstore import StorageException
 
@@ -54,6 +56,8 @@ def read_capped(storage: Storage, path: str, limit: int) -> bytes:
             try:
                 chunk = stream.read(min(_READ_CHUNK, limit + 1 - len(out)))
             except OSError as exc:
+                # as txstore's own `get` maps it -> [ROADMAP.md](ROADMAP.md#known-deviations)
+                storage.metrics.read_errors_inc()
                 raise StorageException(f"Error reading {path}: {exc}") from exc
             size = len(out)
             out += chunk
@@ -192,6 +196,59 @@ CODECS: tuple[Codec, ...] = (
     Codec(".gz", gzip.compress, partial(_bounded, partial(zlib.decompressobj, wbits=31))),
     Codec("", _identity, _identity_bounded),
 )
+
+
+def _feed(stdin: IO[bytes], data: bytes) -> None:
+    """Write `data` to a decoder's stdin, which closes early once the output passes its cap."""
+    try:
+        stdin.write(data)
+        stdin.close()
+    except BrokenPipeError:
+        pass
+
+
+def zstd_decompress(data: bytes, max_size: int) -> bytes:
+    """Decode zstd `data` through the `zstd` binary without producing more than `max_size` bytes.
+
+    The standard library before Python 3.14 has no zstd decoder. The output is read one byte
+    past `max_size` at most, and the decoder is killed there, so a bomb never inflates in full
+    -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+    Args:
+        data: The encoded data.
+        max_size: The largest decoded size accepted.
+
+    Raises:
+        SizeLimitError: The decoded data exceeds `max_size`.
+        CorruptStreamError: The data does not decode, or `zstd` cannot run.
+
+    Returns:
+        The decoded data.
+    """
+    try:
+        proc = subprocess.Popen(
+            ["zstd", "-dc", "-q"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        raise CorruptStreamError(f"cannot run zstd: {exc}") from exc
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    writer = threading.Thread(target=_feed, args=(proc.stdin, data), daemon=True)
+    writer.start()
+    out = proc.stdout.read(max_size + 1)
+    if len(out) > max_size:
+        proc.kill()
+    proc.stdout.close()
+    returncode = proc.wait()
+    writer.join()
+    if len(out) > max_size:
+        raise SizeLimitError(f"zstd data decodes past {max_size} bytes")
+    if returncode != 0:
+        raise CorruptStreamError(f"zstd exited with status {returncode}")
+    return out
 
 
 def codec_for(path: str) -> Codec:

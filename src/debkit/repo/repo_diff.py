@@ -50,6 +50,7 @@ class RepoDiff:
         self,
         component: str,
         arch: str,
+        *,
         added: dict[str, Package],
         removed: dict[str, Package],
         updated: dict[str, Package],

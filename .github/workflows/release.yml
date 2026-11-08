@@ -29,6 +29,8 @@ jobs:
           fi
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
+          # The uv that builds the published artifacts is pinned, as the actions are.
+          version: "0.13.7"
           # The published artifacts never restore a cache another workflow could have written.
           enable-cache: false
       - name: Tag matches the package version
@@ -57,7 +59,7 @@ jobs:
             echo "::error::relative link left in the PyPI description"
             exit 1
           fi
-          uvx twine check --strict dist/*
+          uvx twine==7.0.0 check --strict dist/*
           version="$(uv run --isolated --no-project --with "$(ls dist/*.whl)" \
             python -c 'import debkit; print(debkit.__version__)')"
           test "$version" = "${GITHUB_REF_NAME#v}"

@@ -108,12 +108,14 @@ def test_add_output_cli_args_converts_the_value_to_the_enum() -> None:
     assert parser.parse_args(["--output", "json"]).output is OutputType.json
 
 
-def test_add_output_cli_args_rejects_an_unknown_format() -> None:
+def test_add_output_cli_args_rejects_an_unknown_format(capsys: pytest.CaptureFixture[str]) -> None:
     parser = EnvArgumentParser()
     add_output_cli_args(parser)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as excinfo:
         parser.parse_args(["--output", "yaml"])
+    assert excinfo.value.code == 2
+    assert "invalid OutputType value: 'yaml'" in capsys.readouterr().err
 
 
 def test_add_output_cli_args_falls_back_to_its_variable(monkeypatch: pytest.MonkeyPatch) -> None:

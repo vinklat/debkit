@@ -7,6 +7,8 @@ Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 - Python 3.13 or newer, and a GnuPG binary on `PATH` for `python-gnupg` →
   [CRYPTO.md](CRYPTO.md#gpg). `fs://` metadata needs a filesystem with extended attributes.
+- A `zstd` binary on `PATH` to insert a `.deb` whose `control.tar` is zstd-compressed →
+  [VALIDATION.md](VALIDATION.md#object-sizes).
 - Users: `pip install debkit` (or `pipx install debkit`).
 - Contributors: [uv](https://docs.astral.sh/uv/); dependencies resolve from public PyPI only.
 
@@ -111,13 +113,13 @@ A floor raise names the Debian testing version that satisfies it in the change d
 | Trigger | Pushing a tag `vX.Y.Z`, with or without a suffix (e.g. `v0.2.0rc1`). |
 | Gates | `ci.yml` runs in full before the build. |
 | Tag checks | The tagged commit is on `main`, and the tag without its `v` equals the `pyproject.toml` version, or the release stops. |
-| Build | sdist and wheel, without the uv cache. |
+| Build | sdist and wheel, without the uv cache, by the uv version pinned in `setup-uv`, the same in `ci.yml` and `release.yml`. |
 | Build backend | hatchling only from the hash-pinned `.github/build-constraints.txt`; its header holds the refresh command. |
 | Build backend floor | `[build-system]` keeps a floor, so a Debian build uses Debian's hatchling. |
 | PyPI description | `README.md`, with its relative links rewritten to the tag on GitHub; the repo copy is unchanged. |
 | Checks | Run after the artifact upload, so no tool they fetch alters the published files; a failure stops the release. |
 | Link check | No relative link is left in the wheel's description. |
-| Metadata check | `twine check --strict` passes. |
+| Metadata check | `twine check --strict` passes, with twine pinned in `release.yml`. |
 | Smoke test | The wheel, installed alone with its dependencies, imports with `debkit.__version__` equal to the tag version, and `debkit --version` prints it. |
 | Stages | TestPyPI, then PyPI, then a GitHub release with the sdist and wheel and a link to the [upgrade notes](#upgrade-notes). |
 | GitHub environments | `testpypi` and `pypi`; `pypi` has a required reviewer, so the PyPI upload waits for approval. |

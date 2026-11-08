@@ -6,7 +6,7 @@ import io
 import json
 import logging
 from argparse import Namespace
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from copy import copy
 from pathlib import Path
 from typing import IO, Any, cast
@@ -177,6 +177,8 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
         action.sync()
 
     assert _source(action).sync.call_count == MAX_UPDATED_REPO_RETRIES
+    # the source is not read again after the last pass -> VALIDATION.md#index-selection
+    assert _source(action).update.call_count == MAX_UPDATED_REPO_RETRIES
     assert txn.committed
     assert [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING] == [
         f"Source repo still changing after {MAX_UPDATED_REPO_RETRIES} passes; "
@@ -404,12 +406,40 @@ def test_sync_keeps_another_dist_sharing_the_target_root(tmp_path: Path, fix: bo
     assert not orphan.exists()
 
 
-def test_sync_deletes_only_its_own_tree_while_another_dist_does_not_load(tmp_path: Path) -> None:
+def _corrupt_index(base: Path) -> None:
+    (base / "dists/bullseye/main/binary-amd64/Packages.gz").write_bytes(b"corrupt")
+
+
+def _missing_index(base: Path) -> None:
+    """Regression: the skipped arch left bar unclaimed, so the sync purged it."""
+    (base / "dists/bullseye/main/binary-amd64/Packages.gz").unlink()
+
+
+def _malformed_inrelease_only(base: Path) -> None:
+    """Regression: the unverified InRelease raised GPGVerifyException and aborted the sync."""
+    (base / "dists/bullseye/Release").unlink()
+    (base / "dists/bullseye/InRelease").write_bytes(b"not a signed message")
+
+
+def _unsafe_dist_name(base: Path) -> None:
+    """A dist name `is_safe_name` refuses is never loaded, so its payloads are unknown."""
+    (base / "dists/a:b").mkdir()
+    (base / "dists/a:b/Release").write_bytes(b"Suite: a:b\n")
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [_corrupt_index, _missing_index, _malformed_inrelease_only, _unsafe_dist_name],
+    ids=["corrupt-index", "missing-index", "malformed-inrelease-only", "unsafe-dist-name"],
+)
+def test_sync_deletes_only_its_own_tree_while_another_dist_does_not_load(
+    tmp_path: Path, damage: Callable[[Path], None]
+) -> None:
     """Another dist's payloads are unknown, so nothing outside `dists/bookworm/` is deleted."""
     _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
     _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
     _write_other_dist(tmp_path / "tgt", "bullseye", {"bar": "1"})
-    (tmp_path / "tgt" / "dists/bullseye/main/binary-amd64/Packages.gz").write_bytes(b"corrupt")
+    damage(tmp_path / "tgt")
     orphan = tmp_path / "tgt" / "pool/main/z/zz/zz_1_amd64.deb"
     orphan.parent.mkdir(parents=True)
     orphan.write_bytes(b"orphan")
@@ -423,6 +453,25 @@ def test_sync_deletes_only_its_own_tree_while_another_dist_does_not_load(tmp_pat
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
     assert (tmp_path / "tgt" / "pool/main/b/bar/bar_1_amd64.deb").exists()
     assert not stale.exists()
+
+
+def test_sync_purges_orphans_beside_a_dist_declaring_an_arch_it_has_no_index_for(
+    tmp_path: Path,
+) -> None:
+    """Only listed indices must load, so a debkit-made neighbour does not block the purge."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_other_dist(tmp_path / "tgt", "bullseye", {"bar": "1"})
+    release = tmp_path / "tgt" / "dists/bullseye/Release"
+    release.write_bytes(release.read_bytes().replace(b"amd64\n", b"amd64 arm64 all\n", 1))
+    orphan = tmp_path / "tgt" / "pool/main/z/zz/zz_1_amd64.deb"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"orphan")
+
+    _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+
+    assert not orphan.exists()
+    assert (tmp_path / "tgt" / "pool/main/b/bar/bar_1_amd64.deb").exists()
 
 
 class _RecordingFS(StorageFS):
@@ -479,6 +528,21 @@ def test_sync_copies_only_the_indices_a_real_tree_changed(tmp_path: Path) -> Non
     assert (tmp_path / "tgt" / _PREFIX / changed).read_bytes() == b"de 2"
     assert (tmp_path / "tgt" / _PREFIX / unchanged).read_bytes() == b"en"
     assert not (tmp_path / "tgt" / _PREFIX / absent).exists()
+
+
+def test_sync_with_an_unchanged_source_transfers_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A run with nothing to sync stops after its first plan and copies nothing."""
+    write_dist(tmp_path / "src", packages={"foo": "3"}, detached_signature=True)
+    _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+    source = _RecordingFS(str(tmp_path / "src"))
+
+    with caplog.at_level(logging.INFO):
+        _fs_action(source, tmp_path / "tgt").sync()
+
+    assert source.transferred == []
+    assert "Nothing to sync." in caplog.text
 
 
 def test_sync_then_check_finds_the_mirror_consistent(tmp_path: Path) -> None:

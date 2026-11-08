@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from txstore import StorageException, is_unsafe_path
 
 from debkit.repo.component import Component, ComponentException
+from debkit.repo.gnupg import GPGVerifyException
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.index_selection import select_index_entry
 from debkit.repo.package import PackageException
@@ -22,6 +23,7 @@ from debkit.repo.packages import Packages, PackagesException
 from debkit.repo.params import (
     ARCH_ANY,
     FLAT_COMPONENT,
+    SOURCE_ARCH,
     RepoParams,
     is_safe_name,
     is_valid_arch,
@@ -233,7 +235,12 @@ class Repo:
                 replace that index -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Raises:
-            RepoReadException: Error in reading the repository.
+            RepoReadException: The root Release storage fails to read.
+            ReleaseReadException: The root Release is missing, too large, or unsigned while
+                signatures are checked.
+            GPGVerifyException: A signature fails, or an `InRelease` is malformed.
+            ChecksumException: A per-arch Release or index fails its digest, or the two signed
+                root forms differ.
             ComponentException: An architecture cannot be loaded and may not be skipped.
         """
         try:
@@ -312,44 +319,56 @@ class Repo:
         return ret
 
     def get_packages(self) -> Generator[Package]:
-        """Get all filenames of packeges in repository.
+        """Get every package of the repository, each payload once.
+
+        A flat layout shares one index across its arch slots, and an `all` package sits in
+        every binary index of its component, so a payload is yielded for its first slot only.
 
         Yields:
             The package.
         """
-        for _, component in self.components.items():  # not used comp name
-            for _, packages in component.packages.items():  # not used arch
-                for _, package in packages.packages.items():
-                    yield package
+        seen: set[str] = set()
+        for component in self.components.values():
+            for packages in component.packages.values():
+                for package in packages.packages.values():
+                    if (filename := str(package)) not in seen:
+                        seen.add(filename)
+                        yield package
 
     def diff(self, other_repo: Repo) -> RepoDiff:
-        """Get the difference between this repo and another repo.
+        """Get how this repo, the newer state, differs from `other_repo`, the older one.
+
+        Every component and arch slot either side holds is compared, so a slot only the older
+        repo holds reports its packages as removed.
 
         Args:
-            other_repo: The other repo to diff with.
+            other_repo: The older state to diff against.
 
         Returns:
-            The object containing differences between the repos.
+            Packages added, removed and updated in this repo, by component and arch.
         """
         diff = RepoDiff()
+        empty = Packages(self.storage, self.params)
+        slots = {
+            (comp_name, arch)
+            for repo in (self, other_repo)
+            for comp_name, component in repo.components.items()
+            for arch in component.packages
+        }
 
         # always compared: equal Release bytes do not prove equal loaded packages, since a
         # load may skip an unreadable index -> [VALIDATION.md](VALIDATION.md#index-loading)
-        for component_name, component in self.components.items():
-            for arch, packages in component.packages.items():
-                if (
-                    component_name in other_repo.components
-                    and arch in other_repo.components[component_name].packages
-                ):
-                    other_packages = other_repo.components[component_name].packages[arch]
-                else:
-                    # other repo does not have this component or arch
-                    other_packages = Packages(other_repo.storage, other_repo.params)
-
-                added, removed, updated, old_versions = other_packages.diff(packages)
-                diff.update(component_name, arch, added, removed, updated, old_versions)
+        for comp_name, arch in sorted(slots):
+            newer = self._slot(comp_name, arch) or empty
+            older = other_repo._slot(comp_name, arch) or empty
+            diff.update(comp_name, arch, **older.diff(newer)._asdict())
 
         return diff
+
+    def _slot(self, comp_name: str, arch: str) -> Packages | None:
+        """Return the package container of one component and arch, or None when absent."""
+        component = self.components.get(comp_name)
+        return component.packages.get(arch) if component is not None else None
 
     def _release_blocks(self) -> Generator[Release]:
         """Yield every Release whose digest block is authoritative for this repo.
@@ -638,6 +657,72 @@ class SharedRoot(NamedTuple):
         return self.complete or path.startswith(self.prefix)
 
 
+# what a neighbour dist's load may raise; every one leaves that dist's payloads unknown, so
+# `Repo.update` and its Raises are the list to keep this in step with
+_NOT_LOADED = (
+    RepoReadException,
+    ReleaseReadException,
+    GPGVerifyException,
+    ComponentException,
+    PackagesException,
+    PackageException,
+    ChecksumException,
+    StorageException,
+)
+
+
+# a binary or source index key a root Release lists: `<comp>/binary-<arch>/Packages[.<ext>]` or
+# `<comp>/source/Sources[.<ext>]`
+_LISTED_INDEX = re.compile(
+    r"(?P<comp>[^/]+)/(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?"
+)
+
+
+def _claims_of(storage: Storage, dist: str) -> set[str]:
+    """Load another dist of the root and return the payloads its indices list.
+
+    Exactly the indices its root Release lists are loaded, and each must load: one skipped
+    would leave its payloads unclaimed, so they would read as orphans
+    -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+    Args:
+        storage: The target storage.
+        dist: The other dist.
+
+    Raises:
+        RepoReadException: A listed component is not a safe name.
+        ReleaseReadException: The dist has no root Release, or it does not parse.
+        ComponentException: A listed index is missing or does not load.
+
+    Returns:
+        The payload paths the dist's binary and source indices list.
+    """
+    release = Release(
+        storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False), root=True
+    )
+    release.load()
+    slots: dict[str, set[str]] = {}
+    for key in release.digests:
+        if listed := _LISTED_INDEX.fullmatch(key):
+            slots.setdefault(listed["comp"], set()).add(listed["arch"] or SOURCE_ARCH)
+
+    claims: set[str] = set()
+    for comp, archs in sorted(slots.items()):
+        if not is_safe_name(comp):
+            raise RepoReadException(f"dist {dist} lists an unsafe component {comp!r}")
+        params = RepoParams(
+            dist=dist,
+            components=[comp],
+            archs=sorted(archs),
+            verify_gpg=False,
+            verify_digests=False,
+        )
+        repo = Repo(storage, params)
+        repo.update(strict_arch=True)
+        claims.update(str(package) for package in repo.get_packages())
+    return claims
+
+
 def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str]) -> SharedRoot:
     """Collect what the other dists of a componented target root claim.
 
@@ -669,18 +754,9 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
             logger.warning("Shared root dist %r is not a safe name; its payloads are kept.", dist)
             complete = False
             continue
-        other = Repo(storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False))
         try:
-            other.update()
-        except (
-            RepoReadException,
-            ReleaseReadException,
-            ComponentException,
-            PackagesException,
-            PackageException,
-            ChecksumException,
-            StorageException,
-        ) as exc:
+            claimed.update(_claims_of(storage, dist))
+        except _NOT_LOADED as exc:
             logger.warning(
                 "Dist %s shares the target root but did not load (%s); "
                 "nothing outside %s is deleted.",
@@ -689,8 +765,6 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
                 prefix,
             )
             complete = False
-            continue
-        claimed.update(str(package) for package in other.get_packages())
 
     if dists:
         logger.info("Shared root: keeping what dists %s claim", ", ".join(dists))

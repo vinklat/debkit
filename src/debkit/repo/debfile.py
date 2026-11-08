@@ -7,6 +7,7 @@ import lzma
 import re
 import tarfile
 import zlib
+from collections.abc import Callable
 from io import BytesIO, UnsupportedOperation
 from typing import IO, TYPE_CHECKING
 
@@ -14,6 +15,7 @@ from debian import debfile
 from debian.arfile import ArError
 from txstore import StorageException, is_unsafe_path
 
+from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, zstd_decompress
 from debkit.repo.package import Package
 from debkit.repo.params import pool_path
 
@@ -39,41 +41,69 @@ class DebFileException(Exception):
         super().__init__(f"DebFile: {message}")
 
 
-# Largest compressed `control.tar` member and `control` file read from an upload; both are read
-# into memory before the package is transferred -> [VALIDATION.md](VALIDATION.md#object-sizes)
+# Largest compressed `control.tar` member and `control` file read from an upload, and the
+# largest `control.tar` they decode to; all are held in memory before the package is
+# transferred -> [VALIDATION.md](VALIDATION.md#object-sizes)
 MAX_CONTROL_BYTES = 4 * 1024 * 1024
+MAX_CONTROL_TAR_BYTES = 64 * 1024 * 1024
+
+# `control.tar` compressions dpkg writes, each decoded under a size limit
+_CONTROL_DECODERS: dict[str, Callable[[bytes, int], bytes]] = {
+    **{codec.suffix: codec.decompress for codec in CODECS},
+    ".zst": zstd_decompress,
+}
 
 
 def _control_of(fp: IO[bytes], path: str) -> bytes | None:
     """Return the ``control`` file of the ``.deb`` read from `fp`, refusing an oversized one.
+
+    The ``control.tar`` member is decoded under `MAX_CONTROL_TAR_BYTES` and walked as a stream,
+    so neither a compression bomb nor a tar of many members is inflated in full.
 
     Args:
         fp: The open ``.deb``.
         path: Its storage path, for messages.
 
     Raises:
-        DebFileException: The ``control.tar`` member or the ``control`` file is larger than
-            `MAX_CONTROL_BYTES`.
+        DebFileException: The ``control.tar`` member, its decoded tar, or the ``control`` file
+            passes its size limit, or the member is in an unknown compression or does not
+            decode.
         DebError: The ``control`` file is missing.
 
     Returns:
         The ``control`` file content, or None when it is not a regular file.
     """
     deb = debfile.DebFile(fileobj=fp)  # type: ignore[arg-type]
-    for part in deb.getmembers():
-        if part.name.startswith("control.tar") and part.size > MAX_CONTROL_BYTES:
-            raise DebFileException(
-                f"{part.name} of {path} is larger than {MAX_CONTROL_BYTES} bytes"
-            )
-    tar = deb.control.tgz()
+    part = next(
+        (member for member in deb.getmembers() if member.name.startswith("control.tar")), None
+    )
+    if part is None:
+        raise debfile.DebError("control.tar not found inside package")
+    if part.size > MAX_CONTROL_BYTES:
+        raise DebFileException(f"{part.name} of {path} is larger than {MAX_CONTROL_BYTES} bytes")
+    decode = _CONTROL_DECODERS.get(part.name.removeprefix("control.tar"))
+    if decode is None:
+        raise DebFileException(f"{part.name} of {path} has an unknown compression")
     try:
-        member = tar.getmember("./control")
-    except KeyError as exc:
-        raise debfile.DebError("File not found inside package") from exc
-    if member.size > MAX_CONTROL_BYTES:
-        raise DebFileException(f"control file of {path} is larger than {MAX_CONTROL_BYTES} bytes")
-    handle = tar.extractfile(member)
-    return handle.read() if handle is not None else None
+        tar_data = decode(part.read(), MAX_CONTROL_TAR_BYTES)
+    except SizeLimitError as exc:
+        raise DebFileException(
+            f"{part.name} of {path} decodes past {MAX_CONTROL_TAR_BYTES} bytes"
+        ) from exc
+    except CorruptStreamError as exc:
+        raise DebFileException(f"Invalid .deb file {path}: {part.name}: {exc}") from exc
+
+    with tarfile.open(fileobj=BytesIO(tar_data), mode="r|") as tar:
+        for member in tar:
+            if member.name not in ("./control", "control"):
+                continue
+            if member.size > MAX_CONTROL_BYTES:
+                raise DebFileException(
+                    f"control file of {path} is larger than {MAX_CONTROL_BYTES} bytes"
+                )
+            handle = tar.extractfile(member)
+            return handle.read() if handle is not None else None
+    raise debfile.DebError("File not found inside package")
 
 
 class DebFile:

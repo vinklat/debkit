@@ -469,7 +469,7 @@ def test_find_file_source_arch_reads_the_source_release() -> None:
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _params())
-    r.load_component("main", "source")
+    r.load_component("main", "source", Release(r.storage, r.params, root=True))
 
     assert r.filename == "dists/bookworm/main/source/Release"
 
@@ -481,7 +481,7 @@ def test_find_file_flat_component_release_path_carries_no_leading_slash() -> Non
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _flat_params())
-    r.load_component("main", "amd64")
+    r.load_component("main", "amd64", Release(r.storage, r.params, root=True))
 
     assert r.filename == "bookworm/binary-amd64/Release"
     assert not r.filename.startswith("/")
@@ -501,7 +501,7 @@ def test_find_file_reads_the_component_release_setup_wrote(
 
     storage.exists.side_effect = lambda path: path == writer.filename
     reader = Release(storage, params_fn())
-    reader.load_component("main", arch)
+    reader.load_component("main", arch, Release(reader.storage, reader.params, root=True))
 
     assert reader.filename == writer.filename
 
@@ -513,7 +513,7 @@ def test_component_entry_points_refuse_an_empty_coordinate(comp: str, arch: str)
     r = Release(storage, _params())
 
     with pytest.raises(ValueError, match="needs a component and an arch"):
-        r.load_component(comp, arch)
+        r.load_component(comp, arch, Release(r.storage, r.params, root=True))
     with pytest.raises(ValueError, match="needs a component and an arch"):
         r.setup_component(comp, arch)
 
@@ -865,7 +865,14 @@ def test_parse_release_date_returns_an_aware_date(value: str, expected: datetime
 )
 def test_parse_release_date_rejects_a_value_without_an_accepted_zone(value: str) -> None:
     """An unrecognised zone name would otherwise read silently as UTC."""
-    with pytest.raises(ValueError, match="not an RFC 2822 date"):
+    with pytest.raises(ValueError, match="with a UTC or numeric zone"):
+        parse_release_date(value)
+
+
+@pytest.mark.parametrize("value", ["garbage UTC", "Sat, 99 Foo 2023 08:47:46 UTC"])
+def test_parse_release_date_rejects_an_unparsable_date_in_an_accepted_zone(value: str) -> None:
+    """The zone check passes, so the date body itself is what is refused."""
+    with pytest.raises(ValueError, match=r"^not an RFC 2822 date: "):
         parse_release_date(value)
 
 

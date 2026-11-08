@@ -6,7 +6,7 @@ import hashlib
 import logging
 import re
 from email.parser import Parser
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from txstore import StorageException, is_unsafe_path
 
@@ -119,17 +119,6 @@ class Changes(HexDigests):
             )
         logger.debug("Parse changes file %s (%d bytes)", filename, len(data))
         self.parse(data)
-
-    def get_digests(self, filename: str) -> dict[str, Any]:
-        """Get the digests of a file.
-
-        Args:
-            filename: The filename of the file.
-
-        Returns:
-            The digests of the file.
-        """
-        return self.digests[filename]
 
     def get_archs(self) -> list[str]:
         """Get every architecture token the Changes file names.

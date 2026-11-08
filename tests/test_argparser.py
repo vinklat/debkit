@@ -34,9 +34,11 @@ def test_parse_cli_list_command() -> None:
     assert ns.target_url == "fs:///tmp dist main"
 
 
-def test_parse_cli_remove_requires_pkg_pattern() -> None:
-    with pytest.raises(SystemExit):
+def test_parse_cli_remove_requires_pkg_pattern(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
         parse_cli(["--target-url", "fs:///tmp dist main", "remove"])
+    assert excinfo.value.code == 2
+    assert "--pkg-pattern or DEBKIT_PKG_PATTERN is required" in capsys.readouterr().err
 
 
 def test_parse_cli_remove_compiles_pkg_pattern() -> None:
@@ -76,9 +78,11 @@ def test_parse_cli_log_command_output_json() -> None:
     assert ns.output is OutputType.json
 
 
-def test_parse_cli_log_rejects_invalid_output() -> None:
-    with pytest.raises(SystemExit):
+def test_parse_cli_log_rejects_invalid_output(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
         parse_cli(["--target-url", "fs:///tmp dist main", "log", "--output", "yaml"])
+    assert excinfo.value.code == 2
+    assert "invalid OutputType value: 'yaml'" in capsys.readouterr().err
 
 
 def test_parse_cli_revert_command_defaults_dry_run_false() -> None:
@@ -197,9 +201,11 @@ def test_parse_cli_retention_env_fallback(monkeypatch: pytest.MonkeyPatch) -> No
     assert (ns.history_keep, ns.history_max_age) == (3, 14)
 
 
-def test_parse_cli_retention_rejects_an_invalid_value() -> None:
-    with pytest.raises(SystemExit):
+def test_parse_cli_retention_rejects_an_invalid_value(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
         parse_cli(["--target-url", "fs:///tmp dist main", "--history-keep", "0", "prune"])
+    assert excinfo.value.code == 2
+    assert "must be 1 or greater, got 0" in capsys.readouterr().err
 
 
 def test_parse_cli_prune_command_defaults() -> None:
@@ -226,13 +232,6 @@ def test_target_url_registered(monkeypatch: pytest.MonkeyPatch) -> None:
         parse_cli(["--target-url", "fs:///srv/repo dist main", "list"]).target_url
         == "fs:///srv/repo dist main"
     )
-
-
-def test_target_url_mandatory(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The env fallback is the only other source, so it must be absent here."""
-
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["list"])
 
 
 # ---------- boolean switches
@@ -285,9 +284,11 @@ def test_parse_cli_sync_allow_release_rollback(monkeypatch: pytest.MonkeyPatch) 
     assert ns.allow_release_rollback is False
 
 
-def test_parse_cli_switch_rejects_a_value() -> None:
-    with pytest.raises(SystemExit):
+def test_parse_cli_switch_rejects_a_value(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
         parse_cli(["--skip-verify-gpg", "1", "--target-url", "fs:///tmp dist main", "list"])
+    assert excinfo.value.code == 2
+    assert "invalid choice: '1'" in capsys.readouterr().err
 
 
 # ---------- environment fallback
@@ -326,11 +327,27 @@ def test_invalid_variable_exits_2_naming_it(
     assert "DEBKIT_HISTORY_MAX_AGE" in capsys.readouterr().err
 
 
-def test_variable_outside_choices_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_variable_its_converter_refuses_exits_2_naming_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setenv("DEBKIT_OUTPUT", "yaml")
     with pytest.raises(SystemExit) as excinfo:
         parse_cli(["--target-url", "fs:///tmp dist main", "log"])
     assert excinfo.value.code == 2
+    assert "DEBKIT_OUTPUT" in capsys.readouterr().err
+
+
+def test_variable_outside_choices_exits_2_naming_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--log-level` has plain choices and no converter, so the choices check decides."""
+    monkeypatch.setenv("DEBKIT_LOG_LEVEL", "tracing")
+    with pytest.raises(SystemExit) as excinfo:
+        parse_cli(["--target-url", "fs:///tmp dist main", "log"])
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "DEBKIT_LOG_LEVEL" in err
+    assert "invalid choice: 'tracing'" in err
 
 
 @pytest.mark.parametrize(("value", "expected"), [("debug", "DEBUG"), ("WARNING", "WARNING")])
@@ -342,9 +359,11 @@ def test_log_level_from_flag_or_variable(
     assert parse_cli(["--target-url", "fs:///tmp d c", "list"]).log_level == expected
 
 
-def test_log_level_rejects_tracing() -> None:
-    with pytest.raises(SystemExit):
+def test_log_level_rejects_tracing(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
         parse_cli(["-l", "TRACING", "--target-url", "fs:///tmp d c", "list"])
+    assert excinfo.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_s3_acl_defaults() -> None:

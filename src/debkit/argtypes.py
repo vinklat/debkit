@@ -26,6 +26,9 @@ from txstore import (
 # → [VALIDATION.md](VALIDATION.md#history-retention).
 HISTORY_MAX_AGE_LIMIT = 36500
 
+# one optional sign, then ASCII digits → [VALIDATION.md](VALIDATION.md#history-retention)
+_DECIMAL = re.compile(r"[+-]?[0-9]+")
+
 # Longest accepted `--pkg-pattern` regex → [VALIDATION.md](VALIDATION.md#package-pattern-matching).
 PKG_PATTERN_MAX_LENGTH = 500
 
@@ -45,7 +48,7 @@ def _int_type(value: str, minimum: int, maximum: int | None = None) -> int:
         The parsed value.
     """
     stripped = str(value).strip()
-    if not stripped.isascii() or not stripped.lstrip("+-").isdigit():
+    if not _DECIMAL.fullmatch(stripped):
         raise ArgumentTypeError(f"invalid value: not an integer: {value!r}")
     parsed = int(stripped, 10)
     if parsed < minimum:

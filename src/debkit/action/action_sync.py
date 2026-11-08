@@ -99,8 +99,10 @@ class ActionSync(Action):
             ActionException: An `--architectures` token is not an architecture name; refused
                 before any storage is opened, so no target path or bucket is created.
         """
-        self._archs, self._indices_exclude = _selection(pars)
-        super().__init__(pars, create_path=create_path)
+        archs, indices_exclude = _selection(pars)
+        super().__init__(
+            pars, create_path=create_path, archs=archs, indices_exclude=indices_exclude
+        )
         self.verify_existing: bool = getattr(pars, "verify_existing", False)
         self.indices_only: bool = getattr(pars, "indices_only", False)
         self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
@@ -165,73 +167,91 @@ class ActionSync(Action):
         if self.allow_release_rollback:
             logger.warning("Release freshness checks skipped: --allow-release-rollback is set")
 
-        prev_hash: str = ""
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             # a peer may commit before `history_lock` is granted, so the target every pass
             # plans and floors against is read under it -> txstore locking rules
             logger.info(
                 "---------- Load target repo (%s)...", redact_url(self.target_repo.params.url or "")
             )
-            target_floor = run_floor = self._load_target()
+            run_floor = self._load_target()
             # the report compares against the target as this run found it
             target_before = copy(self.target_repo)
             if self.verify_existing:
                 self._verify_existing(self.target_repo)
 
-            for attempt in range(MAX_UPDATED_REPO_RETRIES):
-                if attempt == 0:
-                    logger.info(
-                        "---------- Load source repo (%s)...",
-                        redact_url(self.source_repo.params.url or ""),
-                    )
-                else:
-                    logger.info("---------- Retrieve load to verify source repo changes...")
-
-                self.source_repo.update(strict_arch=True)
-
-                if attempt > 0:
-                    if prev_hash == self.source_repo.release.hash:
-                        break
-                    logger.info("Source repo modified during synchronisation! Repeat sync...")
-                    # reads go through the transaction, so the target now describes the
-                    # bytes the previous pass staged -> txstore footmark rules
-                    target_floor = self._load_target()
-
-                if self.source_repo.params.verify_gpg and not self.allow_release_rollback:
-                    now = datetime.now(UTC)
-                    self.source_repo.release.check_fresh_against(target_floor, now)
-                    if attempt > 0:
-                        # the run never goes below the Release it found
-                        # -> [CRYPTO.md](CRYPTO.md#release-freshness)
-                        self.source_repo.release.check_fresh_against(run_floor, now)
-
-                logger.info("Building filelists...")
-                plan = self.source_repo.build_sync_lists(
-                    self.target_repo, indices_only=self.indices_only
-                )
-
-                if plan.is_empty():
-                    logger.info("Nothing to sync.")
-                    break
-
-                # a ChecksumException propagates to discard the transaction; cli.py logs it
-                self.source_repo.sync(
-                    self.target_repo, plan.copy, plan.delete, unproven=plan.unproven
-                )
-
-                prev_hash = self.source_repo.release.hash
-            else:
-                # -> [VALIDATION.md](VALIDATION.md#index-selection)
-                logger.warning(
-                    "Source repo still changing after %d passes; committing the last pass",
-                    MAX_UPDATED_REPO_RETRIES,
-                )
+            logger.info(
+                "---------- Load source repo (%s)...",
+                redact_url(self.source_repo.params.url or ""),
+            )
+            self.source_repo.update(strict_arch=True)
+            self._check_fresh(run_floor)
+            self._sync_until_settled(run_floor)
 
         ret_diff = self.source_repo.diff(target_before)
         if self.output == OutputType.json:
             self._print_sync_json(ret_diff, self.source_repo)
         else:
             self._print_sync_brief(ret_diff)
+
+    def _sync_until_settled(self, run_floor: Release) -> None:
+        """Run sync passes until the source Release holds across one.
+
+        A source that changed during a pass is read again with the target the pass staged,
+        and checked against both that target and the Release the run found. After
+        `MAX_UPDATED_REPO_RETRIES` passes the source is not read again
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Args:
+            run_floor: The target Release as the run found it.
+        """
+        for _ in range(MAX_UPDATED_REPO_RETRIES - 1):
+            if not self._sync_pass():
+                return
+            synced_hash = self.source_repo.release.hash
+            logger.info("---------- Retrieve load to verify source repo changes...")
+            self.source_repo.update(strict_arch=True)
+            if self.source_repo.release.hash == synced_hash:
+                return
+            logger.info("Source repo modified during synchronisation! Repeat sync...")
+            # reads go through the transaction, so the target now describes the bytes the
+            # previous pass staged -> txstore footmark rules; the run never goes below the
+            # Release it found -> [CRYPTO.md](CRYPTO.md#release-freshness)
+            self._check_fresh(self._load_target(), run_floor)
+        if self._sync_pass():
+            logger.warning(
+                "Source repo still changing after %d passes; committing the last pass",
+                MAX_UPDATED_REPO_RETRIES,
+            )
+
+    def _sync_pass(self) -> bool:
+        """Plan one pass from the loaded source and target, and sync it.
+
+        Returns:
+            False when the plan was empty, so nothing was synced.
+        """
+        logger.info("Building filelists...")
+        plan = self.source_repo.build_sync_lists(self.target_repo, indices_only=self.indices_only)
+        if plan.is_empty():
+            logger.info("Nothing to sync.")
+            return False
+        # a ChecksumException propagates to discard the transaction; cli.py logs it
+        self.source_repo.sync(self.target_repo, plan.copy, plan.delete, unproven=plan.unproven)
+        return True
+
+    def _check_fresh(self, *floors: Release) -> None:
+        """Check the loaded source Release against each floor, in order.
+
+        Skipped without GPG verification or with `--allow-release-rollback`
+        -> [CRYPTO.md](CRYPTO.md#release-freshness).
+
+        Args:
+            floors: Target Releases the source must not undercut.
+        """
+        if not self.source_repo.params.verify_gpg or self.allow_release_rollback:
+            return
+        now = datetime.now(UTC)
+        for floor in floors:
+            self.source_repo.release.check_fresh_against(floor, now)
 
     def _load_target(self) -> Release:
         """Load the target repo, treating a missing or corrupt one as empty.
@@ -368,26 +388,11 @@ class ActionCheck(Action):
             ActionException: An `--architectures` token is not an architecture name; refused
                 before any storage is opened.
         """
-        self._archs, self._indices_exclude = _selection(pars)
-        super().__init__(pars, create_path=create_path)
-        self.fix: bool = getattr(pars, "fix", False)
-
-    def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
-        """Open the target with the selection applied, verifying its Release.
-
-        Args:
-            pars: Command line arguments from argparser.
-            create_path: Create the target path or bucket if True.
-        """
-        logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
-        storage, params = attach_storage_repo(
-            pars,
-            pars.target_url,
-            create_path=create_path,
-            archs=self._archs,
-            indices_exclude=self._indices_exclude,
+        archs, indices_exclude = _selection(pars)
+        super().__init__(
+            pars, create_path=create_path, archs=archs, indices_exclude=indices_exclude
         )
-        self.target_repo = RepoRW(storage, params, gpg=self.gpg)
+        self.fix: bool = getattr(pars, "fix", False)
 
     def check(self) -> bool:
         """Check debian repo for consistency.

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import lzma
+import shutil
+import subprocess
 import tarfile
 import zlib
 from io import BytesIO, UnsupportedOperation
@@ -15,6 +17,7 @@ from helpers.factories import make_deb, make_tar_gz
 from txstore import StorageFS
 
 from debkit.repo import debfile as debfile_module
+from debkit.repo.compress import codec_for
 from debkit.repo.debfile import DebFile, DebFileException
 
 _PATH = "foo_1.0_amd64.deb"
@@ -289,3 +292,76 @@ def test_get_package_files_a_real_deb_under_its_source_package(
     pkg = DebFile(storage, path, comp="main").get_package()
 
     assert pkg.fields["Filename"] == expected
+
+
+# ---------------------------------------------------------------------------
+# control.tar decoded under a size limit
+# ---------------------------------------------------------------------------
+
+_HAS_ZSTD = shutil.which("zstd") is not None
+
+
+def _tar(members: dict[str, bytes]) -> bytes:
+    buf = BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, BytesIO(data))
+    return buf.getvalue()
+
+
+def _compress(suffix: str, data: bytes) -> bytes:
+    if suffix == ".zst":
+        return subprocess.run(
+            ["zstd", "-c", "-q"], input=data, capture_output=True, check=True
+        ).stdout
+    return codec_for(suffix).compress(data)
+
+
+_SUFFIXES = [
+    ".gz",
+    ".xz",
+    pytest.param(".zst", marks=pytest.mark.skipif(not _HAS_ZSTD, reason="no zstd binary")),
+]
+
+
+@pytest.mark.parametrize("suffix", _SUFFIXES)
+def test_init_reads_a_control_tar_in_each_dpkg_compression(tmp_path: Path, suffix: str) -> None:
+    tar = _compress(suffix, _tar({"./control": _CONTROL}))
+
+    deb = DebFile(
+        _storage(tmp_path, make_deb(control_tar=tar, control_name=f"control.tar{suffix}")), _PATH
+    )
+
+    assert deb.control == _CONTROL
+
+
+@pytest.mark.parametrize("suffix", _SUFFIXES)
+@pytest.mark.parametrize(
+    "members",
+    [
+        {"./pad": b"\0" * (1 << 20), "./control": _CONTROL},
+        {**{f"./e{i}": b"" for i in range(4096)}, "./control": _CONTROL},
+    ],
+    ids=["one-large-member", "many-empty-members"],
+)
+def test_init_refuses_a_control_tar_bomb_and_closes_the_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, members: dict[str, bytes]
+) -> None:
+    """A small member that inflates past the decoded cap is refused before the tar is walked."""
+    monkeypatch.setattr(debfile_module, "MAX_CONTROL_TAR_BYTES", 64 * 1024)
+    tar = _compress(suffix, _tar(members))
+    assert len(tar) < 64 * 1024
+    storage = _storage(tmp_path, make_deb(control_tar=tar, control_name=f"control.tar{suffix}"))
+
+    with pytest.raises(DebFileException, match="decodes past"):
+        DebFile(storage, _PATH)
+    assert storage.all_closed()
+
+
+def test_init_refuses_a_control_tar_in_an_unknown_compression(tmp_path: Path) -> None:
+    storage = _storage(tmp_path, make_deb(control_tar=b"x", control_name="control.tar.lz4"))
+
+    with pytest.raises(DebFileException, match="unknown compression|Invalid .deb"):
+        DebFile(storage, _PATH)

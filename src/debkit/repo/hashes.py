@@ -7,7 +7,6 @@ is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from txstore import COMPARE_HASH_LIST, SUPPORT_HASH_LIST, compare_digests
 
@@ -61,7 +60,7 @@ class HexDigests:
 
     def __init__(self) -> None:
         """Initialize the HexDigests object."""
-        self.digests: dict[str, dict[str, Any]] = {}
+        self.digests: dict[str, dict[str, str]] = {}
         self.modified = False
 
     def verify_digests(self, filename: str, incoming_digests: dict[str, str]) -> bool:

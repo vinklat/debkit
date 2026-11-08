@@ -73,6 +73,10 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 | `--incoming-url` | `DEBKIT_INCOMING_URL` | — | Incoming storage URL or path → [VALIDATION.md](VALIDATION.md#storage-urls) |
 | `--component` | `DEBKIT_COMPONENT` | `main` | Target component; a flat target keeps its single index slot but still nests the pool key under it → [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 
+Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither or both →
+`ActionException` (Generic). A `--deb-filename` without the `.deb` suffix → `ActionException`
+(Generic).
+
 ## Remove
 
 | Flag | Variable | Default | Interpretation |

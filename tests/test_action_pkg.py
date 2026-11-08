@@ -677,6 +677,31 @@ def test_list_json_prints_the_fields_of_every_package(
     assert sorted(pkg["Filename"] for pkg in packages) == [_HELLO, _WORLD]
 
 
+@pytest.mark.parametrize("flat", [False, True], ids=["all-in-every-arch", "flat-shared-index"])
+def test_list_prints_a_payload_held_by_several_arch_slots_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], flat: bool
+) -> None:
+    """Regression: `list` printed the payload once per arch slot that held it."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(flat=True, dist="stable") if flat else make_params()
+    built = RepoRW(storage, params)
+    built.setup({"Architectures": "amd64 arm64", "Components": "main"})
+    payload = "pool/main/s/shared/shared_1.0_all.deb"
+    storage.put(payload, b"deb")
+    for arch in ("amd64", "arm64"):
+        built.insert_pkg("main", arch, make_package(payload, Version="1.0", Architecture="all"))
+    built.save()
+    action = _make_pkg_action()
+    action.output = OutputType.brief
+    action.target_repo = RepoRW(
+        storage, make_params(flat=True, dist="stable") if flat else make_params()
+    )
+
+    action.list_packages()
+
+    assert capsys.readouterr().out.split() == [payload]
+
+
 def test_list_skips_an_arch_whose_index_does_not_decode(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -699,6 +724,50 @@ def test_list_of_a_repository_without_packages_prints_nothing(
     _view_action(tmp_path, output, empty=True).list_packages()
 
     assert capsys.readouterr().out == expected
+
+
+@pytest.mark.parametrize(
+    ("changes", "deb"),
+    [(None, None), ("hello.changes", "hello_1.0_amd64.deb")],
+    ids=["neither", "both"],
+)
+def test_insert_needs_exactly_one_upload_file(changes: str | None, deb: str | None) -> None:
+    from debkit.action import ActionException
+
+    action = _make_pkg_action()
+    action.changes_filename, action.deb_filename = changes, deb
+
+    with pytest.raises(ActionException, match="exactly one of --changes-filename or"):
+        action.insert()
+
+
+def test_insert_refuses_a_deb_filename_without_the_deb_suffix() -> None:
+    from debkit.action import ActionException
+
+    action = _make_pkg_action()
+    action.deb_filename = "hello_1.0_amd64.txt"
+
+    with pytest.raises(ActionException, match="Invalid .deb filename"):
+        action.insert()
+
+
+def test_remove_refuses_a_pattern_no_package_matches(tmp_path: Path) -> None:
+    """Nothing is written: the transaction the miss aborts is discarded."""
+    from debkit.action import ActionException
+
+    storage = StorageFS(str(tmp_path))
+    built = RepoRW(storage, make_params())
+    built.setup({"Architectures": "amd64", "Components": "main"})
+    built.insert_pkg("main", "amd64", make_package(_HELLO, Version="1.0"))
+    built.save()
+    action = _make_pkg_action()
+    action.pkg_pattern = {"Package": re.compile("^nomatch$")}
+    action.target_repo = RepoRW(storage, make_params())
+
+    with pytest.raises(ActionException, match="No packages matched the pattern"):
+        action.remove()
+
+    assert TransactionHistory(storage).load() == []
 
 
 def test_insert_without_incoming_storage_raises() -> None:

@@ -9,6 +9,7 @@ from copy import copy
 from typing import (
     TYPE_CHECKING,
     Any,
+    NamedTuple,
 )
 
 from txstore import calc_digests, compare_digests, is_unsafe_path
@@ -35,6 +36,22 @@ MAX_INDICES_BYTES = 256 * 1024 * 1024
 # Debian Policy 5.1: a stanza ends at a blank line, which may hold spaces or tabs
 # -> [VALIDATION.md](VALIDATION.md#index-decoding)
 _STANZA_SEPARATOR = re.compile(r"\n[ \t]*\n\s*")
+
+
+class PackagesDiff(NamedTuple):
+    """How a newer set of packages differs from an older one, each by package name.
+
+    Attributes:
+        added: Packages only the newer set holds.
+        removed: Packages only the older set holds.
+        updated: Packages both hold that the newer set changed, as the newer set has them.
+        old_versions: The older set's versions of the updated packages.
+    """
+
+    added: dict[str, Package]
+    removed: dict[str, Package]
+    updated: dict[str, Package]
+    old_versions: dict[str, Package]
 
 
 class PackagesException(Exception):
@@ -481,13 +498,11 @@ class Packages:
 
         return compare_digests(incoming_digests, package.get_digests())
 
-    def diff(
-        self, second: Packages
-    ) -> tuple[dict[str, Package], dict[str, Package], dict[str, Package], dict[str, Package]]:
-        """Compare two sets of packages.
+    def diff(self, second: Packages) -> PackagesDiff:
+        """Compare this, the older set of packages, with `second`, the newer one.
 
         Args:
-            second: The second set of packages to compare with.
+            second: The newer set of packages.
 
         Returns:
             Packages by name: added, removed, and updated in `second`, and the old versions the
@@ -514,7 +529,7 @@ class Packages:
             if pkg_name in updated_packages
         }
 
-        return added_packages, removed_packages, updated_packages, old_versions
+        return PackagesDiff(added_packages, removed_packages, updated_packages, old_versions)
 
     def is_empty(self) -> bool:
         """Check if the Packages object is empty.

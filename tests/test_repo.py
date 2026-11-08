@@ -408,3 +408,14 @@ def test_stats_refuses_a_package_size_that_is_not_a_byte_count() -> None:
 
     with pytest.raises(PackageException, match="malformed Size"):
         repo.stats()
+
+
+def test_diff_reports_the_packages_of_a_slot_only_the_older_repo_holds_as_removed() -> None:
+    """Regression: a slot the source dropped was skipped, so the sync report said Removed 0."""
+    newer, older = _repo(), _repo()
+    _with_component_package(older, _DEB, _DIGEST, arch="arm64")
+
+    diff = newer.diff(older)
+
+    assert diff.get_filenames_to_remove() == {_DEB}
+    assert diff.get_filenames_to_copy() == set()

@@ -86,3 +86,8 @@ def test_package_get_filename_returns_the_filename() -> None:
 def test_package_get_filename_without_a_filename_raises(fields: dict[str, str]) -> None:
     with pytest.raises(PackageException, match="filename is empty"):
         Package(fields=fields).get_filename()
+
+
+def test_set_filename_refuses_an_empty_filename() -> None:
+    with pytest.raises(PackageException, match="filename is empty"):
+        Package(fields={"Filename": "pool/x.deb", "Size": "1"}).set_filename("")

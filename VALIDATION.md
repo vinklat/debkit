@@ -96,7 +96,8 @@ per entry by its transfer; the source is never probed.
 | Unpublished entry | A selected path the source does not publish stays in the set, so it is never purged from the target | — |
 | Payload deletion | A payload dropped from one source index is deleted from the target only when no selected source index still lists it, so a shared `all` payload survives its removal from one architecture | — |
 | Shared root | A componented target root may hold other dists beside the synced one, sharing `pool/`: a sync or `check --fix` never deletes a path under another `dists/<dist>/`, nor a payload another dist's index lists | — |
-| Shared root claims | Each other dist is loaded without signature or digest checks, since its claims only keep paths; a flat layout has no `dists/` tree, so the shared root rules do not apply | Another dist that does not load → nothing outside the synced `dists/<dist>/` is deleted, logged as a warning |
+| Shared root claims | Each other dist loads exactly the binary and source indices its root Release lists, without signature or digest checks, since its claims only keep paths; a flat layout has no `dists/` tree, so the shared root rules do not apply | — |
+| Shared root unknown | Another dist whose name is not safe, or whose Release or a listed index does not load or is missing, leaves its payloads unknown | → nothing outside the synced `dists/<dist>/` is deleted, logged as a warning |
 | Absent entry | A selected path the target lacks and no parse proved is copied by a forced pass without a source probe, even when both root Releases record its digest alike: the last sync copies the Release whether or not it copied the object | Missing at the source → skipped at transfer, logged at debug, never retried |
 | Absent entry recovery | An absent entry never forces the index pass, so a run with nothing else to sync copies nothing; one the source 404ed once is recovered by the next forced pass or `--indices-only` | — |
 | Parse-proven entry | A selected path a parse found, a root Release file or a component `Packages`, is copied without a source probe when the target lacks it: the parse already fetched it from the source | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
@@ -122,8 +123,8 @@ per entry by its transfer; the source is never probed.
 
 Release files and stored indices are read by `read_capped()` in `repo/compress.py`, which reads at
 most one byte past a cap, so each is refused before it is verified or buffered in full. Upload
-control data is capped by `_control_of()` in `repo/debfile.py` from the member headers. "Checked"
-means digest verification is on.
+control data is capped by `_control_of()` in `repo/debfile.py`, which decodes the `control.tar`
+member under a limit and walks it as a stream. "Checked" means digest verification is on.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
@@ -131,6 +132,7 @@ means digest verification is on.
 | Per-arch Release | At most the `Size` the checked root Release records, else `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
 | Stored index | At most the largest `Size` a checked root or per-arch Release records, else `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
 | Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
+| Upload control tar | The `control.tar` decodes to at most `MAX_CONTROL_TAR_BYTES` (64 MiB), which also bounds its member count; it is uncompressed, `.gz`, `.xz`, `.bz2`, `.lzma`, or `.zst`, the last decoded by the `zstd` binary. | Past the limit, another compression, or a stream that does not decode → `DebFileException` (Read) |
 
 ## Index decoding
 

@@ -13,7 +13,7 @@ from collections.abc import Buffer
 from unittest.mock import MagicMock
 
 import pytest
-from txstore import StorageMetrics
+from txstore import StorageException, StorageMetrics
 
 from debkit.repo.compress import (
     CODECS,
@@ -258,3 +258,18 @@ def test_read_capped_refuses_an_object_past_the_limit_without_reading_it_all() -
         read_capped(storage, "p", 10)
     assert stream.read_total == 11
     assert stream.closed
+
+
+class _FailingStream(io.BytesIO):
+    def read(self, size: int | None = -1, /) -> bytes:
+        raise OSError("disk gone")
+
+
+def test_read_capped_maps_a_read_fault_as_txstore_get_does() -> None:
+    storage = MagicMock()
+    storage.get_stream.return_value = _FailingStream()
+    storage.metrics = StorageMetrics()
+
+    with pytest.raises(StorageException, match="Error reading p: disk gone"):
+        read_capped(storage, "p", 10)
+    assert storage.metrics.read_errors_total == 1

@@ -116,7 +116,9 @@ def test_log_json(pars: Namespace, storage: StorageFS, capsys: pytest.CaptureFix
 # --------------------------------------------------------------------------- #
 
 
-def test_revert_empty_raises(pars: Namespace) -> None:
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_revert_empty_raises(pars: Namespace, dry_run: bool) -> None:
+    pars.dry_run = dry_run
     with pytest.raises(ActionException, match="No transactions to revert"):
         ActionHistory(pars).revert()
 

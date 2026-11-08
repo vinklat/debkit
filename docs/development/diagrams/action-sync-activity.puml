@@ -12,7 +12,7 @@ partition "with maybe_transaction(target.storage)" {
     ReleaseNotFoundException -> log warn, continue
     ChecksumException    -> log warn, target.reset()
   end note
-  :target_floor = run_floor = copy(target.release)
+  :run_floor = copy(target.release)
   (taken before any reset);
   :target_before = copy(target);
   if (verify_existing?) then (yes)
@@ -26,27 +26,14 @@ partition "with maybe_transaction(target.storage)" {
       :log warning;
     endif
   endif
+  :source.update(strict_arch=True);
+  :check_fresh(run_floor);
+  note right
+    only with verify_gpg and not allow_release_rollback;
+    ReleaseFreshnessException -> raise; propagates out
+    of the maybe_transaction CM
+  end note
   repeat
-    :source.update(strict_arch=True);
-    if (a later pass?) then (yes)
-      if (prev_hash == source.release.hash?) then (yes)
-        break
-      endif
-      :load target again;
-      :target_floor = copy(target.release);
-      note right: reads the bytes the previous\npass staged
-    endif
-    if (source.params.verify_gpg and not allow_release_rollback?) then (yes)
-      :source.release.check_fresh_against(target_floor, now);
-      if (a later pass?) then (yes)
-        :source.release.check_fresh_against(run_floor, now);
-      endif
-      note right
-        ReleaseFreshnessException -> raise;
-        propagates out of the loop and
-        out of the maybe_transaction CM
-      end note
-    endif
     :plan = source.build_sync_lists(target, indices_only);
     if (plan.is_empty()?) then (yes)
       :log "Nothing to sync";
@@ -63,11 +50,20 @@ partition "with maybe_transaction(target.storage)" {
       an unproven index the source lacks
       is skipped instead
     end note
-    :prev_hash = source.release.hash;
-  repeat while (fewer than MAX_UPDATED_REPO_RETRIES passes?) is (yes)
-  -> no;
-  :log warning "Source repo still changing";
-  note right: commits the last pass
+    if (MAX_UPDATED_REPO_RETRIES passes run?) then (yes)
+      :log warning "Source repo still changing";
+      note right: commits the last pass;\nthe source is not read again
+      break
+    endif
+    :synced = source.release.hash;
+    :source.update(strict_arch=True);
+    if (source.release.hash == synced?) then (yes)
+      break
+    endif
+    :load target again;
+    note right: reads the bytes the previous\npass staged
+    :check_fresh(target.release, run_floor);
+  repeat while (source changed during the pass)
 }
 
 if (any exception escaped the partition?) then (yes)

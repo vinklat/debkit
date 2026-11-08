@@ -401,7 +401,7 @@ class Release(HexDigests):
         Returns:
             True with GPG verification on and a `GnuPG` to sign with.
         """
-        return self.params.verify_gpg and self.gpg is not None
+        return self._checks_signatures()
 
     def _verify_gpg(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
         """Verify GPG signature.
@@ -517,13 +517,14 @@ class Release(HexDigests):
         self._parse_loaded(self._load_root_files(use_inrelease))
         logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
 
-    def load_component(self, comp: str, arch: str, root_release: Release | None = None) -> bool:
+    def load_component(self, comp: str, arch: str, root_release: Release) -> bool:
         """Load the per-component Release of one architecture.
 
         Args:
             comp: The component to load.
             arch: The architecture to load.
-            root_release: The root Release listing its digests. Defaults to None (not verified).
+            root_release: The root Release listing its digests, checked when digest verification
+                is on.
 
         Raises:
             ValueError: `comp` or `arch` is empty.
@@ -544,8 +545,8 @@ class Release(HexDigests):
         self.found_indices_files = [filename]
 
         key = self.params.release_key(filename)
-        checked = self.params.verify_digests and root_release is not None
-        declared = root_release.declared_size(key) if checked and root_release else None
+        checked = self.params.verify_digests
+        declared = root_release.declared_size(key) if checked else None
         try:
             data = read_capped(
                 self.storage, filename, MAX_RELEASE_BYTES if declared is None else declared
@@ -554,9 +555,8 @@ class Release(HexDigests):
             if declared is None:
                 raise ReleaseReadException(f"{exc}.") from exc
             raise ChecksumException(f"{key} is larger than the root Release records.") from exc
-        if checked and root_release is not None:
-            if not root_release.verify_digests(key, calc_digests(data)):
-                raise ChecksumException(f"{key} checksum mismatch.")
+        if checked and not root_release.verify_digests(key, calc_digests(data)):
+            raise ChecksumException(f"{key} checksum mismatch.")
 
         self._parse_loaded(data)
         logger.info(

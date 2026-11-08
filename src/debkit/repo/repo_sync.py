@@ -336,7 +336,7 @@ class RepoSync(Repo):
     def _transfer_file(
         self,
         file: str,
-        target_repo: Repo,
+        target_repo: RepoRW,
         progress: tuple[int, int] | None = None,
         *,
         missing_ok: bool = False,
@@ -389,7 +389,7 @@ class RepoSync(Repo):
 
         return True
 
-    def _delete_file(self, file: str, target_repo: Repo) -> None:
+    def _delete_file(self, file: str, target_repo: RepoRW) -> None:
         """Delete `file` from `target_repo`.
 
         Args:
@@ -401,7 +401,7 @@ class RepoSync(Repo):
 
     def sync(
         self,
-        target_repo: Repo,
+        target_repo: RepoRW,
         copy_list: list[str],
         delete_list: list[str],
         *,

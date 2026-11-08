@@ -19,35 +19,20 @@ CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
 ActionSync -> Tgt: update(skip_unreadable=True)
 Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
-note over ActionSync: target_floor = run_floor = copy(target.release), before any reset\ntarget_before = copy(target)
+note over ActionSync: run_floor = copy(target.release), before any reset\ntarget_before = copy(target)
 
 opt verify_existing
   ActionSync -> Tgt: check(fix=True, purge_orphans=False)
   Tgt -> TStor: list(); read, delete the failing payloads\n[staged in the transaction]
 end
 
+ActionSync -> Src: update(strict_arch=True)
+opt verify_gpg and not allow_release_rollback
+  ActionSync -> Src: release.check_fresh_against(run_floor, now)
+  Src --> ActionSync: returns, or raises ReleaseFreshnessException
+end
+
 loop up to MAX_UPDATED_REPO_RETRIES passes
-  ActionSync -> Src: update(strict_arch=True)
-  Src --> ActionSync: release.hash
-  break a later pass and prev_hash == release.hash
-    note over ActionSync: source unchanged, exit loop
-  end
-
-  opt a later pass
-    ActionSync -> Tgt: update(skip_unreadable=True)
-    note right: reads through the transaction\nthe bytes the previous pass staged
-    note over ActionSync: target_floor = copy(target.release), before any reset
-  end
-
-  opt verify_gpg and not allow_release_rollback
-    ActionSync -> Src: release.check_fresh_against(target_floor, now)
-    Src --> ActionSync: returns, or raises ReleaseFreshnessException
-    opt a later pass
-      ActionSync -> Src: release.check_fresh_against(run_floor, now)
-      Src --> ActionSync: returns, or raises ReleaseFreshnessException
-    end
-  end
-
   ActionSync -> Src: build_sync_lists(target, indices_only)
   Src --> ActionSync: SyncPlan(copy, delete, unproven)
   break plan.is_empty()
@@ -56,10 +41,23 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
 
   ActionSync -> Src: sync(target, plan.copy, plan.delete, plan.unproven)
   Src --> ActionSync: returns, or raises RepoSyncException
-end
+  break the last pass ran
+    note over ActionSync: log warning "Source repo still changing";\nthe last pass is committed, the source is not read again
+  end
 
-opt every pass ran and the source never settled
-  note over ActionSync: log warning "Source repo still changing";\nthe last pass is committed
+  ActionSync -> Src: update(strict_arch=True)
+  Src --> ActionSync: release.hash
+  break release.hash unchanged by the pass
+    note over ActionSync: source settled
+  end
+
+  ActionSync -> Tgt: update(skip_unreadable=True)
+  note right: reads through the transaction\nthe bytes the previous pass staged
+  opt verify_gpg and not allow_release_rollback
+    ActionSync -> Src: release.check_fresh_against(target.release, now)
+    ActionSync -> Src: release.check_fresh_against(run_floor, now)
+    Src --> ActionSync: returns, or raises ReleaseFreshnessException
+  end
 end
 
 ActionSync -> CM: __exit__(None)

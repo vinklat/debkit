@@ -144,7 +144,8 @@ def attach_storage_repo(
         indices_exclude: The `--indices-exclude` globs; None mirrors every listed index.
 
     Raises:
-        RepoReadException: If the URL is invalid or empty.
+        RepoParamsException: If the deb source or its URL is invalid.
+        RepoReadException: If the storage cannot be constructed.
 
     Returns:
         Tuple of (storage, repo_params).
@@ -158,8 +159,8 @@ def attach_storage_repo(
     )
     repo_params.from_deb_source(url)
 
-    if repo_params.url is None:
-        raise RepoReadException("Invalid URL.")
+    # `from_deb_source` sets the URL or raises
+    assert repo_params.url is not None
 
     try:
         storage = open_storage(pars, repo_params.url, create_path=create_path)
@@ -262,13 +263,28 @@ class Action:
 
     target_repo: RepoRW
 
-    def __init__(self, pars: Namespace, create_path: bool = False):
+    def __init__(
+        self,
+        pars: Namespace,
+        create_path: bool = False,
+        *,
+        archs: list[str] | None = None,
+        indices_exclude: list[str] | None = None,
+    ):
         """Initialize repo objects and storages.
+
+        The repositories open inside the constructor through `_attach_repos`, so everything
+        that hook reads is set here first.
 
         Args:
             pars: Parsed command line arguments.
             create_path: Create path or bucket if True.
+            archs: The architectures every opened repository selects; None selects the Release's.
+            indices_exclude: Index exclude globs every opened repository applies; None excludes
+                nothing.
         """
+        self._archs = archs
+        self._indices_exclude = indices_exclude
         self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
         self.gpg: GnuPG | None = None
         self.history_retention: HistoryRetention = history_retention(pars)
@@ -292,9 +308,9 @@ class Action:
         self._attach_repos(pars, create_path)
 
     def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
-        """Open the target repository, verified and signed with `gpg`.
+        """Open the target repository with the selection, verified and signed with `gpg`.
 
-        A subclass that opens more repositories or narrows their selection overrides it.
+        A subclass that opens more repositories overrides it.
 
         Args:
             pars: Parsed command line arguments.
@@ -302,7 +318,13 @@ class Action:
         """
         # `--target-url` is required, so every action has a target
         logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
-        storage, params = attach_storage_repo(pars, pars.target_url, create_path=create_path)
+        storage, params = attach_storage_repo(
+            pars,
+            pars.target_url,
+            create_path=create_path,
+            archs=self._archs,
+            indices_exclude=self._indices_exclude,
+        )
         self.target_repo = RepoRW(storage, params, gpg=self.gpg)
 
     @property

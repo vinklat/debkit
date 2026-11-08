@@ -38,7 +38,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-DEFAULT_REPO_FIELDS = {"Architectures": "amd64 arm64 all", "Components": "main"}
+# the component an insert targets without `--component` → [CONFIG.md](CONFIG.md#insert)
+DEFAULT_COMPONENT = "main"
+DEFAULT_REPO_FIELDS = {"Architectures": "amd64 arm64 all", "Components": DEFAULT_COMPONENT}
 
 
 class ActionPkg(Action):
@@ -56,7 +58,7 @@ class ActionPkg(Action):
         self.changes_filename: str | None = getattr(pars, "changes_filename", None)
         self.changes_sha256: str | None = getattr(pars, "changes_sha256", None)
         self.deb_filename: str | None = getattr(pars, "deb_filename", None)
-        self.component: str = getattr(pars, "component", "main")
+        self.component: str = getattr(pars, "component", DEFAULT_COMPONENT)
 
         self.incoming_storage: Storage | None = (
             attach_storage_plain(pars, pars.incoming_url) if hasattr(pars, "incoming_url") else None
@@ -215,7 +217,7 @@ class ActionPkg(Action):
         """
         if (self.changes_filename is None) == (self.deb_filename is None):
             raise ActionException(
-                "Please provide either --changes-filename or --deb-filename, not both"
+                "insert needs exactly one of --changes-filename or --deb-filename"
             )
 
         if self.incoming_storage is None:
@@ -425,7 +427,7 @@ class ActionPkg(Action):
             env="DEBKIT_COMPONENT",
             dest="component",
             help="component of Debian repo for incoming packages",
-            default="main",
+            default=DEFAULT_COMPONENT,
             type=component_type,
         )
 

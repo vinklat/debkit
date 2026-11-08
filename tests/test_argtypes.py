@@ -27,7 +27,9 @@ def test_positive_int_type_accepts_one_or_greater(value: str, expected: int) -> 
     assert positive_int_type(value) == expected
 
 
-@pytest.mark.parametrize("value", ["0", "-1", "", "  ", "abc", "1.5", "1_0", "١"])
+@pytest.mark.parametrize(
+    "value", ["0", "-1", "", "  ", "abc", "1.5", "1_0", "١", "+-5", "--5", "-+5"]
+)
 def test_positive_int_type_rejects_non_positive_and_non_decimal(value: str) -> None:
     with pytest.raises(ArgumentTypeError):
         positive_int_type(value)
@@ -40,7 +42,7 @@ def test_history_max_age_type_accepts_its_range(value: str, expected: int) -> No
     assert history_max_age_type(value) == expected
 
 
-@pytest.mark.parametrize("value", ["-1", "", "abc", str(HISTORY_MAX_AGE_LIMIT + 1)])
+@pytest.mark.parametrize("value", ["-1", "", "abc", str(HISTORY_MAX_AGE_LIMIT + 1), "+-5", "--5"])
 def test_history_max_age_type_rejects_out_of_range_and_non_numeric(value: str) -> None:
     with pytest.raises(ArgumentTypeError):
         history_max_age_type(value)
