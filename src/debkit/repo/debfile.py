@@ -32,6 +32,11 @@ _PACKAGE_NAME = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 # A binary package built from a source of another version names it as `Source: <name> (<version>)`
 _SOURCE_VERSION = re.compile(r"\s+\([^()]*\)$")
 
+# Debian Policy 5.6.12: `[epoch:]upstream[-revision]`, upstream starting alphanumeric (dpkg only
+# warns on a letter) and a hyphen always followed by a revision; a published stanza with no
+# usable Version is one apt cannot install -> [VALIDATION.md](VALIDATION.md#filename-safety)
+_VERSION = re.compile(r"(?:[0-9]+:)?[A-Za-z0-9][A-Za-z0-9.+~-]*(?<!-)")
+
 
 class DebFileException(Exception):
     """Exception raised for errors inspecting a ``.deb`` file."""
@@ -160,14 +165,16 @@ class DebFile:
     def get_package(self) -> Package:
         """Get control data from the Debian package.
 
-        The control file comes from the upload, so its `Package` and `Source` fields and the
-        upload path are checked before they name a pool key; nothing has been transferred yet.
+        The control file comes from the upload, so its `Package`, `Source`, and `Version` fields
+        and the upload path are checked before they are published; nothing has been transferred
+        yet.
 
         Raises:
             DebFileException: If the control file is not a bytes object.
             DebFileException: If the control file is not UTF-8.
             DebFileException: If the `Package` field is missing or not a policy name.
             DebFileException: If the `Source` field, without its version, is not a policy name.
+            DebFileException: If the `Version` field is missing or not a Debian version.
             DebFileException: If the pool key would be an unsafe storage path.
 
         Returns:
@@ -190,6 +197,9 @@ class DebFile:
         source = _SOURCE_VERSION.sub("", str(package.fields.get("Source", pkg_name)))
         if not _PACKAGE_NAME.fullmatch(source):
             raise DebFileException(f"{self.path} names no valid Source: {source!r}")
+        version = package.fields.get("Version")
+        if not isinstance(version, str) or not _VERSION.fullmatch(version):
+            raise DebFileException(f"{self.path} names no valid Version: {version!r}")
 
         filename = pool_path(self.comp, source, self.path)
         if is_unsafe_path(filename):

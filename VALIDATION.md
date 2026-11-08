@@ -213,6 +213,7 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | `Sources` payload | Stanza `Directory` and the joined payload key pass the unsafe-key rule. | → `PackagesException` (Read) |
 | Insert `Package` name | The `.deb` control `Package` field is present and a Debian Policy name, `^[a-z0-9][a-z0-9+.-]+$`, checked before the transfer. | → `DebFileException` (Read) |
 | Insert source name | The control `Source` field, a trailing ` (<version>)` stripped, else the `Package` field, is a Debian Policy name as above, checked before the transfer. | → `DebFileException` (Read) |
+| Insert version | The control `Version` field is present and a Debian Policy version, `^(?:[0-9]+:)?[A-Za-z0-9][A-Za-z0-9.+~-]*$` not ending in `-`, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool path | The Debian source pool key `pool/[<component>/]<prefix>/<source>/<upload file name>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool object | A pool key the target already holds is replaced only by identical bytes: every dist of the root and every arch index may list it, and their records name the bytes it holds. An identical upload passes. | Different bytes → `ActionException` (Generic), the staged transfer discarded |
 | Insert pool prefix | `lib` and the next letter for a source name longer than 3 starting with `lib`, else its first letter. | — |

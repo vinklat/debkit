@@ -30,9 +30,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
-- An unsafe `.changes` entry, `Package` or `Source` name, or pool path is refused before any
-  transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred
-  digests differ from its `.changes` entry is refused after it →
+- An unsafe `.changes` entry, `Package` or `Source` name, `Version`, or pool path is refused
+  before any transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose
+  transferred digests differ from its `.changes` entry is refused after it →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - The pool key holds no dist and no arch beyond the upload file name, so other dists and arch
   indices may list it; a pool key already holding different bytes is refused after the transfer,

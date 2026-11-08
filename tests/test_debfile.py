@@ -236,13 +236,13 @@ def test_get_package_without_component_uses_flat_pool_path() -> None:
     ("control", "path"),
     [
         (b"Version: 1.0\n", "foo_1.0_amd64.deb"),
-        (b"Package: ../../../contrib/h/hello\n", "hello_1.0_amd64.deb"),
-        (b"Package: Foo\n", "foo_1.0_amd64.deb"),
-        (b"Package: foo\n", "incoming/.."),
-        (b"Package: foo\nSource: ../../../contrib/h/hello\n", "foo_1.0_amd64.deb"),
-        (b"Package: foo\nSource: Foo (1.0)\n", "foo_1.0_amd64.deb"),
-        (b"Package: foo\nSource: foo (1.0\n", "foo_1.0_amd64.deb"),
-        (b"Package: foo\nSource:\n", "foo_1.0_amd64.deb"),
+        (b"Package: ../../../contrib/h/hello\nVersion: 1.0\n", "hello_1.0_amd64.deb"),
+        (b"Package: Foo\nVersion: 1.0\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nVersion: 1.0\n", "incoming/.."),
+        (b"Package: foo\nSource: ../../../contrib/h/hello\nVersion: 1.0\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nSource: Foo (1.0)\nVersion: 1.0\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nSource: foo (1.0\nVersion: 1.0\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nSource:\nVersion: 1.0\n", "foo_1.0_amd64.deb"),
     ],
     ids=[
         "missing-package",
@@ -259,6 +259,28 @@ def test_get_package_refuses_a_name_that_steers_the_pool_key(control: bytes, pat
     deb = DebFile(_streaming(control), path, comp="main")
     with pytest.raises(DebFileException):
         deb.get_package()
+
+
+@pytest.mark.parametrize(
+    "version",
+    [None, "", "!!", "1.0-", "1:", "1.0\n second", ":1.0"],
+    ids=["missing", "empty", "garbage", "empty-revision", "epoch-only", "multi-line", "bare-colon"],
+)
+def test_get_package_refuses_a_control_without_a_debian_version(version: str | None) -> None:
+    control = b"Package: foo\n" + (b"" if version is None else f"Version: {version}\n".encode())
+    deb = DebFile(_streaming(control), _PATH, comp="main")
+
+    with pytest.raises(DebFileException, match="names no valid Version"):
+        deb.get_package()
+
+
+@pytest.mark.parametrize("version", ["1.0", "2:1.2~rc1-3+b1", "0.9.8a-1", "a1.0-1"])
+def test_get_package_accepts_a_debian_version(version: str) -> None:
+    control = f"Package: foo\nVersion: {version}\n".encode()
+
+    assert DebFile(_streaming(control), _PATH, comp="main").get_package().fields["Version"] == (
+        version
+    )
 
 
 @pytest.mark.parametrize(
