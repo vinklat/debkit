@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from txstore import StorageNotFoundException, calc_digests, compare_digests
 
+from debkit.repo.compress import SizeLimitError, read_capped
 from debkit.repo.gnupg import canonical_text, cleartext_body
 from debkit.repo.hashes import (
     SUPPORT_HASH_LIST,
@@ -37,6 +38,10 @@ logger.addHandler(logging.NullHandler())
 # intentionally excluded: folding a stray token into a hash block shifts the
 # (digest, size, filename) triple alignment and silently maps wrong digests.
 _CONTINUATION_FIELDS = frozenset({"Architectures", "Components"})
+
+# Largest Release file read when no signed Release records its size; it is read before its
+# signature is checked -> [VALIDATION.md](VALIDATION.md#object-sizes)
+MAX_RELEASE_BYTES = 16 * 1024 * 1024
 _HASH_BLOCK_FIELDS = frozenset(SUPPORT_HASH_LIST)
 
 
@@ -130,41 +135,50 @@ class Release(HexDigests):
         hashfuns: Available hexdigest algorithms in data.
         hash: Hexdigest of a file content (for changes detection).
         root_digests: Release key → digests of each root Release file as the last load fetched it.
-        is_root: True once `load` or `setup` made this the root Release; a root save writes and
-            signs the layout's root paths, not the file it was read from.
+        is_root: Whether this is the root Release, fixed at construction; a root save writes
+            and signs the layout's root paths, not the file it was read from, and a
+            per-component one is never signed.
     """
 
-    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
+    def __init__(
+        self,
+        storage: Storage,
+        params: RepoParams,
+        gpg: GnuPG | None = None,
+        *,
+        root: bool = False,
+    ) -> None:
         """Initialize Release object.
 
         Args:
             storage: The storage class of the repo.
             params: The input parameters of the repo.
             gpg: Optional GnuPG object. Defaults to None.
+            root: Whether this is the root Release, loaded by `load` and started by `setup`;
+                otherwise a per-component one, loaded by `load_component` and started by
+                `setup_component`. Defaults to False.
         """
         self.storage = storage
         self.params = params
         self.gpg: GnuPG | None = gpg
+        self.is_root = root
+        super().__init__()
+        self._clear_state()
+
+    def reset(self) -> None:
+        """Reset Release object to defaults, keeping its kind."""
+        self._clear_state()
+
+    def _clear_state(self) -> None:
+        """Set everything a load or a setup fills to its empty value."""
+        self.modified = False
         self.fields: dict[str, Any] = {}
+        self.digests = {}
         self.filename: str | None = None
         self.found_indices_files: list[str] = []
         self.hashfuns: list[str] = []
         self.hash = ""
         self.root_digests: dict[str, dict[str, str]] = {}
-        self.is_root = False
-        super().__init__()
-
-    def reset(self) -> None:
-        """Reset Release object to defaults."""
-        self.modified = False
-        self.fields = {}
-        self.digests = {}
-        self.filename = None
-        self.found_indices_files = []
-        self.hashfuns = []
-        self.hash = ""
-        self.root_digests = {}
-        self.is_root = False
 
     def __copy__(self) -> Release:
         """Create a copy of this Release whose digest records are its own.
@@ -175,7 +189,7 @@ class Release(HexDigests):
         Returns:
             A copy of this Release.
         """
-        ret = Release(self.storage, self.params, gpg=self.gpg)
+        ret = Release(self.storage, self.params, gpg=self.gpg, root=self.is_root)
         ret.fields = self.fields.copy()
         ret.digests = {key: digests.copy() for key, digests in self.digests.items()}
         ret.filename = self.filename
@@ -184,7 +198,6 @@ class Release(HexDigests):
         ret.modified = self.modified
         ret.hash = self.hash
         ret.root_digests = {key: digests.copy() for key, digests in self.root_digests.items()}
-        ret.is_root = self.is_root
         return ret
 
     def __repr__(self) -> str:
@@ -328,6 +341,12 @@ class Release(HexDigests):
         if not (release_path_exists or inrelease_path_exists):
             raise ReleaseNotFoundException(f"File not found: {release_path} or {inrelease_path}")
 
+        # a detached signature signs `Release` alone, so without one it is never verified and
+        # never mirrored -> [CRYPTO.md](CRYPTO.md#gpg)
+        if release_gpg_path_exists and not release_path_exists:
+            logger.warning("%s signs no %s. Skipped.", release_gpg_path, release_path)
+            release_gpg_path_exists = False
+
         # an unsigned Release reads as-is when no signature is checked
         # -> [CRYPTO.md](CRYPTO.md#verification-switches)
         if self._checks_signatures() and not (release_gpg_path_exists or inrelease_path_exists):
@@ -345,10 +364,11 @@ class Release(HexDigests):
             if exists
         ]
 
-        # not Release or without Release.gpg if required -> use InRelease, when there is one
-        use_inrelease = inrelease_path_exists and (
-            (not release_path_exists) or (self.params.verify_gpg and not release_gpg_path_exists)
-        )
+        # with verification on, a Release without its detached signature is read from InRelease
+        # even when no GnuPG checks it here, as the sync target: the verified source reads the
+        # same form, so both hash the same body -> [CRYPTO.md](CRYPTO.md#gpg)
+        prefers_signed_form = self.params.verify_gpg and not release_gpg_path_exists
+        use_inrelease = inrelease_path_exists and (not release_path_exists or prefers_signed_form)
         return use_inrelease, inrelease_path if use_inrelease else release_path
 
     @staticmethod
@@ -369,6 +389,17 @@ class Release(HexDigests):
 
         Returns:
             True with GPG verification on and a `GnuPG` to verify with.
+        """
+        return self.params.verify_gpg and self.gpg is not None
+
+    def _signs(self) -> bool:
+        """Whether a root Release save signs, rather than removing the old signatures.
+
+        The same switch as `_checks_signatures`: GPG verification also turns signing on
+        -> [CRYPTO.md](CRYPTO.md#verification-switches).
+
+        Returns:
+            True with GPG verification on and a `GnuPG` to sign with.
         """
         return self.params.verify_gpg and self.gpg is not None
 
@@ -405,14 +436,19 @@ class Release(HexDigests):
         Raises:
             ChecksumException: Both `InRelease` and `Release` are present and their
                 verified contents differ.
+            ReleaseReadException: A root Release file is larger than `MAX_RELEASE_BYTES`.
 
         Returns:
             The verified content of the file to parse.
         """
-        raw = {
-            self.params.release_key(path): self.storage.get(path)
-            for path in self.found_indices_files
-        }
+        raw: dict[str, bytes] = {}
+        for path in self.found_indices_files:
+            try:
+                raw[self.params.release_key(path)] = read_capped(
+                    self.storage, path, MAX_RELEASE_BYTES
+                )
+            except SizeLimitError as exc:
+                raise ReleaseReadException(f"{exc}.") from exc
         self.root_digests = {key: calc_digests(data) for key, data in raw.items()}
 
         if self._checks_signatures():
@@ -435,6 +471,15 @@ class Release(HexDigests):
             raw["InRelease"] = cleartext_body(raw["InRelease"])
 
         return raw["InRelease" if use_inrelease else "Release"]
+
+    @property
+    def is_loaded(self) -> bool:
+        """Whether a load read Release bytes that a reset has not cleared since.
+
+        Returns:
+            True after a successful `load`, `load_component`, or parse of loaded bytes.
+        """
+        return bool(self.hash)
 
     def verify_root_digests(self, key: str, incoming_digests: dict[str, str]) -> bool:
         """Verify a root Release file against the bytes the last load fetched.
@@ -469,7 +514,6 @@ class Release(HexDigests):
             ChecksumException: `Release` and `InRelease` carry different content.
         """
         use_inrelease, self.filename = self._find_root_files()
-        self.is_root = True
         self._parse_loaded(self._load_root_files(use_inrelease))
         logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
 
@@ -483,13 +527,15 @@ class Release(HexDigests):
 
         Raises:
             ValueError: `comp` or `arch` is empty.
-            ChecksumException: Checksum mismatch against the root Release.
+            ChecksumException: Checksum mismatch against the root Release, or a file larger than
+                the size the root Release records.
+            ReleaseReadException: The file is larger than `MAX_RELEASE_BYTES` and no checked
+                root Release records its size.
 
         Returns:
             True if the Release file was loaded, False when storage lacks it.
         """
         self._require_coordinates(comp, arch)
-        self.is_root = False
         filename = self._component_release_path(comp, arch)
         if not self.storage.exists(filename):
             self.filename = None
@@ -497,9 +543,18 @@ class Release(HexDigests):
         self.filename = filename
         self.found_indices_files = [filename]
 
-        data = self.storage.get(filename)
-        if self.params.verify_digests and root_release is not None:
-            key = self.params.release_key(filename)
+        key = self.params.release_key(filename)
+        checked = self.params.verify_digests and root_release is not None
+        declared = root_release.declared_size(key) if checked and root_release else None
+        try:
+            data = read_capped(
+                self.storage, filename, MAX_RELEASE_BYTES if declared is None else declared
+            )
+        except SizeLimitError as exc:
+            if declared is None:
+                raise ReleaseReadException(f"{exc}.") from exc
+            raise ChecksumException(f"{key} is larger than the root Release records.") from exc
+        if checked and root_release is not None:
             if not root_release.verify_digests(key, calc_digests(data)):
                 raise ChecksumException(f"{key} checksum mismatch.")
 
@@ -546,8 +601,8 @@ class Release(HexDigests):
         """
         GPG_ERR_MSG = "GnuPG sign error (maybe wrong passphrase?)"
 
-        if self.gpg is None:
-            return
+        # only reached when `_signs()` holds, so a missing GnuPG is a caller bug
+        assert self.gpg is not None, "signing without GnuPG"
 
         signed_data = self.gpg.sign(enc_data).encode("utf-8")
         if len(signed_data):
@@ -611,7 +666,7 @@ class Release(HexDigests):
 
         if not self.is_root:
             return digests
-        if self.gpg and self.params.verify_gpg:
+        if self._signs():
             self._sign_gpg(enc_data)
         else:
             self._remove_root_signatures()
@@ -746,7 +801,6 @@ class Release(HexDigests):
                 "Description": "Generated by debkit",
             }
         )
-        self.is_root = True
         self._start_file(self.params.indices_path("Release"))
 
     def setup_component(self, comp: str, arch: str) -> None:
@@ -760,7 +814,6 @@ class Release(HexDigests):
             ValueError: `comp` or `arch` is empty.
         """
         self._require_coordinates(comp, arch)
-        self.is_root = False
         self.fields = {"Component": comp, "Architecture": arch}
         self._start_file(self._component_release_path(comp, arch))
 

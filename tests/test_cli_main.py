@@ -51,6 +51,7 @@ def _install_actions(
     mock_history = MagicMock(name="ActionHistory")
     monkeypatch.setattr(cli, "ActionPkg", mock_pkg)
     monkeypatch.setattr(cli, "ActionSync", mock_sync)
+    monkeypatch.setattr(cli, "ActionCheck", MagicMock(name="ActionCheck"))
     monkeypatch.setattr(cli, "ActionHistory", mock_history)
     return mock_pkg, mock_sync, mock_history
 
@@ -115,14 +116,17 @@ def test_main_check_consistent_does_not_exit(
 ) -> None:
     _install_prelude(monkeypatch)
     _, mock_sync, _ = _install_actions(monkeypatch)
-    mock_sync.return_value.check.return_value = True
+    mock_check = MagicMock(name="ActionCheck")
+    monkeypatch.setattr(cli, "ActionCheck", mock_check)
+    mock_check.return_value.check.return_value = True
     fake_pars.command = "check"
     _install_pars(monkeypatch, fake_pars)
 
     cli.main()
 
-    mock_sync.assert_called_once_with(fake_pars)
-    mock_sync.return_value.check.assert_called_once_with()
+    mock_check.assert_called_once_with(fake_pars)
+    mock_check.return_value.check.assert_called_once_with()
+    mock_sync.assert_not_called()
 
 
 def test_main_check_inconsistent_exits(
@@ -131,8 +135,10 @@ def test_main_check_inconsistent_exits(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     _install_prelude(monkeypatch)
-    _, mock_sync, _ = _install_actions(monkeypatch)
-    mock_sync.return_value.check.return_value = False
+    _install_actions(monkeypatch)
+    mock_check = MagicMock(name="ActionCheck")
+    monkeypatch.setattr(cli, "ActionCheck", mock_check)
+    mock_check.return_value.check.return_value = False
     fake_pars.command = "check"
     _install_pars(monkeypatch, fake_pars)
 
@@ -237,7 +243,6 @@ def test_main_exception_group_maps_to_exit(
     [
         ActionException("boom-action"),
         RepoParamsException("boom-params"),
-        ValueError("boom-value"),
         StorageException("boom-storage"),
     ],
 )
@@ -283,7 +288,6 @@ def _payload_for(exc: Any) -> str:
 @pytest.mark.parametrize(
     "exc",
     [
-        ValueError("boom-value"),
         StorageException("boom-storage"),
         RepoParamsException("boom-params"),
     ],
@@ -305,3 +309,18 @@ def test_main_generic_group_logs_original_payload(
 
     assert excinfo.value.code == 1
     assert _payload_for(exc) in caplog.text
+
+
+def test_main_lets_a_stray_value_error_surface(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_pars: Namespace,
+) -> None:
+    """A builtin `ValueError` is a bug, not bad input: it is in no exit group."""
+    _install_prelude(monkeypatch)
+    mock_pkg, _, _ = _install_actions(monkeypatch)
+    mock_pkg.return_value.list_packages.side_effect = ValueError("boom-value")
+    fake_pars.command = "list"
+    _install_pars(monkeypatch, fake_pars)
+
+    with pytest.raises(ValueError, match="boom-value"):
+        cli.main()

@@ -16,7 +16,7 @@ from debkit._options import EnvArgumentParser
 from debkit.action import add_output_cli_args
 from debkit.action.action_history import ActionHistory
 from debkit.action.action_pkg import ActionPkg
-from debkit.action.action_sync import ActionSync
+from debkit.action.action_sync import ActionCheck, ActionSync
 from debkit.argtypes import (
     bucket_acl_type,
     history_max_age_type,
@@ -25,7 +25,8 @@ from debkit.argtypes import (
 )
 
 LOG_LEVEL_DEFAULT = "INFO"
-GNUPG_HOME_DEFAULT = ".gnupg"
+# the home gpgv reads, never one relative to where debkit runs → [CRYPTO.md](CRYPTO.md#gpg)
+GNUPG_HOME_DEFAULT = "~/.gnupg"
 GNUPG_KEYRING_DEFAULT = "trustedkeys.gpg"
 GNUPG_PASSPHRASE_DEFAULT = ""
 # Repositories serve their indices to apt clients anonymously
@@ -208,7 +209,7 @@ def build_parser() -> EnvArgumentParser:
     add_output_cli_args(sync_parser)
 
     check_parser = subparsers.add_parser("check", help="check data consistency in repository")
-    ActionSync.add_check_cli_args(check_parser)
+    ActionCheck.add_check_cli_args(check_parser)
     ActionSync.add_selection_cli_args(check_parser)
     add_output_cli_args(check_parser)
 

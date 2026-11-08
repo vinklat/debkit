@@ -1,36 +1,27 @@
 """Mirror a Debian repository: the `RepoSync` operation.
 
-`RepoSync` plans the copy and delete lists, transfers them, and checks a mirror;
-which Release-listed indices it carries is decided in `index_selection`.
+`RepoSync` plans the copy and delete lists and transfers them; the index set it mirrors is
+`Repo._get_indices`, whose rules are in `index_selection`.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Iterable
-from dataclasses import dataclass
+from collections.abc import Collection
 from typing import TYPE_CHECKING, NamedTuple
 
 from txstore import (
     StorageException,
     StorageNotFoundException,
-    StorageNull,
     compare_digests,
-    is_unsafe_path,
     normalize_digests,
 )
 
-from debkit.repo import Repo
+from debkit.repo import IndexTarget, Repo, shared_root_claims
 from debkit.repo.hashes import ChecksumException
-from debkit.repo.index_selection import select_index_entry
 
 if TYPE_CHECKING:
-    from txstore import Storage
-
-    from debkit.repo.gnupg import GnuPG
     from debkit.repo.package import Package
-    from debkit.repo.params import RepoParams
-    from debkit.repo.release import IndexEntry
     from debkit.repo.repo_diff import RepoDiff
     from debkit.repo.repo_rw import RepoRW
 
@@ -39,19 +30,6 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 TRANSFER_MAX_ERR_RETRIES = 3
-
-
-@dataclass(frozen=True)
-class IndexTarget:
-    """One index in the mirror set -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-    `digests` are what the source root Release records for the path, or `None` for
-    the root Release files, which are not listed in their own digest block.
-    `known_published` says the Release load or a parse already fetched the object.
-    """
-
-    digests: dict[str, str] | None
-    known_published: bool
 
 
 class SyncPlan(NamedTuple):
@@ -88,143 +66,6 @@ class RepoSyncException(Exception):
 class RepoSync(Repo):
     """Class that extends Repo with sync functionality."""
 
-    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
-        """Initialize RepoSync.
-
-        Args:
-            storage: Storage backend of the repository.
-            params: Repository parameters.
-            gpg: Verifies Release signatures. Defaults to None.
-        """
-        super().__init__(storage, params, gpg=gpg)
-        # payloads reported as Release-owned. `build_sync_lists` and `check` each build
-        # the package set, so the report is per run, not per pass
-        self._owned_payloads_warned: set[str] = set()
-
-    @classmethod
-    def over(cls, repo: Repo) -> RepoSync:
-        """Wrap a loaded `repo` in a `RepoSync` that checks the repo's own storage.
-
-        The result aliases the repo's state: it shares `storage`, `params`, `release`,
-        and `components` rather than copying them, so `consistency_lists` and `check`
-        through it read the indices as loaded and must not mutate them.
-
-        Args:
-            repo: The loaded repository to check.
-
-        Returns:
-            A repository over `repo.storage` holding `repo`'s indices.
-        """
-        ret = cls(repo.storage, repo.params, gpg=repo.gpg)
-        ret.release = repo.release
-        ret.components = repo.components
-        ret.modified = repo.modified
-        return ret
-
-    def _get_indices(self) -> dict[str, IndexTarget]:
-        """Get every repository index file to mirror, with its expected digests.
-
-        The signed root Release is the manifest: it lists each index apt may fetch,
-        so every listed path is a candidate. Entries are filtered by the selected
-        components and architectures and by `RepoParams.indices_exclude`
-        → [VALIDATION.md](VALIDATION.md#index-exclude-globs).
-
-        The root `Release`, `Release.gpg`, and `InRelease` files are not listed in
-        the digest block, carry no digests, and are never filtered. A listed key that
-        would escape the storage root is dropped
-        -> [VALIDATION.md](VALIDATION.md#filename-safety). Nothing is probed
-        -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-        Returns:
-            Index path → the digests recorded for it and whether the source is already known to
-            publish it.
-        """
-        ret: dict[str, IndexTarget] = {}
-
-        components = None if self.params.is_flat else set(self.get_components())
-        archs = set(self.get_archs())
-        arch_universe = archs | set(self.release_archs())
-        excludes = self.params.indices_exclude or []
-
-        def selected(key: str) -> bool:
-            return select_index_entry(
-                key,
-                components=components,
-                archs=archs,
-                arch_universe=arch_universe,
-                excludes=excludes,
-            )
-
-        # root Release files: the manifest itself, never filtered and never listed
-        # in their own digest block
-        for path in self.release.get_indices_paths():
-            ret[path] = IndexTarget(None, known_published=True)
-
-        # indices already discovered while parsing, e.g. Packages files. Parsing
-        # proved they exist, so they are not probed again, but the selection rules
-        # still apply to them.
-        for component in self.components.values():
-            for path in component.get_indices_paths():
-                if path in ret:
-                    continue
-                key = self.params.release_key(path)
-                if not selected(key):
-                    continue
-                ret[path] = IndexTarget(self.release.digests.get(key), known_published=True)
-
-        for entry in self.release.listed_indices():
-            if entry.path in ret:
-                continue
-
-            if not selected(entry.key):
-                continue
-
-            if not self._index_path_is_safe(entry):
-                continue
-
-            # listed is not published; the transfer settles it
-            ret[entry.path] = IndexTarget(entry.digests, known_published=False)
-
-        return ret
-
-    def _payload_files(self) -> set[str]:
-        """Collect the parsed payload paths, dropping any the Release owns.
-
-        Returns:
-            Paths of every parsed package the Release does not own.
-        """
-        return self._drop_release_owned(str(pkg) for pkg in self.get_packages())
-
-    def _drop_release_owned(self, paths: Iterable[str]) -> set[str]:
-        """Drop the stanza paths a Release digest block lists.
-
-        A stanza `Filename` a Release digest block also lists is an index, not a
-        payload: the index set alone decides whether it is copied or purged, so index
-        selection and the payload copy and removal cannot disagree
-        -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-        Args:
-            paths: Stanza paths, as `str(Package)` gives them.
-
-        Returns:
-            The paths no Release digest block lists.
-        """
-        ret: set[str] = set()
-        # one walk of the Release blocks, not one per package
-        owned_keys = self._release_keys()
-
-        for path in paths:
-            if self.params.release_key(path) in owned_keys:
-                if path not in self._owned_payloads_warned:
-                    self._owned_payloads_warned.add(path)
-                    logger.warning(
-                        "%s is named by a Release digest block, not mirrored as a package", path
-                    )
-                continue
-            ret.add(path)
-
-        return ret
-
     def build_sync_lists(self, target_repo: RepoRW, indices_only: bool = False) -> SyncPlan:
         """Build filelists for sync.
 
@@ -252,10 +93,8 @@ class RepoSync(Repo):
         forced = True
         if not indices_only:
             diff = self.diff(target_repo)
-            # an index-only source change (i18n, dep11) leaves the package diff empty; the
-            # diff term is redundant while neither repo is `modified`, since `Repo.diff`
-            # compares packages only when the hashes differ, but it keeps the plan independent
-            # of that gate
+            # an index-only source change (i18n, dep11) leaves the package diff empty, and a
+            # target index skipped as unreadable leaves the Release hashes equal
             forced = self.release.hash != target_repo.release.hash or not diff.is_empty()
             copy_list, delete_list = self._plan_payloads(
                 diff, indices, target_repo, existing_files, can_list=can_list
@@ -312,6 +151,10 @@ class RepoSync(Repo):
             repair_files, purge_files = self._repair_and_purge(
                 all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
             )
+            # another dist sharing the root keeps its tree and the payloads it lists
+            shared = shared_root_claims(target_repo.storage, target_repo.params, existing_files)
+            purge_files = {file for file in purge_files if shared.deletable(file)}
+            remove_pkg_files = {file for file in remove_pkg_files if shared.deletable(file)}
 
         copy_pkg_files = self._reduce_copies(
             diff.get_pkgs_to_copy(), copy_pkg_files, target_repo, existing_files
@@ -369,56 +212,6 @@ class RepoSync(Repo):
                 )
         return ret
 
-    @staticmethod
-    def _repair_and_purge(
-        payloads: set[str],
-        indices: Collection[str],
-        existing_files: set[str],
-        planned: set[str] | None = None,
-    ) -> tuple[set[str], set[str]]:
-        """Compare a target listing with the package and index sets.
-
-        Args:
-            payloads: Every payload path the package set holds.
-            indices: Every index path the index set holds.
-            existing_files: Paths the target listing returned.
-            planned: Paths a package diff already copies or removes, left out of both results.
-                Defaults to None (nothing planned).
-
-        Returns:
-            The payloads the listing lacks, and the listed paths neither set holds.
-        """
-        planned = planned or set()
-        repair = payloads - planned - existing_files
-        purge = {file for file in existing_files - payloads - planned if file not in indices}
-        return repair, purge
-
-    def consistency_lists(self) -> tuple[list[str], list[str]]:
-        """List what this repository's own storage lacks and what it holds unclaimed.
-
-        Missing are the payloads and the parsed component indices the listing lacks:
-        the root Release files were just read and nothing is probed, so a listing that
-        disagrees with a read cannot make them missing. Orphans are listed paths that
-        neither the package set nor the index set holds
-        -> [CONFIG.md](CONFIG.md#check).
-
-        Returns:
-            Missing and orphan paths, sorted; both empty when the storage cannot list.
-        """
-        try:
-            existing_files = set(self.storage.list())
-        except NotImplementedError:
-            return [], []
-
-        indices = self._get_indices()
-        missing, orphans = self._repair_and_purge(self._payload_files(), indices, existing_files)
-        parsed = {
-            path for component in self.components.values() for path in component.get_indices_paths()
-        }
-        root_files = set(self.release.get_indices_paths())
-        missing |= (parsed & indices.keys()) - root_files - existing_files
-        return sorted(missing), sorted(orphans)
-
     def _indices_to_copy(
         self,
         indices: dict[str, IndexTarget],
@@ -474,25 +267,6 @@ class RepoSync(Repo):
         """
         return compare_digests(digests, normalize_digests(target_repo.storage.get_metadata(file)))
 
-    def _index_path_is_safe(self, entry: IndexEntry) -> bool:
-        """Report whether a Release-listed index path stays inside the repository.
-
-        The digest block is remote metadata, so a hostile or malformed Release can
-        name a key outside the storage root. A rejected entry is dropped from the
-        index set rather than failing the transfer, so one bad record cannot stop a
-        mirror -> [VALIDATION.md](VALIDATION.md#filename-safety).
-
-        Args:
-            entry: candidate index from the root Release digest block.
-
-        Returns:
-            True when the path is safe to mirror.
-        """
-        if is_unsafe_path(entry.key) or is_unsafe_path(entry.path):
-            logger.warning("%s listed in Release is an unsafe index path. Skipped.", entry.key)
-            return False
-        return True
-
     def _target_release_agrees(
         self,
         file: str,
@@ -540,7 +314,7 @@ class RepoSync(Repo):
         Returns:
             Index paths still to copy.
         """
-        target_loaded = bool(target_repo.release.hash)
+        target_loaded = target_repo.release.is_loaded
         ret: list[str] = []
         for file, target in indices.items():
             held = file in existing_files
@@ -625,37 +399,6 @@ class RepoSync(Repo):
         logger.info("Delete: %s", file)
         target_repo.storage.delete(file)
 
-    def _verify_file(
-        self, file: str, progress: tuple[int, int] | None = None, fix: bool | None = False
-    ) -> bool:
-        """Transfer a file and verify checksums.
-
-        Args:
-            file: The file to transfer.
-            progress: Progress of transfer - current of total objects. Defaults to None.
-            fix: Fix inconsistencies if True. Defaults to False.
-
-        Returns:
-            True if the file is valid, False otherwise.
-        """
-        dev_null = StorageNull()
-
-        if progress is None:
-            logger.info("Verify: %s", file)
-        else:
-            logger.info("Verify (%d/%d): %s", progress[0], progress[1], file)
-
-        digests = self.storage.transfer(file, dev_null)
-
-        if self.params.verify_digests:
-            if not self.verify_checksum(file, digests):
-                return False
-
-        if fix:
-            self.storage.add_metadata(file, digests)
-
-        return True
-
     def sync(
         self,
         target_repo: Repo,
@@ -707,52 +450,3 @@ class RepoSync(Repo):
         # delete objects
         for name in delete_list:
             self._delete_file(name, target_repo)
-
-    def check(
-        self, missing_list: list[str], orphan_list: list[str], fix: bool = False
-    ) -> tuple[int, int]:
-        """Check repository for consistency.
-
-        Args:
-            missing_list: List of missing packages.
-            orphan_list: List of orphan files to delete.
-            fix: Delete inconsistencies if True
-
-        Returns:
-            A tuple containing the number of errors and the number of errors fixed.
-        """
-        all_pkg_files = sorted(self._payload_files())
-
-        total: int = len(all_pkg_files)
-        cnt: int = 0
-        ret_err_total: int = 0
-        ret_err_fixed_total: int = 0
-
-        missing = set(missing_list)
-        for file in all_pkg_files:
-            cnt += 1
-
-            if file in missing:
-                logger.warning("Skip (%d/%d): %s (missing)", cnt, total, file)
-                continue
-
-            try:
-                if not self._verify_file(file, progress=(cnt, total), fix=fix):
-                    logger.warning("Checksum verify failed: %s", file)
-                    ret_err_total += 1
-                    if fix:
-                        self._delete_file(file, self)
-                        ret_err_fixed_total += 1
-            except StorageException as exc:
-                logger.error("Error checking file: %s: %s", file, exc)
-                ret_err_total += 1
-
-        if fix:
-            for file in orphan_list:
-                try:
-                    self._delete_file(file, self)
-                    ret_err_fixed_total += 1
-                except StorageException as exc:
-                    logger.error("Error deleting file: %s: %s", file, exc)
-
-        return ret_err_total, ret_err_fixed_total

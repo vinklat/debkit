@@ -252,7 +252,8 @@ def test_sources_load_expands_the_index_it_finds() -> None:
     storage.get.return_value = gzip.compress(_STANZA_3.encode("utf-8"))
     src = _new_sources(storage=storage, params=make_params(verify_digests=False))
     root = MagicMock()
-    found = ("dists/bookworm/main/source/Sources.gz", codec_for(".gz").decompress)
+    path = "dists/bookworm/main/source/Sources.gz"
+    found = ([path], path, codec_for(".gz").decompress)
 
     with patch.object(Sources, "_find_packages_file", return_value=found):
         assert src.load(root, "main", "source") is True

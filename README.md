@@ -26,26 +26,28 @@ Current version: **0.1.0**. Planned work → [ROADMAP.md](ROADMAP.md).
 Released versions are published to [PyPI](https://pypi.org/project/debkit/). debkit needs Python
 3.13 or newer and a GnuPG binary on `PATH`.
 
-debkit verifies every Release it reads against `./.gnupg/trustedkeys.gpg` by default →
-[CONFIG.md](CONFIG.md#global-flags), so import the Debian archive keys before reading
-deb.debian.org; the keyring file comes from the `debian-archive-keyring` package on Debian and
-Ubuntu.
+debkit verifies every Release it reads against `~/.gnupg/trustedkeys.gpg` by default, the keyring
+gpgv reads → [CONFIG.md](CONFIG.md#global-flags). The examples keep a dedicated home instead, named
+by `DEBKIT_GNUPG_HOME`; import the Debian archive keys into it before reading deb.debian.org. The
+keyring file comes from the `debian-archive-keyring` package on Debian and Ubuntu.
 
 ```bash
 pip install debkit
-mkdir -m 700 -p .gnupg
-gpg --homedir .gnupg --no-default-keyring --keyring trustedkeys.gpg \
+export DEBKIT_GNUPG_HOME="$HOME/.debkit-gnupg"
+mkdir -m 700 -p "$DEBKIT_GNUPG_HOME"
+gpg --homedir "$DEBKIT_GNUPG_HOME" --no-default-keyring --keyring trustedkeys.gpg \
     --import /usr/share/keyrings/debian-archive-keyring.gpg
 debkit --target-url "https://deb.debian.org/debian bookworm main" stats
 ```
 
-Build a signed local repository from a `.deb`: debkit signs with the key in `./.gnupg` and verifies
-what it reads back against `./.gnupg/trustedkeys.gpg`.
+Build a signed local repository from a `.deb`: debkit signs with the key in that home and verifies
+what it reads back against its `trustedkeys.gpg`.
 
 ```bash
-gpg --homedir .gnupg --batch --passphrase '' --quick-gen-key "Repo signing <repo@example.com>"
-gpg --homedir .gnupg --export | gpg --homedir .gnupg --no-default-keyring \
-    --keyring trustedkeys.gpg --import
+gpg --homedir "$DEBKIT_GNUPG_HOME" --batch --passphrase '' \
+    --quick-gen-key "Repo signing <repo@example.com>"
+gpg --homedir "$DEBKIT_GNUPG_HOME" --export | gpg --homedir "$DEBKIT_GNUPG_HOME" \
+    --no-default-keyring --keyring trustedkeys.gpg --import
 debkit --target-url "/srv/repo bookworm main" \
     insert --incoming-url ./incoming --deb-filename hello_1.0_amd64.deb
 debkit --target-url "/srv/repo bookworm main" list

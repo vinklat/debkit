@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import gzip
+import io
 import lzma
 import random
 import struct
 import tracemalloc
 import zlib
 from collections.abc import Buffer
+from unittest.mock import MagicMock
 
 import pytest
+from txstore import StorageMetrics
 
 from debkit.repo.compress import (
     CODECS,
@@ -19,6 +22,7 @@ from debkit.repo.compress import (
     SizeLimitError,
     _bounded,
     codec_for,
+    read_capped,
 )
 
 _DATA = b"Package: foo\nVersion: 1.0\n" * 32
@@ -212,3 +216,45 @@ def test_codec_for_matches_the_suffix(path: str, suffix: str) -> None:
 def test_uncompressed_codec_is_discovered_last() -> None:
     assert CODECS[-1].suffix == ""
     assert [codec.suffix for codec in CODECS[:-1]] == [".xz", ".lzma", ".bz2", ".gz"]
+
+
+# ---------------------------------------------------------------------------
+# read_capped
+# ---------------------------------------------------------------------------
+
+
+class _CountingStream(io.BytesIO):
+    """A stream that records how many bytes were read from it."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.read_total = 0
+
+    def read(self, size: int | None = -1, /) -> bytes:
+        chunk = super().read(size)
+        self.read_total += len(chunk)
+        return chunk
+
+
+def _capped_storage(data: bytes) -> tuple[MagicMock, _CountingStream]:
+    stream = _CountingStream(data)
+    storage = MagicMock()
+    storage.get_stream.return_value = stream
+    storage.metrics = StorageMetrics()
+    return storage, stream
+
+
+def test_read_capped_returns_an_object_at_the_limit() -> None:
+    storage, _ = _capped_storage(b"x" * 10)
+
+    assert read_capped(storage, "p", 10) == b"x" * 10
+    assert storage.metrics.read_bytes == 10
+
+
+def test_read_capped_refuses_an_object_past_the_limit_without_reading_it_all() -> None:
+    storage, stream = _capped_storage(b"x" * (3 << 20))
+
+    with pytest.raises(SizeLimitError, match="larger than 10 bytes"):
+        read_capped(storage, "p", 10)
+    assert stream.read_total == 11
+    assert stream.closed

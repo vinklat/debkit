@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
@@ -11,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 from txstore import StorageFS, calc_digests
 
+from debkit.repo import release as release_module
 from debkit.repo.gnupg import cleartext_body
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import RepoParams
@@ -166,11 +168,15 @@ def test_load_of_a_root_with_a_digest_block_is_not_modified(tmp_path: Path) -> N
     assert r.save() is None
 
 
-def test_reset_restores_a_fresh_release() -> None:
-    """Regression: a reset root kept `is_root`, so its next save went to the root paths."""
-    fresh = Release(MagicMock(), _params())
-    r = Release(fresh.storage, fresh.params)
-    r.setup(fields={"Origin": "test"})
+@pytest.mark.parametrize("root", [True, False], ids=["root", "component"])
+def test_reset_restores_a_fresh_release_of_the_same_kind(root: bool) -> None:
+    """The kind is fixed at construction: a reset clears the content, never the kind."""
+    fresh = Release(MagicMock(), _params(), root=root)
+    r = Release(fresh.storage, fresh.params, root=root)
+    if root:
+        r.setup(fields={"Origin": "test"})
+    else:
+        r.setup_component("main", "amd64")
 
     r.reset()
 
@@ -178,6 +184,7 @@ def test_reset_restores_a_fresh_release() -> None:
     assert {k: v for k, v in vars(r).items() if k not in shared} == {
         k: v for k, v in vars(fresh).items() if k not in shared
     }
+    assert r.save() is None
 
 
 _ROOT = "dists/bookworm"
@@ -190,7 +197,7 @@ def test_save_unsigned_removes_the_stale_root_signatures(
     storage = StorageFS(str(tmp_path))
     for name in ("Release", "Release.gpg", "InRelease"):
         storage.put(f"{_ROOT}/{name}", b"Origin: old\n")
-    r = Release(storage, _params(), gpg=None)
+    r = Release(storage, _params(), gpg=None, root=True)
     r.load()
     r.fields["Origin"] = "new"
     r.modified = True
@@ -229,7 +236,7 @@ def _signing_gpg(inline: str = "inline", detached: str = "detached") -> MagicMoc
 def test_save_signed_keeps_and_rewrites_the_root_signatures() -> None:
     storage = MagicMock()
     gpg = _signing_gpg()
-    r = Release(storage, _params(verify_gpg=True), gpg=gpg)
+    r = Release(storage, _params(verify_gpg=True), gpg=gpg, root=True)
     r.setup(fields={"Origin": "test"})
 
     digests = r.save()
@@ -254,7 +261,7 @@ def test_save_signed_names_the_signatures_by_layout_not_by_dist(source: str, roo
     params = RepoParams(verify_gpg=True)
     params.from_deb_source(source)
     storage = MagicMock()
-    r = Release(storage, params, gpg=_signing_gpg())
+    r = Release(storage, params, gpg=_signing_gpg(), root=True)
     r.setup(fields={"Origin": "test"})
 
     r.save()
@@ -266,7 +273,7 @@ def test_save_signed_names_the_signatures_by_layout_not_by_dist(source: str, roo
 def _inrelease_only_root(tmp_path: Path, params: RepoParams, gpg: MagicMock | None) -> Release:
     storage = StorageFS(str(tmp_path))
     storage.put(f"{_ROOT}/InRelease", _clearsigned(b"Origin: inline\nSuite: bookworm\n"))
-    r = Release(storage, params, gpg=gpg)
+    r = Release(storage, params, gpg=gpg, root=True)
     r.load()
     r.fields["Origin"] = "new"
     r.modified = True
@@ -298,7 +305,7 @@ def test_save_signed_of_an_inrelease_loaded_root_writes_every_root_file(tmp_path
 def test_save_refuses_an_empty_inline_signature_before_writing_inrelease() -> None:
     """`GnuPG.sign` returns an empty signature when signing fails, e.g. on a wrong passphrase."""
     storage = MagicMock()
-    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(inline=""))
+    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(inline=""), root=True)
     r.setup(fields={"Origin": "test"})
 
     with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
@@ -309,7 +316,7 @@ def test_save_refuses_an_empty_inline_signature_before_writing_inrelease() -> No
 
 def test_save_refuses_an_empty_detached_signature() -> None:
     storage = MagicMock()
-    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(detached=""))
+    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(detached=""), root=True)
     r.setup(fields={"Origin": "test"})
 
     with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
@@ -528,6 +535,7 @@ def test_load_component_release_verifies_against_its_flat_release_key() -> None:
     storage = MagicMock()
     storage.exists.return_value = True
     storage.get.return_value = data
+    storage.get_stream.side_effect = lambda path: io.BytesIO(data)
 
     params = _flat_params()
     params.verify_digests = True
@@ -562,6 +570,7 @@ def _root_storage(files: dict[str, bytes]) -> MagicMock:
     storage = MagicMock()
     storage.exists.side_effect = lambda path: path in files
     storage.get.side_effect = lambda path: files[path]
+    storage.get_stream.side_effect = lambda path: io.BytesIO(files[path])
     return storage
 
 
@@ -582,6 +591,30 @@ def test_load_root_records_the_digests_of_every_root_file() -> None:
     assert r.verify_root_digests("Release", calc_digests(b"replayed")) is False
 
 
+def test_load_root_refuses_a_root_file_past_the_size_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A root Release file is read before its signature is checked, so its size is capped."""
+    monkeypatch.setattr(release_module, "MAX_RELEASE_BYTES", len(_RELEASE_BODY))
+    storage = _root_storage(_ROOT_FILES)
+
+    with pytest.raises(ReleaseReadException, match="InRelease is larger than"):
+        Release(storage, _params()).load()
+
+
+def test_load_component_refuses_a_release_larger_than_the_root_release_records() -> None:
+    """The root Release records the per-arch Release size, so a longer body is refused."""
+    data = b"Origin: x\n"
+    storage = MagicMock()
+    storage.exists.return_value = True
+    storage.get_stream.side_effect = lambda path: io.BytesIO(data + b"padding")
+    params = _flat_params()
+    params.verify_digests = True
+    root_release = Release(storage, _flat_params())
+    root_release.digests["binary-amd64/Release"] = calc_digests(data)
+
+    with pytest.raises(ChecksumException, match="larger than the root Release records"):
+        Release(storage, params).load_component("main", "amd64", root_release=root_release)
+
+
 def _accepting_gpg() -> MagicMock:
     """A GnuPG double accepting every signature and returning what `verify` returns."""
     gpg = MagicMock()
@@ -589,6 +622,26 @@ def _accepting_gpg() -> MagicMock:
         data if detach_sign else cleartext_body(data)
     )
     return gpg
+
+
+def test_load_root_skips_a_detached_signature_without_its_release(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Nothing verifies an unpaired `Release.gpg`, so a sync must not mirror it."""
+    junk = b"JUNK not a signature"
+    files = {
+        "dists/bookworm/Release.gpg": junk,
+        "dists/bookworm/InRelease": _clearsigned(_RELEASE_BODY),
+    }
+    r = Release(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
+
+    with caplog.at_level(logging.WARNING):
+        r.load()
+
+    assert r.get_indices_paths() == ["dists/bookworm/InRelease"]
+    assert "Release.gpg" not in r.root_digests
+    assert r.verify_root_digests("Release.gpg", calc_digests(junk)) is False
+    assert "signs no dists/bookworm/Release" in caplog.text
 
 
 def test_load_root_verifies_every_signed_form_it_mirrors() -> None:

@@ -8,7 +8,9 @@ from __future__ import annotations
 import logging
 import re
 from email.utils import formatdate
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
+
+from txstore import StorageException, StorageNull
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
@@ -23,6 +25,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+
+class CheckReport(NamedTuple):
+    """What `RepoRW.check` found in the repository's own storage, and what it fixed.
+
+    Attributes:
+        missing: Payloads and parsed component indices the listing lacks, sorted.
+        orphans: Listed paths that no index claims, sorted.
+        failed: Payloads that failed verification or could not be read.
+        fixed: Payloads and orphans deleted.
+    """
+
+    missing: list[str]
+    orphans: list[str]
+    failed: int
+    fixed: int
 
 
 class RepoRW(Repo):
@@ -157,3 +175,82 @@ class RepoRW(Repo):
             Digests of the transferred object.
         """
         return source_storage.transfer(path_src, self.storage, path_dst=path_dst)
+
+    def check(self, *, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
+        """Check the repository against its own indices.
+
+        Every payload the indices list is read back and verified; with `fix`, a corrupt one
+        is deleted, so a later sync copies it again, and so is every orphan
+        -> [CONFIG.md](CONFIG.md#check).
+
+        Args:
+            fix: Delete corrupt payloads and orphans. Defaults to False.
+            purge_orphans: With `fix`, delete the orphans too. Defaults to True.
+
+        Returns:
+            The missing and orphan paths, and the failed and fixed counts.
+        """
+        missing, orphans = self.consistency_lists()
+        payloads = sorted(self._payload_files())
+        absent = set(missing)
+        failed = 0
+        fixed = 0
+
+        for cnt, file in enumerate(payloads, start=1):
+            if file in absent:
+                logger.warning("Skip (%d/%d): %s (missing)", cnt, len(payloads), file)
+                continue
+
+            try:
+                if not self._verify_file(file, progress=(cnt, len(payloads)), fix=fix):
+                    logger.warning("Checksum verify failed: %s", file)
+                    failed += 1
+                    if fix:
+                        self._delete(file)
+                        fixed += 1
+            except StorageException as exc:
+                logger.error("Error checking file: %s: %s", file, exc)
+                failed += 1
+
+        if fix and purge_orphans:
+            for file in orphans:
+                try:
+                    self._delete(file)
+                    fixed += 1
+                except StorageException as exc:
+                    logger.error("Error deleting file: %s: %s", file, exc)
+
+        return CheckReport(missing, orphans, failed, fixed)
+
+    def _delete(self, file: str) -> None:
+        """Delete `file` from this repository's storage.
+
+        Args:
+            file: Object path to delete.
+        """
+        logger.info("Delete: %s", file)
+        self.storage.delete(file)
+
+    def _verify_file(self, file: str, progress: tuple[int, int], fix: bool) -> bool:
+        """Read a payload back and verify it against the indices.
+
+        Args:
+            file: The payload path.
+            progress: Current and total payload counts, for the log.
+            fix: Record the digests as object metadata when the payload verifies.
+
+        Returns:
+            True if the file is valid, False otherwise.
+        """
+        logger.info("Verify (%d/%d): %s", progress[0], progress[1], file)
+
+        # read through to a digest sink -> [ROADMAP.md](ROADMAP.md#known-deviations)
+        digests = self.storage.transfer(file, StorageNull())
+
+        if self.params.verify_digests and not self.verify_checksum(file, digests):
+            return False
+
+        if fix:
+            self.storage.add_metadata(file, digests)
+
+        return True

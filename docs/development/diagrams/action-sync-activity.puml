@@ -21,15 +21,13 @@ partition "with maybe_transaction(target.storage)" {
   (taken before any reset);
   :target_before = copy(target);
   if (verify_existing?) then (yes)
-    :checker = RepoSync.over(target)
-    (aliases the loaded target);
-    :missing = checker.consistency_lists();
-    :err, fixed = checker.check(missing, [], fix=True);
+    :report = target.check(fix=True, purge_orphans=False)
+    (missing payloads skipped, orphans left to the purge);
     note right
       deletions are staged in the transaction;
       the first pass copies them again
     end note
-    if (err > fixed?) then (yes)
+    if (report.failed > report.fixed?) then (yes)
       :log warning;
     endif
   endif

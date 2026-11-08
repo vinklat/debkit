@@ -62,6 +62,7 @@ not copied here.
 | Sync index ownership | A stanza naming a Release-listed index is neither copied nor removed as a package, whichever side holds it, and the index set still purges one it drops → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Sync index Release skip | The Release-block skip with its metadata fallback → [VALIDATION.md](VALIDATION.md#index-selection) is asserted from both sides. |
 | Sync index recovery | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync. |
+| Sync shared root | On a real target root holding another dist, a sync and `check --fix` keep its tree and the payloads it lists, and only the own tree is purged while it does not load → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Validation | Every documented boundary rule, success and failure. |
 | Crypto GPG | GPG verify and sign paths and the skip-verify branches. |
 | Crypto real gpg | `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring, right and wrong passphrase. |

@@ -39,9 +39,41 @@ class DebFileException(Exception):
         super().__init__(f"DebFile: {message}")
 
 
-def _control_of(fp: IO[bytes]) -> bytes | str | None:
-    """Return the ``control`` file of the ``.deb`` read from `fp`."""
-    return debfile.DebFile(fileobj=fp).control["control"]  # type: ignore[arg-type]
+# Largest compressed `control.tar` member and `control` file read from an upload; both are read
+# into memory before the package is transferred -> [VALIDATION.md](VALIDATION.md#object-sizes)
+MAX_CONTROL_BYTES = 4 * 1024 * 1024
+
+
+def _control_of(fp: IO[bytes], path: str) -> bytes | None:
+    """Return the ``control`` file of the ``.deb`` read from `fp`, refusing an oversized one.
+
+    Args:
+        fp: The open ``.deb``.
+        path: Its storage path, for messages.
+
+    Raises:
+        DebFileException: The ``control.tar`` member or the ``control`` file is larger than
+            `MAX_CONTROL_BYTES`.
+        DebError: The ``control`` file is missing.
+
+    Returns:
+        The ``control`` file content, or None when it is not a regular file.
+    """
+    deb = debfile.DebFile(fileobj=fp)  # type: ignore[arg-type]
+    for part in deb.getmembers():
+        if part.name.startswith("control.tar") and part.size > MAX_CONTROL_BYTES:
+            raise DebFileException(
+                f"{part.name} of {path} is larger than {MAX_CONTROL_BYTES} bytes"
+            )
+    tar = deb.control.tgz()
+    try:
+        member = tar.getmember("./control")
+    except KeyError as exc:
+        raise debfile.DebError("File not found inside package") from exc
+    if member.size > MAX_CONTROL_BYTES:
+        raise DebFileException(f"control file of {path} is larger than {MAX_CONTROL_BYTES} bytes")
+    handle = tar.extractfile(member)
+    return handle.read() if handle is not None else None
 
 
 class DebFile:
@@ -81,7 +113,7 @@ class DebFile:
         except (ArError, tarfile.TarError, EOFError, OSError, lzma.LZMAError, zlib.error) as exc:
             raise DebFileException(f"Invalid .deb file {path}: {exc}") from exc
 
-    def _read_control(self) -> bytes | str | None:
+    def _read_control(self) -> bytes | None:
         """Read the ``control`` file, streaming when the backend can seek.
 
         Returns:
@@ -89,11 +121,11 @@ class DebFile:
         """
         try:
             with self.storage.get_stream(self.path) as fp:
-                return _control_of(fp)
+                return _control_of(fp, self.path)
         except UnsupportedOperation as exc:
             logger.debug("%s cannot stream (%s); reading it into memory.", self.path, exc)
         with BytesIO(self.storage.get(self.path)) as fp:
-            return _control_of(fp)
+            return _control_of(fp, self.path)
 
     def get_package(self) -> Package:
         """Get control data from the Debian package.
@@ -111,13 +143,13 @@ class DebFile:
         Returns:
             Package object with control data.
         """
-        control_lines = self.control
-        if not isinstance(control_lines, bytes):
+        control = self.control
+        if not isinstance(control, bytes):
             raise DebFileException(f"control file of {self.path} is not a bytes object")
         # Debian Policy 5.1: control data is UTF-8
         # -> [VALIDATION.md](VALIDATION.md#control-file-encoding)
         try:
-            control_lines = control_lines.decode("utf-8")
+            control_lines = control.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DebFileException(f"control file of {self.path} is not UTF-8: {exc}") from exc
         package: Package = Package(fields={"Filename": "", "Size": "0"})

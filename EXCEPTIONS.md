@@ -46,7 +46,7 @@ are enumerations and mirror the `except` tuples in `cli.py` exactly.
 | Distrustful | `ChecksumException`, `ReleaseFreshnessException` | `Distrustful object.` | none |
 | Write | `ReleaseWriteException` | `Can't write repository.` | `Some data may have been left unfinished.` |
 | Sync | `RepoSyncException` | `Sync failed.` | `Some data may have remained incomplete.` |
-| Generic | `ActionException`, `RepoParamsException`, `ValueError`, `StorageException` | original message | none |
+| Generic | `ActionException`, `RepoParamsException`, `StorageException` | original message | none |
 
 Exits outside the groups:
 
@@ -55,6 +55,7 @@ Exits outside the groups:
 | Argparse usage error, including `ArgumentTypeError` from a type converter, an invalid `DEBKIT_*` value, or a missing required option | Usage text, status 2 (group Usage) |
 | `check` finds an inconsistent repository | `Repository is not consistent.`, status 1 |
 | `NotImplementedError` from a capability stub | Uncaught → [ROADMAP.md](ROADMAP.md#known-deviations) |
+| A builtin `ValueError` or other programming error | Uncaught: a traceback, never an input-error message |
 
 ## Orchestration vs repo semantics
 
@@ -66,7 +67,7 @@ Exits outside the groups:
 | Release file cannot be signed | `ReleaseWriteException` (Write). |
 | Release file cannot be put | `StorageException` (Generic). |
 | `log` / `revert` / `prune` failures | → [STORAGE.md](STORAGE.md#history-commands) |
-| A storage URL txstore rejects (relative `fs://`, query, unknown scheme) | `ValueError` (Generic) → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| A storage URL txstore rejects (relative `fs://`, query, unknown scheme) | txstore's `ValueError`, wrapped by `open_storage()` as `RepoParamsException` (Generic) → [VALIDATION.md](VALIDATION.md#storage-urls). |
 
 ## Maintenance
 

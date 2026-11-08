@@ -151,9 +151,10 @@ def test_packages_find_packages_file_prefers_xz() -> None:
         "main/binary-amd64/Packages.gz": {},
     }
     _storage(pkgs).exists.return_value = True
-    path, _fun = pkgs._find_packages_file(root, "main", "amd64")
+    found, path, _fun = pkgs._find_packages_file(root, "main", "amd64")
     assert path == "dists/bookworm/main/binary-amd64/Packages.xz"
-    assert "dists/bookworm/main/binary-amd64/Packages.gz" in pkgs.found_indices_paths
+    assert "dists/bookworm/main/binary-amd64/Packages.gz" in found
+    assert pkgs.found_indices_paths == []
 
 
 def test_packages_find_packages_file_reads_the_uncompressed_index_last() -> None:
@@ -162,15 +163,42 @@ def test_packages_find_packages_file_reads_the_uncompressed_index_last() -> None
     root = MagicMock(spec=Release)
     root.digests = {"main/binary-amd64/Packages": {}}
     _storage(pkgs).exists.return_value = True
-    path, fun = pkgs._find_packages_file(root, "main", "amd64")
+    _found, path, fun = pkgs._find_packages_file(root, "main", "amd64")
     assert (path, fun(b"raw", 3)) == ("dists/bookworm/main/binary-amd64/Packages", b"raw")
 
     pkgs = _new_packages()
     root.digests["main/binary-amd64/Packages.gz"] = {}
     _storage(pkgs).exists.return_value = True
-    path, _fun = pkgs._find_packages_file(root, "main", "amd64")
+    found, path, _fun = pkgs._find_packages_file(root, "main", "amd64")
     assert path == "dists/bookworm/main/binary-amd64/Packages.gz"
-    assert pkgs.found_indices_paths == [path, "dists/bookworm/main/binary-amd64/Packages"]
+    assert found == [path, "dists/bookworm/main/binary-amd64/Packages"]
+
+
+@pytest.mark.parametrize("first", ["load", "setup"])
+def test_packages_load_again_reads_the_same_files(tmp_path: Path, first: str) -> None:
+    """Regression: the finder used its own state as a first-match flag, so a second load
+    raised `PackagesNotFoundException` and listed every index twice."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=False)
+    root = Release(storage, params)
+    for suffix in (".gz", ""):
+        stored = codec_for(suffix).compress(make_packages_block("foo").encode())
+        root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(stored))
+        storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
+    pkgs = Packages(storage, params)
+    if first == "load":
+        assert pkgs.load(root, "main", "amd64") is True
+    else:
+        pkgs.setup("main", "amd64")
+
+    assert pkgs.load(root, "main", "amd64") is True
+
+    assert pkgs.found_indices_paths == [
+        "dists/bookworm/main/binary-amd64/Packages.gz",
+        "dists/bookworm/main/binary-amd64/Packages",
+    ]
+    assert pkgs.used_indices_path == "dists/bookworm/main/binary-amd64/Packages.gz"
+    assert pkgs.size == 1
 
 
 def test_packages_find_packages_file_raises_when_release_empty() -> None:
@@ -187,7 +215,7 @@ def test_packages_find_packages_file_flat_real_dist_uses_dist_prefix() -> None:
     root = MagicMock(spec=Release)
     root.digests = {"Packages.xz": {}}
     _storage(pkgs).exists.return_value = True
-    path, _ = pkgs._find_packages_file(root, comp="", arch="amd64")
+    _found, path, _ = pkgs._find_packages_file(root, comp="", arch="amd64")
     assert path == "stable/Packages.xz"
 
 
@@ -197,7 +225,7 @@ def test_packages_find_packages_file_source_arch_looks_under_source_dir() -> Non
     root = MagicMock(spec=Release)
     root.digests = {"main/source/Sources.xz": {}}
     _storage(pkgs).exists.return_value = True
-    path, _ = pkgs._find_packages_file(root, comp="main", arch="source")
+    _found, path, _ = pkgs._find_packages_file(root, comp="main", arch="source")
     assert path == "dists/bookworm/main/source/Sources.xz"
 
 
@@ -207,7 +235,7 @@ def test_packages_find_packages_file_flat_source_arch_sits_at_the_dist_root() ->
     root = MagicMock(spec=Release)
     root.digests = {"Sources.xz": {}}
     _storage(pkgs).exists.return_value = True
-    path, _ = pkgs._find_packages_file(root, comp="", arch="source")
+    _found, path, _ = pkgs._find_packages_file(root, comp="", arch="source")
     assert path == "stable/Sources.xz"
 
 
@@ -336,12 +364,17 @@ def test_packages_load_empty_payload_with_matching_digest_returns_false() -> Non
         patch.object(
             Packages,
             "_find_packages_file",
-            return_value=("dists/bookworm/main/binary-amd64/Packages.xz", lambda b: b),
+            return_value=(
+                ["dists/bookworm/main/binary-amd64/Packages.xz"],
+                "dists/bookworm/main/binary-amd64/Packages.xz",
+                lambda b: b,
+            ),
         ),
         patch("debkit.repo.packages.calc_digests") as cd,
         patch.object(Packages, "_verify_indices_checksum", return_value=True),
     ):
         root = MagicMock(spec=Release)
+        root.declared_size.return_value = None
         assert pkgs.load(root, "main", "amd64") is False
         cd.assert_called_once_with(b"")
 
@@ -370,6 +403,37 @@ def test_packages_load_refuses_bytes_the_release_does_not_list(
         pkgs.load(root, "main", "amd64")
 
     assert pkgs.packages == {}
+
+
+def test_packages_load_refuses_an_index_larger_than_the_release_records(tmp_path: Path) -> None:
+    """The Release records the index size, so a longer one is refused before it is hashed."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    stored = make_packages_block("foo").encode()
+    root = Release(storage, params)
+    root.update_digests("main/binary-amd64/Packages", calc_digests(stored))
+    storage.put("dists/bookworm/main/binary-amd64/Packages", stored + b"\n" * 4096)
+    pkgs = Packages(storage, params)
+
+    with pytest.raises(ChecksumException, match="larger than"):
+        pkgs.load(root, "main", "amd64")
+
+
+def test_packages_load_caps_an_unchecked_index_as_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without a checked Release size, the stored index is capped like its decoded form."""
+    monkeypatch.setattr(packages_module, "MAX_INDICES_BYTES", 64)
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=False)
+    storage.put(
+        "dists/bookworm/main/binary-amd64/Packages", make_packages_block("foo").encode() * 4
+    )
+    root = Release(storage, params)
+    root.update_digests("main/binary-amd64/Packages", {"Size": "1"})
+
+    with pytest.raises(PackagesException, match="Stored indices"):
+        Packages(storage, params).load(root, "main", "amd64")
 
 
 @pytest.mark.parametrize("suffix", [".gz", ".xz"])

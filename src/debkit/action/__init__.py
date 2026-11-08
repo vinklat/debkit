@@ -12,13 +12,13 @@ from txstore import HistoryRetention, StorageException, make_storage, redact_url
 
 from debkit.repo import RepoReadException
 from debkit.repo.gnupg import GnuPG
-from debkit.repo.params import RepoParams
+from debkit.repo.params import RepoParams, RepoParamsException
 from debkit.repo.repo_rw import RepoRW
 
 if TYPE_CHECKING:
     from argparse import Namespace
 
-    from txstore import Storage
+    from txstore import Storage, StorageMetrics
 
     from debkit._options import EnvArgumentParser
 
@@ -66,18 +66,25 @@ def open_storage(pars: Namespace, url: str, create_path: bool = False) -> Storag
         url: Storage URL or filesystem path.
         create_path: Create the destination bucket or directory if missing.
 
+    Raises:
+        RepoParamsException: txstore rejects the URL → [VALIDATION.md](VALIDATION.md#storage-urls).
+
     Returns:
         A backend instance routed by the URL scheme.
     """
-    return make_storage(
-        storage_url(url),
-        create_path=create_path,
-        verify_ssl=verify_policy(pars).verify_ssl,
-        s3_access=pars.s3_access,
-        s3_secret=pars.s3_secret,
-        s3_default_acl=pars.s3_default_acl,
-        s3_bucket_acl=pars.s3_bucket_acl,
-    )
+    try:
+        return make_storage(
+            storage_url(url),
+            create_path=create_path,
+            verify_ssl=verify_policy(pars).verify_ssl,
+            s3_access=pars.s3_access,
+            s3_secret=pars.s3_secret,
+            s3_default_acl=pars.s3_default_acl,
+            s3_bucket_acl=pars.s3_bucket_acl,
+        )
+    except ValueError as exc:
+        # the URL may carry credentials -> [CONFIG.md](CONFIG.md#secrets)
+        raise RepoParamsException(f"{exc}") from exc
 
 
 def history_retention(pars: Namespace) -> HistoryRetention:
@@ -297,3 +304,12 @@ class Action:
         logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
         storage, params = attach_storage_repo(pars, pars.target_url, create_path=create_path)
         self.target_repo = RepoRW(storage, params, gpg=self.gpg)
+
+    @property
+    def _target_metrics(self) -> StorageMetrics:
+        """The read and write counters of the target storage, which the reports print.
+
+        Returns:
+            The target storage's metrics.
+        """
+        return self.target_repo.storage.metrics

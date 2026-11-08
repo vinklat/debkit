@@ -17,12 +17,12 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/_logging.py` | `configure_logging()`: root handler, plain or JSON lines → [CONFIG.md](CONFIG.md#global-flags). |
 | `src/debkit/action/__init__.py` | `ActionException`, `open_storage()`, `storage_url()`, `history_retention()`, `verify_policy()`, the `attach_storage_*` helpers, `Action` base → [STORAGE.md](STORAGE.md#construction). |
 | `src/debkit/action/action_pkg.py` | `ActionPkg`: list (`list_packages()`), dump, stats, insert, remove. |
-| `src/debkit/action/action_sync.py` | `ActionSync`: sync, check. |
+| `src/debkit/action/action_sync.py` | `ActionSync`: sync; `ActionCheck`: check; the selection both read → [CONFIG.md](CONFIG.md#check). |
 | `src/debkit/action/action_history.py` | `ActionHistory`: log, revert, prune → [STORAGE.md](STORAGE.md#history-commands). |
-| `src/debkit/repo/__init__.py` | `Repo` base: index loading and checksum verification → [CRYPTO.md](CRYPTO.md#verification-order). |
+| `src/debkit/repo/__init__.py` | `Repo` base: index loading and checksum verification → [CRYPTO.md](CRYPTO.md#verification-order); the mirror index set and the consistency lists → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `src/debkit/repo/params.py` | `RepoParams` value object → [VALIDATION.md](VALIDATION.md#debian-source-strings); index-path layout → [VALIDATION.md](VALIDATION.md#repository-index-paths); pseudo-architectures and `is_valid_arch()` → [VALIDATION.md](VALIDATION.md#architectures). |
-| `src/debkit/repo/repo_rw.py` | `RepoRW`: read/write repository mutations. |
-| `src/debkit/repo/repo_sync.py` | `RepoSync`: sync planning into a `SyncPlan`, transfer, and mirror checks between repositories. |
+| `src/debkit/repo/repo_rw.py` | `RepoRW`: read/write repository mutations, and `check()` of its own storage against its indices → [CONFIG.md](CONFIG.md#check). |
+| `src/debkit/repo/repo_sync.py` | `RepoSync`: sync planning into a `SyncPlan` and transfer between repositories. |
 | `src/debkit/repo/index_selection.py` | `select_index_entry()`: the pure rules for which Release-listed indices a mirror carries → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `src/debkit/repo/repo_diff.py` | Index and file diffing. |
 | `src/debkit/repo/release.py` | Release file parse, sign, verify → [CRYPTO.md](CRYPTO.md#gpg). |
@@ -31,7 +31,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/component.py` | Component (suite/component) helpers. |
 | `src/debkit/repo/changes.py` | `.changes` parsing. |
 | `src/debkit/repo/debfile.py` | `.deb` introspection. |
-| `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix; discovery order → [VALIDATION.md](VALIDATION.md#repository-index-paths). |
+| `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix; discovery order → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` reads a stored object up to a size limit → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | `src/debkit/repo/gnupg.py` | GPG sign/verify wrapper → [CRYPTO.md](CRYPTO.md#gpg). |
 | `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `HexDigests`, `ChecksumException`; re-exports txstore's algorithm-name lists → [CRYPTO.md](CRYPTO.md#checksums). |
 | `tests/` | Test suite → [TESTING.md](TESTING.md#file-layout). |

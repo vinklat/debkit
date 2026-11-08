@@ -27,10 +27,11 @@ from txstore import (
 )
 
 from debkit.action import ActionException, OutputType
-from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionSync
+from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionCheck, ActionSync
 from debkit.repo.component import ComponentException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
+from debkit.repo.repo_rw import CheckReport
 from debkit.repo.repo_sync import SyncPlan
 
 # ---------------------------------------------------------------------------
@@ -51,7 +52,6 @@ def _make_action(*, storage: object = None) -> ActionSync:
     """
     action = ActionSync.__new__(ActionSync)
     action.output = OutputType.brief
-    action.fix = False
     action.verify_existing = False
     action.indices_only = False
     action.allow_release_rollback = False
@@ -349,20 +349,15 @@ class _SwapReleaseOnceFS(StorageFS):
     def __init__(self, base_dir: str, swapped: bytes) -> None:
         super().__init__(base_dir)
         self.swapped: bytes | None = swapped
-        self._in_get = False
-
-    def get(self, path: str) -> bytes:
-        # `get` may read through `get_stream`; the swap targets the copy stream only.
-        self._in_get = True
-        try:
-            return super().get(path)
-        finally:
-            self._in_get = False
+        self._release_streams = 0
 
     def get_stream(self, path: str) -> IO[bytes]:
-        if path == f"{_PREFIX}/Release" and self.swapped is not None and not self._in_get:
-            data, self.swapped = self.swapped, None
-            return io.BytesIO(data)
+        # the load reads the Release first; the swap targets the copy stream after it
+        if path == f"{_PREFIX}/Release":
+            self._release_streams += 1
+            if self._release_streams == 2 and self.swapped is not None:
+                data, self.swapped = self.swapped, None
+                return io.BytesIO(data)
         return super().get_stream(path)
 
 
@@ -394,19 +389,95 @@ def test_sync_refuses_a_root_release_copy_that_differs_from_the_verified_one(
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
 
 
+def _write_other_dist(base: Path, dist: str, packages: dict[str, str]) -> None:
+    """Write another dist beside bookworm in the same root, listing *packages* (name → version)."""
+    stanzas: list[str] = []
+    for name, version in packages.items():
+        deb = f"pool/main/{name[0]}/{name}/{name}_{version}_amd64.deb"
+        payload = f"deb {version}".encode()
+        (base / deb).parent.mkdir(parents=True, exist_ok=True)
+        (base / deb).write_bytes(payload)
+        stanzas.append(
+            f"Package: {name}\nVersion: {version}\nArchitecture: amd64\nFilename: {deb}\n"
+            f"Size: {len(payload)}\nSHA256: {hashlib.sha256(payload).hexdigest()}\n"
+        )
+    index = gzip.compress("\n".join(stanzas).encode(), mtime=0)
+    release = (
+        f"Origin: t\nSuite: {dist}\nDate: Tue, 01 Sep 2026 00:00:00 UTC\nArchitectures: amd64\n"
+        f"Components: main\nSHA256:\n {hashlib.sha256(index).hexdigest()} {len(index)} "
+        "main/binary-amd64/Packages.gz\n"
+    ).encode()
+    for path, data in {
+        f"dists/{dist}/main/binary-amd64/Packages.gz": index,
+        f"dists/{dist}/Release": release,
+    }.items():
+        (base / path).parent.mkdir(parents=True, exist_ok=True)
+        (base / path).write_bytes(data)
+
+
+_BULLSEYE_PATHS = (
+    "dists/bullseye/Release",
+    "dists/bullseye/main/binary-amd64/Packages.gz",
+    "pool/main/b/bar/bar_1_amd64.deb",
+    # bookworm drops foo 2, bullseye still lists it
+    "pool/main/f/foo/foo_2_amd64.deb",
+)
+
+
+@pytest.mark.parametrize("fix", [False, True], ids=["sync", "sync-then-check-fix"])
+def test_sync_keeps_another_dist_sharing_the_target_root(tmp_path: Path, fix: bool) -> None:
+    """A sync or `check --fix` deletes neither another dist's tree nor a payload it lists."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_other_dist(tmp_path / "tgt", "bullseye", {"bar": "1", "foo": "2"})
+    orphan = tmp_path / "tgt" / "pool/main/z/zz/zz_1_amd64.deb"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"orphan")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+
+    action.sync()
+    if fix:
+        _check_action(StorageFS(str(tmp_path / "tgt")), fix=True).check()
+
+    for path in _BULLSEYE_PATHS:
+        assert (tmp_path / "tgt" / path).exists(), path
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
+    assert not orphan.exists()
+
+
+def test_sync_deletes_only_its_own_tree_while_another_dist_does_not_load(tmp_path: Path) -> None:
+    """Another dist's payloads are unknown, so nothing outside `dists/bookworm/` is deleted."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_other_dist(tmp_path / "tgt", "bullseye", {"bar": "1"})
+    (tmp_path / "tgt" / "dists/bullseye/main/binary-amd64/Packages.gz").write_bytes(b"corrupt")
+    orphan = tmp_path / "tgt" / "pool/main/z/zz/zz_1_amd64.deb"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"orphan")
+    stale = tmp_path / "tgt" / _PREFIX / "main/stale-index"
+    stale.write_bytes(b"stale")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+
+    action.sync()
+
+    assert orphan.exists()
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
+    assert (tmp_path / "tgt" / "pool/main/b/bar/bar_1_amd64.deb").exists()
+    assert not stale.exists()
+
+
 def test_sync_then_check_finds_the_mirror_consistent(tmp_path: Path) -> None:
     """A real fs→fs sync leaves nothing missing or orphaned for `check` to report."""
     _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
     action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
-    action.fix = False
 
     action.sync()
 
     payload = tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb"
     assert payload.read_bytes() == b"deb 3"
-    assert action.check() is True
+    assert _check_action(StorageFS(str(tmp_path / "tgt"))).check() is True
     payload.unlink()
-    assert action.check() is False
+    assert _check_action(StorageFS(str(tmp_path / "tgt"))).check() is False
 
 
 def test_sync_prints_json_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -430,7 +501,6 @@ def test_sync_over_an_older_mirror_replaces_its_stale_payload(tmp_path: Path) ->
     _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
     (tmp_path / "src" / "pool/main/f/foo/foo_2_amd64.deb").unlink()
     action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
-    action.fix = False
 
     action.sync()
 
@@ -438,7 +508,7 @@ def test_sync_over_an_older_mirror_replaces_its_stale_payload(tmp_path: Path) ->
     # dot-files are txstore footmarks of the history, not payloads
     payloads = sorted(path.name for path in pool.iterdir() if not path.name.startswith("."))
     assert payloads == ["foo_3_amd64.deb"]
-    assert action.check() is True
+    assert _check_action(StorageFS(str(tmp_path / "tgt"))).check() is True
     assert len(TransactionHistory(StorageFS(str(tmp_path / "tgt"))).load()) == 2
 
 
@@ -576,13 +646,24 @@ def test_sync_floors_against_a_peer_commit_that_lands_before_the_lock(tmp_path: 
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
 
 
-def test_sync_skips_a_target_index_that_does_not_decode(tmp_path: Path) -> None:
-    """The sync copies the source index over it; it never writes one from the target load."""
+@pytest.mark.parametrize(
+    "target_date",
+    ["Tue, 01 Sep 2026 00:00:00 UTC", "Thu, 01 Oct 2026 00:00:00 UTC"],
+    ids=["older-target", "same-release-as-source"],
+)
+def test_sync_skips_a_target_index_that_does_not_decode(tmp_path: Path, target_date: str) -> None:
+    """The sync copies the source index over it; it never writes one from the target load.
+
+    A target with the source's own Release bytes still holds the corrupt index, so equal
+    Release hashes must not settle the plan.
+    """
     _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
-    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_tree(tmp_path / "tgt", target_date, "3" if "Oct" in target_date else "2")
     index = f"{_PREFIX}/main/binary-amd64/Packages.gz"
     (tmp_path / "tgt" / index).write_bytes((tmp_path / "tgt" / index).read_bytes()[:-8])
     action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    assert action.source_repo is not None
+    action.source_repo.params.verify_digests = False
     action.target_repo.params.verify_digests = False
 
     action.sync()
@@ -599,17 +680,6 @@ def test_sync_loads_the_target_inside_the_transaction() -> None:
     action.sync()
 
     assert began_at_load == [True]
-
-
-def test_sync_refuses_to_run_without_a_source() -> None:
-    txn = TxnStorageStub()
-    action = _make_action(storage=txn)
-    action.source_repo = None
-
-    with pytest.raises(ActionException, match="source repository"):
-        action.sync()
-
-    assert not txn.began
 
 
 def test_sync_treats_a_missing_target_as_empty() -> None:
@@ -645,18 +715,16 @@ def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction
     began_at_check: list[bool] = []
     _target(action).update.side_effect = lambda **_: began_at_load.append(txn.began)
 
-    def check(missing: list[str], orphans: list[str], fix: bool = False) -> tuple[int, int]:
+    def check(*, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
         began_at_check.append(txn.began and not txn.committed)
-        return 0, 0
+        return CheckReport(["gone.deb"], ["junk"], 0, 0)
 
-    with patch("debkit.action.action_sync.RepoSync") as checker:
-        checker.over.return_value.consistency_lists.return_value = (["gone.deb"], ["junk"])
-        checker.over.return_value.check.side_effect = check
-        action.sync()
+    _target(action).check.side_effect = check
+    action.sync()
 
     assert began_at_load == [True]
     assert began_at_check == [True]
-    checker.over.return_value.check.assert_called_once_with(["gone.deb"], [], fix=True)
+    _target(action).check.assert_called_once_with(fix=True, purge_orphans=False)
 
 
 def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
@@ -665,11 +733,9 @@ def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
     action = _make_action(storage=TxnStorageStub())
     action.verify_existing = True
 
-    with patch("debkit.action.action_sync.RepoSync") as checker:
-        checker.over.return_value.consistency_lists.return_value = ([], [])
-        checker.over.return_value.check.return_value = (3, 1)
-        with caplog.at_level(logging.WARNING):
-            action.sync()
+    _target(action).check.return_value = CheckReport([], [], 3, 1)
+    with caplog.at_level(logging.WARNING):
+        action.sync()
 
     assert [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING] == [
         "2 target files failed verification and were not deleted"
@@ -683,6 +749,11 @@ class _UnreadableIndicesFS(StorageFS):
         if path.startswith("dists/"):
             raise StorageException(f"backend down reading {path}")
         return super().get(path)
+
+    def get_stream(self, path: str) -> IO[bytes]:
+        if path.startswith("dists/"):
+            raise StorageException(f"backend down reading {path}")
+        return super().get_stream(path)
 
     def list(self, *args: Any, **kwargs: Any) -> list[str]:
         raise StorageException("backend down listing")
@@ -727,15 +798,14 @@ def test_sync_verify_existing_replaces_a_corrupt_payload_in_one_transaction(
 
 def _check_action(
     storage: Storage, *, fix: bool = False, output: OutputType = OutputType.brief
-) -> ActionSync:
-    """A real `check` over a target storage; check runs without a source."""
+) -> ActionCheck:
+    """A real `check` over a target storage."""
     from debkit.repo.repo_rw import RepoRW
 
-    action = ActionSync.__new__(ActionSync)
+    action = ActionCheck.__new__(ActionCheck)
     action.output = output
     action.fix = fix
     action.history_retention = HistoryRetention(max_age_days=0)
-    action.source_repo = None
     action.target_repo = RepoRW(storage, RepoParams("bookworm", ["main"], ["amd64"]))
     return action
 
@@ -785,7 +855,7 @@ def test_check_reports_an_orphan_and_fix_deletes_it(tmp_path: Path, fix: bool) -
     assert orphan.exists() is not fix
 
 
-def _check_with_undecodable_index(tmp_path: Path, *, fix: bool) -> ActionSync:
+def _check_with_undecodable_index(tmp_path: Path, *, fix: bool) -> ActionCheck:
     """A check over a one-package tree whose index digest matches but does not decode."""
     _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
     index = tmp_path / _PREFIX / "main/binary-amd64/Packages.gz"
@@ -903,7 +973,16 @@ def _sync_pars(**flags: object) -> Namespace:
 def _init_action(
     pars: Namespace | None = None, **flags: object
 ) -> tuple[ActionSync, dict[str, tuple[list[str] | None, list[str] | None]]]:
-    """Run the real ``ActionSync.__init__``, recording each repo's selection as built.
+    """Run the real ``ActionSync.__init__``, recording each repo's selection as built."""
+    action, built = _init_with(ActionSync, pars if pars is not None else _sync_pars(**flags))
+    assert isinstance(action, ActionSync)
+    return action, built
+
+
+def _init_with(
+    cls: type[ActionSync] | type[ActionCheck], pars: Namespace
+) -> tuple[ActionSync | ActionCheck, dict[str, tuple[list[str] | None, list[str] | None]]]:
+    """Run the real ``cls.__init__``, recording each repo's selection as built.
 
     Returns the action and, per repo class, the `archs` and `indices_exclude` its
     `RepoParams` held when the repo was constructed.
@@ -924,7 +1003,7 @@ def _init_action(
         patch.object(RepoSync, "__init__", recorder("RepoSync", RepoSync.__init__)),
         patch.object(RepoRW, "__init__", recorder("RepoRW", RepoRW.__init__)),
     ):
-        action = ActionSync(pars if pars is not None else _sync_pars(**flags))
+        action = cls(pars)
     return action, built
 
 
@@ -971,9 +1050,9 @@ def test_init_selects_the_target_architecture_for_a_check_namespace() -> None:
         command="check", fix=True, architectures="amd64,source", indices_exclude=""
     )
 
-    action, built = _init_action(pars)
+    action, built = _init_with(ActionCheck, pars)
 
-    assert action.source_repo is None
+    assert isinstance(action, ActionCheck)
     assert "RepoSync" not in built
     assert built["RepoRW"] == (["amd64", "source"], None)
 
@@ -1009,7 +1088,7 @@ def test_init_gives_the_check_target_the_gnupg() -> None:
     )
 
     with patch("debkit.action.GnuPG") as gnupg:
-        action, _ = _init_action(pars)
+        action, _ = _init_with(ActionCheck, pars)
 
     assert action.target_repo.gpg is gnupg.return_value
 

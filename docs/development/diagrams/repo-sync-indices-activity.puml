@@ -1,5 +1,5 @@
 @startuml
-title RepoSync._get_indices
+title Repo._get_indices
 start
 :indices = {};
 :add release.get_indices_paths() with digests = None

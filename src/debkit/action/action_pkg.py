@@ -65,13 +65,13 @@ class ActionPkg(Action):
     def dump(self) -> None:
         """Dump repository to stdout."""
         self.target_repo.update(skip_unreadable=True)
-        logger.debug("%s", str(self.target_repo.storage.metrics))
+        logger.debug("%s", str(self._target_metrics))
         dump_dict = self.target_repo.dump(brief=self.output == OutputType.brief)
 
         if self.output == OutputType.brief:
             self._print_brief_dump(dump_dict)
         else:
-            self._print_json_dump(dump_dict)
+            print(dump_json(dump_dict))
 
     def _print_brief_dump(self, dump: dict[str, Any]) -> None:
         """Print a brief summary of the dump to stdout.
@@ -94,14 +94,6 @@ class ActionPkg(Action):
                     release = "<No release data>"
                 print(f"    {arch_name}: {release}")
                 print(f"      {arch['packages']['data']} packages")
-
-    def _print_json_dump(self, dump: dict[str, Any]) -> None:
-        """Print the dump in JSON format.
-
-        Args:
-            dump: A dictionary containing the dump data.
-        """
-        print(dump_json(dump))
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
@@ -129,8 +121,8 @@ class ActionPkg(Action):
                 )
         print("Indices read:")
         print(
-            f"  {naturalsize(self.target_repo.storage.metrics.read_bytes)}, "
-            f"{self.target_repo.storage.metrics.read_objects_total} files"
+            f"  {naturalsize(self._target_metrics.read_bytes)}, "
+            f"{self._target_metrics.read_objects_total} files"
         )
 
     def _print_json_stats(self, stats: dict[str, dict[str, dict[str, int]]]) -> None:
@@ -142,8 +134,8 @@ class ActionPkg(Action):
         ret = {
             "packages": stats,
             "indices": {
-                "files_total": self.target_repo.storage.metrics.read_objects_total,
-                "files_bytes": self.target_repo.storage.metrics.read_bytes,
+                "files_total": self._target_metrics.read_objects_total,
+                "files_bytes": self._target_metrics.read_bytes,
             },
         }
 
@@ -246,7 +238,9 @@ class ActionPkg(Action):
             changes = self._load_changes(self.incoming_storage, self.changes_filename)
             filenames = changes.get_deb_files()
         else:
-            if self.deb_filename is None or not self.deb_filename.endswith(".deb"):
+            # exactly one of the two filenames is set, checked above
+            assert self.deb_filename is not None
+            if not self.deb_filename.endswith(".deb"):
                 raise ActionException(f"Invalid .deb filename: {self.deb_filename}")
             filenames = [self.deb_filename]
 
@@ -349,11 +343,10 @@ class ActionPkg(Action):
         """Remove the packages matching the parsed ``--pkg-pattern`` from the repository.
 
         Raises:
-            ValueError: If no package pattern was parsed.
             ActionException: If no package matched.
         """
-        if self.pkg_pattern is None:
-            raise ValueError("No package pattern provided.")
+        # `--pkg-pattern` is required for `remove`, so argparse already refused a missing one
+        assert self.pkg_pattern is not None, "remove without --pkg-pattern"
 
         self.target_repo.update()
         prev_repo = copy(self.target_repo)
@@ -377,8 +370,8 @@ class ActionPkg(Action):
             print(f"Removed {diff.count_pkgs_to_remove()} packages.")
         if diff.count_pkgs_to_copy() > 0:
             print(
-                f"{self.target_repo.storage.metrics.write_objects_total} objects "
-                f"({naturalsize(self.target_repo.storage.metrics.write_bytes)}) transferred."
+                f"{self._target_metrics.write_objects_total} objects "
+                f"({naturalsize(self._target_metrics.write_bytes)}) transferred."
             )
 
     def _print_pkg_json(self, diff: RepoDiff) -> None:
@@ -391,7 +384,7 @@ class ActionPkg(Action):
             "packages": diff.dump(),
             "transfer": {"metrics": {}, "errors": {}},
         }
-        json_dict["transfer"]["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
+        json_dict["transfer"]["metrics"]["target_storage"] = self._target_metrics.dump()
 
         print(dump_json(json_dict))
 

@@ -83,14 +83,6 @@ class Component:
         """Whether the underlying repo layout is flat (delegates to ``params``)."""
         return self.params.is_flat
 
-    def __copy__(self) -> Component:
-        """Create a shallow copy of this Component object on the same root Release.
-
-        Returns:
-            A shallow copy of this Component object.
-        """
-        return self.copy_onto(self.root_release)
-
     def copy_onto(self, root_release: Release) -> Component:
         """Copy this component onto another root Release, the one of the repo copy owning it.
 

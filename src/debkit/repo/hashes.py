@@ -82,6 +82,18 @@ class HexDigests:
 
         return True
 
+    def declared_size(self, filename: str) -> int | None:
+        """Get the `Size` the digest table records for a file.
+
+        Args:
+            filename: The filename to look up.
+
+        Returns:
+            The recorded size, or None when the file or a well-formed size is not recorded.
+        """
+        size = str(self.digests.get(filename, {}).get("Size", ""))
+        return int(size) if size.isascii() and size.isdigit() else None
+
     def update_digests(self, filename: str, incoming_digests: dict[str, str]) -> None:
         """Update checksums of a file.
 

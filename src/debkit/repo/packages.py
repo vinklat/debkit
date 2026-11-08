@@ -13,7 +13,7 @@ from typing import (
 
 from txstore import calc_digests, compare_digests, is_unsafe_path
 
-from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, codec_for
+from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, codec_for, read_capped
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.release import Release
@@ -58,7 +58,8 @@ class Packages:
         release: The release object.
         packages: The packages objects from Packages indices file.
         used_indices_path: The Packages file used for self.packages.
-        found_indices_files: The list of all Package* files from Release.
+        found_indices_paths: Every index form the Release lists that this container reads or
+            writes: found by `load`, planned by `setup`.
         size: The number of packages.
         modified: Whether the Packages object has been modified.
     """
@@ -79,10 +80,13 @@ class Packages:
         self.modified = False
 
     def __copy__(self) -> Packages:
-        """Create a shallow copy of this Packages object.
+        """Snapshot this index: its Release and package map are copies, the packages shared.
+
+        A load or a mutation replaces packages rather than changing one in place, so the
+        snapshot keeps describing the index as it was. A `Sources` copy stays a `Sources`.
 
         Returns:
-            A shallow copy of this Packages object.
+            A copy of the same class.
         """
         ret = type(self)(self.storage, self.params)
         ret.release = copy(self.release)
@@ -182,11 +186,12 @@ class Packages:
 
     def _find_packages_file(
         self, root_release: Release, comp: str, arch: str
-    ) -> tuple[str, Callable[[bytes, int], bytes]]:
-        """Find usable existing Package indices files from repo.
+    ) -> tuple[list[str], str, Callable[[bytes, int], bytes]]:
+        """Find the index files the Release lists and storage holds, and pick one to read.
 
-        There may be more than one indices file in the repo with different compression.
-        This function finds all and choose best one for use.
+        Every listed form present is found, the uncompressed one included, so a save
+        rewrites each; the first in `CODECS` order is read. Nothing is assigned, so a
+        repeated `load` finds the same files.
 
         Args:
             root_release: The root release object.
@@ -197,48 +202,71 @@ class Packages:
             PackagesNotFoundException: There is no Packages* file.
 
         Returns:
-            The path of the file to read and its decompression function.
+            Every found index path, the path to read, and its decompression function.
         """
-        ret: None | tuple[str, Callable[[bytes, int], bytes]] = None
+        found: list[str] = []
+        chosen: tuple[str, Callable[[bytes, int], bytes]] | None = None
 
         for codec in CODECS:
-            # search for all Packages indices files, the uncompressed one included, so a
-            # save rewrites every form the Release lists; .xz is preferred for reading
             indices_path = self.params.indices_path(self._index_inner(arch, codec.suffix), comp)
-            indices_path_short = self.params.release_key(indices_path)
 
-            if indices_path_short in root_release.digests:
-                if not self.storage.exists(indices_path):
-                    logger.debug("%s not exist...", indices_path)
-                    continue
+            if self.params.release_key(indices_path) not in root_release.digests:
+                logger.debug("%s not in Release...", indices_path)
+                continue
+            if not self.storage.exists(indices_path):
+                logger.debug("%s not exist...", indices_path)
+                continue
 
-                # add found Package* files for sync
-                self.found_indices_paths.append(indices_path)
-
-                # get packages from first found Packages* file (.xz)
-                if not self.used_indices_path:
-                    logger.debug("%s found... (use this)", indices_path)
-                    ret = indices_path, codec.decompress
-                    self.used_indices_path = indices_path
-                    continue
-
-                # else
+            found.append(indices_path)
+            if chosen is None:
+                logger.debug("%s found... (use this)", indices_path)
+                chosen = indices_path, codec.decompress
+            else:
                 logger.debug("%s found... (skip)", indices_path)
 
-            else:
-                logger.debug("%s not in Release...", indices_path)
-
-        if ret is not None:
-            return ret
+        if chosen is not None:
+            return found, *chosen
 
         #  there is no any Packages indices file found / 404 everywhere
         if self.params.is_flat:
             raise PackagesNotFoundException("there is no indices file.")
 
-        # else
         raise PackagesNotFoundException(
             f"missing indices file for arch {arch} in component {comp}."
         )
+
+    def _read_indices(self, root_release: Release, path: str) -> bytes:
+        """Read an index no larger than the Release records, before its digest is checked.
+
+        Args:
+            root_release: The root release object.
+            path: The path of the index file.
+
+        Raises:
+            ChecksumException: The file is larger than the size a checked Release records.
+            PackagesException: No checked Release records its size and it is stored past
+                `MAX_INDICES_BYTES`.
+
+        Returns:
+            The stored index bytes -> [VALIDATION.md](VALIDATION.md#object-sizes).
+        """
+        declared: int | None = None
+        if self.params.verify_digests:
+            key = self.params.release_key(path)
+            sizes = [
+                size
+                for release in (root_release, self.release)
+                if (size := release.declared_size(key)) is not None
+            ]
+            declared = max(sizes) if sizes else None
+        try:
+            return read_capped(
+                self.storage, path, MAX_INDICES_BYTES if declared is None else declared
+            )
+        except SizeLimitError as exc:
+            if declared is None:
+                raise PackagesException(f"Stored indices {exc}.") from exc
+            raise ChecksumException(f"Mismatch for {path}: {exc}.") from exc
 
     def _verify_indices_checksum(
         self, root_release: Release, path: str, digests: dict[str, str]
@@ -278,18 +306,21 @@ class Packages:
             arch: The architecture name.
 
         Raises:
-            ChecksumException: Checksum mismatch for Packages file.
+            ChecksumException: Checksum mismatch for Packages file, or a file larger than the
+                size a checked Release records.
             PackagesNotFoundException: No Packages* file the Release lists is in storage.
-            PackagesException: The index is truncated, does not decode, decodes past
-                `MAX_INDICES_BYTES`, or is not UTF-8; a missing one raises the
+            PackagesException: The index is truncated, does not decode, is stored or decodes
+                past `MAX_INDICES_BYTES`, or is not UTF-8; a missing one raises the
                 `PackagesNotFoundException` subclass.
 
         Returns:
             True if the packages indices file is successfully loaded, False otherwise.
         """
-        indices_path, decompress_fun = self._find_packages_file(root_release, comp, arch)
-
-        enc_data = self.storage.get(indices_path)
+        found, indices_path, decompress_fun = self._find_packages_file(root_release, comp, arch)
+        # replaced, not appended: a repeated load, or one after `setup`, reads storage afresh
+        self.found_indices_paths = found
+        self.used_indices_path = indices_path
+        enc_data = self._read_indices(root_release, indices_path)
 
         # Verify the digest BEFORE deciding the payload is "legitimately empty".
         # `_find_packages_file` only guarantees the key exists in Release and in

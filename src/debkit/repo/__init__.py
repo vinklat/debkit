@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Generator
+from collections.abc import Collection, Generator, Iterable
 from copy import copy
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NamedTuple
 
-from txstore import StorageException
+from txstore import StorageException, is_unsafe_path
 
-from debkit.repo.component import Component
-from debkit.repo.packages import Packages
+from debkit.repo.component import Component, ComponentException
+from debkit.repo.hashes import ChecksumException
+from debkit.repo.index_selection import select_index_entry
+from debkit.repo.package import PackageException
+from debkit.repo.packages import Packages, PackagesException
 from debkit.repo.params import (
     ARCH_ANY,
     FLAT_COMPONENT,
@@ -22,7 +26,7 @@ from debkit.repo.params import (
     is_safe_name,
     is_valid_arch,
 )
-from debkit.repo.release import Release
+from debkit.repo.release import Release, ReleaseReadException
 from debkit.repo.repo_diff import RepoDiff
 
 if TYPE_CHECKING:
@@ -30,12 +34,26 @@ if TYPE_CHECKING:
 
     from debkit.repo.gnupg import GnuPG
     from debkit.repo.package import Package
+    from debkit.repo.release import IndexEntry
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 # the architecture directory of a binary index key, `<comp>/binary-<arch>/Packages[.<ext>]`
 _BINARY_INDEX_KEY = re.compile(r"binary-(?P<arch>[^/]+)/Packages(?:\.[^/]+)?")
+
+
+@dataclass(frozen=True)
+class IndexTarget:
+    """One index in the mirror set -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+    `digests` are what the source root Release records for the path, or `None` for
+    the root Release files, which are not listed in their own digest block.
+    `known_published` says the Release load or a parse already fetched the object.
+    """
+
+    digests: dict[str, str] | None
+    known_published: bool
 
 
 class RepoReadException(Exception):
@@ -69,9 +87,12 @@ class Repo:
         self.storage = storage
         self.params = params
         self.gpg = gpg
-        self.release = Release(storage, params, gpg=gpg)
+        self.release = Release(storage, params, gpg=gpg, root=True)
         self.components: dict[str, Component] = {}
         self.modified = False
+        # payloads reported as Release-owned. Building the package set again in one run, as a
+        # sync and its check do, reports each once
+        self._owned_payloads_warned: set[str] = set()
 
         logger.debug(
             "Repo: Storage=%s, Dist=%s, Components=%s",
@@ -81,10 +102,14 @@ class Repo:
         )
 
     def __copy__(self) -> Repo:
-        """Create a shallow copy of this Repo.
+        """Snapshot this repo, as a diff against its later state needs it.
+
+        The root Release and every component and package map are copied, so a later load,
+        insert, or save of the original leaves the snapshot as it was. The snapshot is a
+        plain `Repo`: it is only read.
 
         Returns:
-            A shallow copy of this Repo.
+            A snapshot of this repo.
         """
         ret = Repo(self.storage, self.params, gpg=self.gpg)
         ret.release = copy(self.release)
@@ -262,6 +287,9 @@ class Repo:
     def stats(self) -> dict[str, dict[str, dict[str, int]]]:
         """Get statistics of the repository.
 
+        Raises:
+            PackageException: A package `Size` is not a decimal byte count.
+
         Returns:
             A dict representation of the repository statistics.
         """
@@ -276,8 +304,11 @@ class Repo:
                         "packages_total": len(packages.packages),
                         "packages_bytes": 0,
                     }
-                    for _, package in packages.packages.items():
-                        ret[comp_name][arch]["packages_bytes"] += int(package.fields["Size"])
+                    for filename, package in packages.packages.items():
+                        size = str(package.fields["Size"])
+                        if not (size.isascii() and size.isdigit()):
+                            raise PackageException(f"{filename} has a malformed Size: {size!r}")
+                        ret[comp_name][arch]["packages_bytes"] += int(size)
         return ret
 
     def get_packages(self) -> Generator[Package]:
@@ -302,20 +333,21 @@ class Repo:
         """
         diff = RepoDiff()
 
-        if self.modified or other_repo.modified or (self.release.hash != other_repo.release.hash):
-            for component_name, component in self.components.items():
-                for arch, packages in component.packages.items():
-                    if (
-                        component_name in other_repo.components
-                        and arch in other_repo.components[component_name].packages
-                    ):
-                        other_packages = other_repo.components[component_name].packages[arch]
-                    else:
-                        # other repo does not have this component or arch
-                        other_packages = Packages(other_repo.storage, other_repo.params)
+        # always compared: equal Release bytes do not prove equal loaded packages, since a
+        # load may skip an unreadable index -> [VALIDATION.md](VALIDATION.md#index-loading)
+        for component_name, component in self.components.items():
+            for arch, packages in component.packages.items():
+                if (
+                    component_name in other_repo.components
+                    and arch in other_repo.components[component_name].packages
+                ):
+                    other_packages = other_repo.components[component_name].packages[arch]
+                else:
+                    # other repo does not have this component or arch
+                    other_packages = Packages(other_repo.storage, other_repo.params)
 
-                    added, removed, updated, old_versions = other_packages.diff(packages)
-                    diff.update(component_name, arch, added, removed, updated, old_versions)
+                added, removed, updated, old_versions = other_packages.diff(packages)
+                diff.update(component_name, arch, added, removed, updated, old_versions)
 
         return diff
 
@@ -398,3 +430,268 @@ class Repo:
             for component in self.components.values()
             for packages in component.packages.values()
         )
+
+    def _get_indices(self) -> dict[str, IndexTarget]:
+        """Get every repository index file to mirror, with its expected digests.
+
+        The signed root Release is the manifest: it lists each index apt may fetch,
+        so every listed path is a candidate. Entries are filtered by the selected
+        components and architectures and by `RepoParams.indices_exclude`
+        → [VALIDATION.md](VALIDATION.md#index-exclude-globs).
+
+        The root `Release`, `Release.gpg`, and `InRelease` files are not listed in
+        the digest block, carry no digests, and are never filtered. A listed key that
+        would escape the storage root is dropped
+        -> [VALIDATION.md](VALIDATION.md#filename-safety). Nothing is probed
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Returns:
+            Index path → the digests recorded for it and whether the source is already known to
+            publish it.
+        """
+        ret: dict[str, IndexTarget] = {}
+
+        components = None if self.params.is_flat else set(self.get_components())
+        archs = set(self.get_archs())
+        arch_universe = archs | set(self.release_archs())
+        excludes = self.params.indices_exclude or []
+
+        def selected(key: str) -> bool:
+            return select_index_entry(
+                key,
+                components=components,
+                archs=archs,
+                arch_universe=arch_universe,
+                excludes=excludes,
+            )
+
+        # root Release files: the manifest itself, never filtered and never listed
+        # in their own digest block
+        for path in self.release.get_indices_paths():
+            ret[path] = IndexTarget(None, known_published=True)
+
+        # indices already discovered while parsing, e.g. Packages files. Parsing
+        # proved they exist, so they are not probed again, but the selection rules
+        # still apply to them.
+        for component in self.components.values():
+            for path in component.get_indices_paths():
+                if path in ret:
+                    continue
+                key = self.params.release_key(path)
+                if not selected(key):
+                    continue
+                ret[path] = IndexTarget(self.release.digests.get(key), known_published=True)
+
+        for entry in self.release.listed_indices():
+            if entry.path in ret:
+                continue
+
+            if not selected(entry.key):
+                continue
+
+            if not self._index_path_is_safe(entry):
+                continue
+
+            # listed is not published; the transfer settles it
+            ret[entry.path] = IndexTarget(entry.digests, known_published=False)
+
+        return ret
+
+    def _index_path_is_safe(self, entry: IndexEntry) -> bool:
+        """Report whether a Release-listed index path stays inside the repository.
+
+        The digest block is remote metadata, so a hostile or malformed Release can
+        name a key outside the storage root. A rejected entry is dropped from the
+        index set rather than failing the transfer, so one bad record cannot stop a
+        mirror -> [VALIDATION.md](VALIDATION.md#filename-safety).
+
+        Args:
+            entry: candidate index from the root Release digest block.
+
+        Returns:
+            True when the path is safe to mirror.
+        """
+        if is_unsafe_path(entry.key) or is_unsafe_path(entry.path):
+            logger.warning("%s listed in Release is an unsafe index path. Skipped.", entry.key)
+            return False
+        return True
+
+    def _payload_files(self) -> set[str]:
+        """Collect the parsed payload paths, dropping any the Release owns.
+
+        Returns:
+            Paths of every parsed package the Release does not own.
+        """
+        return self._drop_release_owned(str(pkg) for pkg in self.get_packages())
+
+    def _drop_release_owned(self, paths: Iterable[str]) -> set[str]:
+        """Drop the stanza paths a Release digest block lists.
+
+        A stanza `Filename` a Release digest block also lists is an index, not a
+        payload: the index set alone decides whether it is copied or purged, so index
+        selection and the payload copy and removal cannot disagree
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Args:
+            paths: Stanza paths, as `str(Package)` gives them.
+
+        Returns:
+            The paths no Release digest block lists.
+        """
+        ret: set[str] = set()
+        # one walk of the Release blocks, not one per package
+        owned_keys = self._release_keys()
+
+        for path in paths:
+            if self.params.release_key(path) in owned_keys:
+                if path not in self._owned_payloads_warned:
+                    self._owned_payloads_warned.add(path)
+                    logger.warning(
+                        "%s is named by a Release digest block, not mirrored as a package", path
+                    )
+                continue
+            ret.add(path)
+
+        return ret
+
+    @staticmethod
+    def _repair_and_purge(
+        payloads: set[str],
+        indices: Collection[str],
+        existing_files: set[str],
+        planned: set[str] | None = None,
+    ) -> tuple[set[str], set[str]]:
+        """Compare a target listing with the package and index sets.
+
+        Args:
+            payloads: Every payload path the package set holds.
+            indices: Every index path the index set holds.
+            existing_files: Paths the target listing returned.
+            planned: Paths a package diff already copies or removes, left out of both results.
+                Defaults to None (nothing planned).
+
+        Returns:
+            The payloads the listing lacks, and the listed paths neither set holds.
+        """
+        planned = planned or set()
+        repair = payloads - planned - existing_files
+        purge = {file for file in existing_files - payloads - planned if file not in indices}
+        return repair, purge
+
+    def consistency_lists(self) -> tuple[list[str], list[str]]:
+        """List what this repository's own storage lacks and what it holds unclaimed.
+
+        Missing are the payloads and the parsed component indices the listing lacks:
+        the root Release files were just read and nothing is probed, so a listing that
+        disagrees with a read cannot make them missing. Orphans are listed paths that
+        neither the package set nor the index set holds, and no other dist sharing the root
+        claims -> [CONFIG.md](CONFIG.md#check).
+
+        Returns:
+            Missing and orphan paths, sorted; both empty when the storage cannot list.
+        """
+        try:
+            existing_files = set(self.storage.list())
+        except NotImplementedError:
+            return [], []
+
+        indices = self._get_indices()
+        missing, orphans = self._repair_and_purge(self._payload_files(), indices, existing_files)
+        shared = shared_root_claims(self.storage, self.params, existing_files)
+        orphans = {file for file in orphans if shared.deletable(file)}
+        parsed = {
+            path for component in self.components.values() for path in component.get_indices_paths()
+        }
+        root_files = set(self.release.get_indices_paths())
+        missing |= (parsed & indices.keys()) - root_files - existing_files
+        return sorted(missing), sorted(orphans)
+
+
+class SharedRoot(NamedTuple):
+    """What the other dists of a shared target root claim.
+
+    The rules are in [VALIDATION.md](VALIDATION.md#index-selection).
+
+    Attributes:
+        prefix: The synced dist's own index tree, `dists/<dist>/`, or empty for a flat layout.
+        claimed: Paths another dist holds: its `dists/<dist>/` tree and the payloads its indices
+            list.
+        complete: Whether every other dist loaded, so `claimed` holds all of its payloads.
+    """
+
+    prefix: str
+    claimed: frozenset[str]
+    complete: bool
+
+    def deletable(self, path: str) -> bool:
+        """Report whether a sync or `check --fix` may delete `path` from the shared root.
+
+        Args:
+            path: Storage path in the target root.
+
+        Returns:
+            False for a path another dist claims, and for any path outside the own index tree
+            while another dist's payloads are unknown.
+        """
+        if path in self.claimed:
+            return False
+        return self.complete or path.startswith(self.prefix)
+
+
+def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str]) -> SharedRoot:
+    """Collect what the other dists of a componented target root claim.
+
+    A Debian root holds many dists under `dists/<dist>/` sharing one `pool/`. Each other dist
+    is loaded unverified, since its claims only ever keep a path, never copy one
+    -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+    Args:
+        storage: The target storage.
+        params: The synced dist's parameters.
+        existing: Paths the target listing returned.
+
+    Returns:
+        The claims; none for a flat layout, which has no `dists/` tree.
+    """
+    if params.is_flat or not params.indices_prefix:
+        return SharedRoot("", frozenset(), complete=True)
+
+    prefix = f"{params.indices_prefix}/"
+    foreign = {
+        path for path in existing if path.startswith("dists/") and not path.startswith(prefix)
+    }
+    dists = sorted({path.split("/")[1] for path in foreign if path.count("/") >= 2})
+    claimed = set(foreign)
+    complete = True
+
+    for dist in dists:
+        if not is_safe_name(dist):
+            logger.warning("Shared root dist %r is not a safe name; its payloads are kept.", dist)
+            complete = False
+            continue
+        other = Repo(storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False))
+        try:
+            other.update()
+        except (
+            RepoReadException,
+            ReleaseReadException,
+            ComponentException,
+            PackagesException,
+            PackageException,
+            ChecksumException,
+            StorageException,
+        ) as exc:
+            logger.warning(
+                "Dist %s shares the target root but did not load (%s); "
+                "nothing outside %s is deleted.",
+                dist,
+                exc,
+                prefix,
+            )
+            complete = False
+            continue
+        claimed.update(str(package) for package in other.get_packages())
+
+    if dists:
+        logger.info("Shared root: keeping what dists %s claim", ", ".join(dists))
+    return SharedRoot(prefix, frozenset(claimed), complete)

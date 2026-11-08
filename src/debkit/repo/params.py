@@ -37,6 +37,10 @@ FLAT_COMPONENT = "/"
 # -> [VALIDATION.md](VALIDATION.md#architectures).
 _ARCH_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*")
 
+# a real dist names a directory of a flat layout; the empty string matches
+# -> [VALIDATION.md](VALIDATION.md#distribution-names)
+_REAL_DIST = re.compile(r"[A-Za-z0-9]*")
+
 
 def is_safe_name(name: str) -> bool:
     """Report whether a dist or component name is safe to build a storage path from.
@@ -283,9 +287,11 @@ class RepoParams:
         return path
 
     def is_real_dist(self) -> bool:
-        """Check if this RepoParams has a real distribution name.
+        """Check if the distribution name is a real dist, one naming a flat layout's directory.
 
         Returns:
-            True if the distribution name is not None, or emty or slash (/),....
+            True when the dist is set and made of ASCII letters and digits only, the empty
+            string included; False for None or a name such as `/` or `./`
+            -> [VALIDATION.md](VALIDATION.md#distribution-names).
         """
-        return bool(re.match("^[A-Za-z0-9]*$", self.dist)) if isinstance(self.dist, str) else False
+        return self.dist is not None and _REAL_DIST.fullmatch(self.dist) is not None

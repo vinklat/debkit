@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from txstore import Storage, StorageType
+from txstore import Storage, StorageMetrics, StorageType
 
 from debkit.repo.component import Component
 from debkit.repo.package import Package
@@ -169,6 +169,10 @@ def make_storage_mock(
     else:
         mock.list.return_value = list_result if list_result is not None else []
     mock.exists.return_value = True
+    # `metrics` is set per instance, so the class spec lacks it
+    mock.metrics = StorageMetrics()
+    # a stream serves what `get` is stubbed to return
+    mock.get_stream.side_effect = lambda path: io.BytesIO(mock.get(path))
     mock.get_metadata.return_value = {}
     mock.get_type.return_value = storage_type
     mock.transfer.return_value = transfer_digests or {
@@ -198,6 +202,7 @@ def _attach_state(
     # `spec=Release` so the ownership gate's isinstance check sees a Release
     repo.release = MagicMock(spec=Release, name="Release")
     repo.release.hash = release_hash
+    repo.release.is_loaded = bool(release_hash)
     paths = indices_paths if indices_paths is not None else ["dists/bookworm/Release"]
     repo.release.get_indices_paths.side_effect = lambda: list(paths)
     repo.release.verify_digests.return_value = False

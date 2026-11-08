@@ -22,7 +22,7 @@ Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 | Source payloads | `repo/sources.py` | `Sources` expands each stanza so payload files join the package set, unless a Release lists them |
 | Manifest | `repo/release.py` | `IndexEntry`, `Release.listed_indices()` over the digest block |
 | Selection | `repo/index_selection.py` | `select_index_entry()` applies exclude, component, source, unparsed-index, and architecture rules; the last three read the key below its component |
-| Index set | `repo/repo_sync.py` | `RepoSync._get_indices()` builds path → `IndexTarget` (expected digests, and whether a parse proved the path) |
+| Index set | `repo/__init__.py` | `Repo._get_indices()` builds path → `IndexTarget` (expected digests, and whether a parse proved the path) |
 | Copy reduction | `repo/repo_sync.py` | `RepoSync._reduce_indices()` drops indices the target already holds unchanged |
 | Transfer skip | `repo/repo_sync.py` | `RepoSync.sync()` skips an unproven index whose transfer finds it missing at the source |
 | Flag wiring | `action/action_sync.py` | `--architectures` and `--indices-exclude` reach both repo params |

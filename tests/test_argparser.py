@@ -393,3 +393,14 @@ def test_unset_secrets_take_their_defaults(monkeypatch: pytest.MonkeyPatch) -> N
 def test_access_key_id_keeps_its_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEBKIT_S3_ACCESS", "from-env")
     assert parse_cli(["-u", "AKID", "--target-url", "fs:///tmp d c", "list"]).s3_access == "AKID"
+
+
+def test_gnupg_home_defaults_to_the_user_home_not_the_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A checkout must not be able to plant the trusted keyring -> CONFIG.md#global-flags."""
+    monkeypatch.delenv("DEBKIT_GNUPG_HOME", raising=False)
+
+    ns = parse_cli(["--target-url", "/srv/repo bookworm main", "list"])
+
+    assert ns.gnupg_home == "~/.gnupg"

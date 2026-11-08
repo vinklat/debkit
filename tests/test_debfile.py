@@ -14,6 +14,7 @@ import pytest
 from helpers.factories import make_deb, make_tar_gz
 from txstore import StorageFS
 
+from debkit.repo import debfile as debfile_module
 from debkit.repo.debfile import DebFile, DebFileException
 
 _PATH = "foo_1.0_amd64.deb"
@@ -93,6 +94,24 @@ def test_init_falls_back_to_get_when_the_stream_cannot_seek(tmp_path: Path) -> N
 
     assert deb.control == _CONTROL
     assert storage.gets == 1
+    assert storage.all_closed()
+
+
+@pytest.mark.parametrize(
+    ("padding", "cap", "match"),
+    # a compressible control file inflates past the cap its small member stays under
+    [(4096, 1024, "control file of"), (0, 64, "control.tar.gz of")],
+    ids=["control-file", "control-tar-member"],
+)
+def test_init_refuses_an_oversized_control_and_closes_the_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, padding: int, cap: int, match: str
+) -> None:
+    """Both the member and the file are read into memory, so each is capped before reading."""
+    monkeypatch.setattr(debfile_module, "MAX_CONTROL_BYTES", cap)
+    storage = _storage(tmp_path, make_deb(_CONTROL + b"X-Pad: " + b"a" * padding + b"\n"))
+
+    with pytest.raises(DebFileException, match=match):
+        DebFile(storage, _PATH)
     assert storage.all_closed()
 
 

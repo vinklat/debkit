@@ -20,7 +20,7 @@ from debkit._logging import configure_logging
 from debkit.action import ActionException, verify_policy
 from debkit.action.action_history import ActionHistory
 from debkit.action.action_pkg import ActionPkg
-from debkit.action.action_sync import ActionSync
+from debkit.action.action_sync import ActionCheck, ActionSync
 from debkit.argparser import parse_cli
 from debkit.repo import RepoReadException
 from debkit.repo.changes import ChangesException
@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> None:
             case "sync":
                 ActionSync(pars, create_path=True).sync()
             case "check":
-                if not ActionSync(pars).check():
+                if not ActionCheck(pars).check():
                     err_exit("Repository is not consistent.")
             case "log":
                 ActionHistory(pars).log()
@@ -124,7 +124,6 @@ def main(argv: list[str] | None = None) -> None:
     except (
         ActionException,
         RepoParamsException,
-        ValueError,
         StorageException,
     ) as exc:
         err_exit(exc)

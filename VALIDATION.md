@@ -22,8 +22,8 @@ including HTTP joins and the S3 path split.
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Bare path | A value without `://` is a filesystem path, made absolute against the working directory and prefixed with `fs://`. | — |
-| `fs://` | The path is absolute: `fs:///srv/repo`. | `fs://relative` → `ValueError` (Generic) |
-| Schemes | `fs`, `s3`, `http`, `https`, from txstore's `get_supported_schemes()`. | Other scheme → `ValueError` (Generic) |
+| `fs://` | The path is absolute: `fs:///srv/repo`. | `fs://relative` → `RepoParamsException` (Generic) |
+| Schemes | `fs`, `s3`, `http`, `https`, from txstore's `get_supported_schemes()`. | Other scheme → `RepoParamsException` (Generic) |
 
 ## Debian source strings
 
@@ -65,7 +65,7 @@ Built by `RepoParams.indices_path()` from the layout prefix, component, and inne
 | Package index inner path | `Packages` and `Sources` compose `arch_dir()` and `index_name()` into one inner path, read and write alike |
 | Compression preference | `Packages` and `Sources` discovery follows the codec order in `repo/compress.py`, the uncompressed index last; a save rewrites every form discovery found |
 | Release files | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
-| Component Release | Only a componented repo reads or writes a per-component `Release`; its component and architecture are non-empty, else → `ValueError` (Generic). |
+| Component Release | Only a componented repo reads or writes a per-component `Release`; its component and architecture are non-empty; an empty one is a programming error, an uncaught `ValueError`. |
 | Flat component | A flat layout has one component slot: insert joins the component it loaded, `/` when its Release names none, whatever `--component` says. |
 | Flat Components field | A new flat repository is set up without `Components`; a save never rewrites the field, so a loaded one is kept. |
 | Flat pool key | `--component` still names the pool key of a flat insert → [Filename safety](#filename-safety). |
@@ -93,11 +93,14 @@ per entry by its transfer; the source is never probed.
 | Compression forms | Every compression of an index the Release lists is its own entry, uncompressed included; the rules above never prefer one form, so the mirror serves every form its signed Release names | — |
 | Unpublished entry | A selected path the source does not publish stays in the set, so it is never purged from the target | — |
 | Payload deletion | A payload dropped from one source index is deleted from the target only when no selected source index still lists it, so a shared `all` payload survives its removal from one architecture | — |
+| Shared root | A componented target root may hold other dists beside the synced one, sharing `pool/`: a sync or `check --fix` never deletes a path under another `dists/<dist>/`, nor a payload another dist's index lists | — |
+| Shared root claims | Each other dist is loaded without signature or digest checks, since its claims only keep paths; a flat layout has no `dists/` tree, so the shared root rules do not apply | Another dist that does not load → nothing outside the synced `dists/<dist>/` is deleted, logged as a warning |
 | Absent entry | A selected path the target lacks and no parse proved is copied by a forced pass without a source probe, even when both root Releases record its digest alike: the last sync copies the Release whether or not it copied the object | Missing at the source → skipped at transfer, logged at debug, never retried |
 | Absent entry recovery | An absent entry never forces the index pass, so a run with nothing else to sync copies nothing; one the source 404ed once is recovered by the next forced pass or `--indices-only` | — |
 | Parse-proven entry | A selected path a parse found, a root Release file or a component `Packages`, is copied without a source probe when the target lacks it: the parse already fetched it from the source | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
 | Held entry | A selected path the target already holds is transferred without a source probe: an earlier transfer proved the source publishes it, so a changed digest is a republish. Digests both root Releases record alike settle it without a digest round trip | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
 | Unloaded target | A target whose Release did not load, empty or reset after a checksum failure, settles no entry: agreement and stored metadata are both skipped, so every selected path it holds is copied again | — |
+| Unreadable target index | A target index skipped as unreadable forces the index pass even when both root Releases are the same bytes: the plan compares the loaded packages, never the Release hashes alone → [Index loading](#index-loading) | — |
 | Later pass | A pass after the source changed mid-sync reloads the target through the transaction first, so agreement compares against the Release the previous pass staged | — |
 | Unsettled source | A source whose Release hash still differs after `MAX_UPDATED_REPO_RETRIES` (4) passes is not read again: the run commits the last pass, which matches the Release it loaded | Logged as a warning |
 | Payload naming an index | A stanza `Filename` a Release digest block also lists is an index, not a payload: it leaves the package set, so the rules above alone decide whether it is copied or purged and selection cannot disagree with the payload copy → [CRYPTO.md](CRYPTO.md#verification-order) | Dropped from the package set and logged |
@@ -112,6 +115,19 @@ per entry by its transfer; the source is never probed.
 | Matching | Case-sensitive; `*` crosses `/` | — |
 | Scope | Every candidate index, discovered while parsing as well as listed in the Release; the root `Release`, `Release.gpg`, and `InRelease` are never filtered | — |
 | Effect | An excluded index is not mirrored, and is purged from the target as an orphan | — |
+
+## Object sizes
+
+Implemented by `read_capped()` in `repo/compress.py`, which reads at most one byte past a cap, so
+each object below is refused before it is verified or buffered in full. "Checked" means digest
+verification is on.
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Root Release files | `Release`, `InRelease`, and `Release.gpg` are at most `MAX_RELEASE_BYTES` (16 MiB): no signed file records their size. | → `ReleaseReadException` (Read) |
+| Per-arch Release | At most the `Size` the checked root Release records, else `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
+| Stored index | At most the largest `Size` a checked root or per-arch Release records, else `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
+| Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
 
 ## Index decoding
 
@@ -227,7 +243,7 @@ Implemented by `_env.py` and `_options.py`; resolution → [CONFIG.md](CONFIG.md
 | Switch false | `0`, `false`, `no`, `off`; case-insensitive, surrounding whitespace ignored. | — |
 | Switch other | Never read as true, so a typo cannot disable verification. | → usage error naming the variable (Usage) |
 | Valued | Converted and checked as the flag's value would be. | → usage error naming the variable (Usage) |
-| Prefix | Only `DEBKIT_` names are read; another name is a programming error. | Other name → `ValueError` (Generic) |
+| Prefix | Only `DEBKIT_` names are read; another name is a programming error. | Other name → uncaught `ValueError` |
 
 ## Release dates
 

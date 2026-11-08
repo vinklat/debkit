@@ -298,9 +298,16 @@ def test_open_storage_opens_a_bare_path(tmp_path: Path) -> None:
     assert isinstance(storage, StorageFS)
 
 
-def test_open_storage_refuses_a_relative_fs_url() -> None:
-    with pytest.raises(ValueError, match="absolute"):
-        open_storage(storage_namespace(), "fs://relative/repo")
+@pytest.mark.parametrize(
+    ("url", "match"),
+    [("fs://relative/repo", "absolute"), ("foo://x/repo", "Unknown storage scheme")],
+    ids=["relative-fs", "unknown-scheme"],
+)
+def test_open_storage_refuses_a_url_txstore_rejects_as_a_params_error(url: str, match: str) -> None:
+    """A rejected URL is input, so it maps to the Generic group, not a stray `ValueError`."""
+    with pytest.raises(RepoParamsException, match=match) as excinfo:
+        open_storage(storage_namespace(), url)
+    assert isinstance(excinfo.value.__cause__, ValueError)
 
 
 def test_open_storage_passes_the_resolved_flags(monkeypatch: pytest.MonkeyPatch) -> None:

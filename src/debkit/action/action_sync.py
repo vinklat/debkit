@@ -1,4 +1,4 @@
-"""Sync (mirror) debian repo from source to target storage."""
+"""Sync (mirror) a Debian repo from a source to a target storage, and check a repo."""
 
 from __future__ import annotations
 
@@ -51,13 +51,42 @@ def _split_csv(value: str) -> list[str]:
     return [token for token in value.split(",") if token]
 
 
+def _selection(pars: Namespace) -> tuple[list[str] | None, list[str] | None]:
+    """Read the `--architectures` and `--indices-exclude` selection `sync` and `check` share.
+
+    A check builds its index and package sets the way a sync does, so both read one
+    selection -> [CONFIG.md](CONFIG.md#check).
+
+    Args:
+        pars: Command line arguments from argparser.
+
+    Raises:
+        ActionException: An `--architectures` token is not an architecture name.
+
+    Returns:
+        The selected architectures and the index exclude globs, each None when its flag is
+        empty.
+    """
+    archs: list[str] | None = None
+    if pars.architectures != "":
+        archs = _split_csv(pars.architectures)
+        for arch in archs:
+            if not is_valid_arch(arch):
+                raise ActionException(f"Invalid architecture: {arch!r}")
+
+    # index excludes apply to both repos so --verify-existing agrees with the sync
+    excludes = _split_csv(pars.indices_exclude) if pars.indices_exclude != "" else None
+    return archs, excludes
+
+
 class ActionSync(Action):
     """Sync debian repo from source repository.
 
     Attributes:
-        source_repo: The `sync` source; None for `check`.
-        fix: Fix inconsistencies if True.
+        source_repo: The repository the sync reads.
     """
+
+    source_repo: RepoSync
 
     def __init__(self, pars: Namespace, create_path: bool = False):
         """Initialize ActionSync.
@@ -70,42 +99,27 @@ class ActionSync(Action):
             ActionException: An `--architectures` token is not an architecture name; refused
                 before any storage is opened, so no target path or bucket is created.
         """
-        self._archs: list[str] | None = None
-        if pars.architectures != "":
-            self._archs = _split_csv(pars.architectures)
-            for arch in self._archs:
-                if not is_valid_arch(arch):
-                    raise ActionException(f"Invalid architecture: {arch!r}")
-
-        # index excludes apply to both repos so --verify-existing agrees with the sync
-        self._indices_exclude: list[str] | None = (
-            _split_csv(pars.indices_exclude) if pars.indices_exclude != "" else None
-        )
-
-        self.source_repo: RepoSync | None = None
+        self._archs, self._indices_exclude = _selection(pars)
         super().__init__(pars, create_path=create_path)
-        self.fix: bool = getattr(pars, "fix", False)
         self.verify_existing: bool = getattr(pars, "verify_existing", False)
         self.indices_only: bool = getattr(pars, "indices_only", False)
         self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
 
     def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
-        """Open the `sync` source, then the target, each with the selection applied.
+        """Open the source, then the target, each with the selection applied.
 
-        `check` has no `--source-url`. A `sync` overwrites the target, so the target
-        gets no `GnuPG`: its Release is read unverified and never signed
-        -> [CRYPTO.md](CRYPTO.md#gpg).
+        A sync overwrites the target, so the target gets no `GnuPG`: its Release is
+        read unverified and never signed -> [CRYPTO.md](CRYPTO.md#gpg).
 
         Args:
             pars: Command line arguments from argparser.
             create_path: Create the target path or bucket if True.
         """
-        if hasattr(pars, "source_url"):
-            logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
-            storage, params = attach_storage_repo(
-                pars, pars.source_url, archs=self._archs, indices_exclude=self._indices_exclude
-            )
-            self.source_repo = RepoSync(storage, params, gpg=self.gpg)
+        logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
+        storage, params = attach_storage_repo(
+            pars, pars.source_url, archs=self._archs, indices_exclude=self._indices_exclude
+        )
+        self.source_repo = RepoSync(storage, params, gpg=self.gpg)
 
         logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
         storage, params = attach_storage_repo(
@@ -115,9 +129,7 @@ class ActionSync(Action):
             archs=self._archs,
             indices_exclude=self._indices_exclude,
         )
-        self.target_repo = RepoRW(
-            storage, params, gpg=self.gpg if self.source_repo is None else None
-        )
+        self.target_repo = RepoRW(storage, params)
 
     def _print_sync_brief(self, diff: RepoDiff) -> None:
         """Print sync brief output.
@@ -128,8 +140,8 @@ class ActionSync(Action):
         print(f"Added {diff.count_pkgs_to_copy()} packages.")
         print(f"Removed {diff.count_pkgs_to_remove()} packages.")
         print(
-            f"{self.target_repo.storage.metrics.write_objects_total} objects "
-            f"({naturalsize(self.target_repo.storage.metrics.write_bytes)}) transferred."
+            f"{self._target_metrics.write_objects_total} objects "
+            f"({naturalsize(self._target_metrics.write_bytes)}) transferred."
         )
 
     def _print_sync_json(self, diff: RepoDiff, source: RepoSync) -> None:
@@ -144,15 +156,12 @@ class ActionSync(Action):
             "transfer": {"metrics": {}},
         }
         json_dict["transfer"]["metrics"]["source_storage"] = source.storage.metrics.dump()
-        json_dict["transfer"]["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
+        json_dict["transfer"]["metrics"]["target_storage"] = self._target_metrics.dump()
 
         print(dump_json(json_dict))
 
     def sync(self) -> None:
         """Sync debian repo from source storage to target storage."""
-        if self.source_repo is None:
-            raise ActionException("sync needs a source repository (--source-url)")
-
         if self.allow_release_rollback:
             logger.warning("Release freshness checks skipped: --allow-release-rollback is set")
 
@@ -261,96 +270,13 @@ class ActionSync(Action):
             target: The loaded target repository.
         """
         logger.info("---------- Verify target repo packages...")
-        checker = RepoSync.over(target)
-        missing_list, _ = checker.consistency_lists()
-        err_total, err_fixed_total = checker.check(missing_list, [], fix=True)
-        if err_total > err_fixed_total:
+        # orphans are left to the sync's own purge
+        report = target.check(fix=True, purge_orphans=False)
+        if report.failed > report.fixed:
             logger.warning(
                 "%d target files failed verification and were not deleted",
-                err_total - err_fixed_total,
+                report.failed - report.fixed,
             )
-
-    def _print_check_brief(self, status: dict[str, int]) -> None:
-        """Print check brief output.
-
-        Args:
-            status: Dictionary with errors and fixed errors.
-        """
-        print(f"Errors total: {status['errors_total']} files")
-        print(f"Errors fixed: {status['errors_fixed_total']} files")
-
-    def _print_check_json(self, status: dict[str, int]) -> None:
-        """Print check json output.
-
-        Args:
-            status: Dictionary with errors and fixed errors.
-        """
-        json_dict: dict[str, dict[str, Any]] = {"status": status, "metrics": {}}
-        json_dict["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
-
-        print(dump_json(json_dict))
-
-    def check(self) -> bool:
-        """Check debian repo for consistency.
-
-        Returns:
-            True if repo is consistent.
-        """
-        # `--fix` writes, so it is recorded as one transaction -> STORAGE.md#transactions
-        with (
-            maybe_transaction(self.target_repo.storage, self.history_retention)
-            if self.fix
-            else nullcontext()
-        ):
-            try:
-                # `--fix` deletes what no loaded index claims, so it never skips one
-                # -> [VALIDATION.md](VALIDATION.md#index-loading)
-                self.target_repo.update(skip_unreadable=not self.fix)
-            except ReleaseNotFoundException as exc:
-                logger.error("Target repo is empty: %s", exc)
-                return False
-            status = self._check_target(self.target_repo)
-
-        if self.output == OutputType.json:
-            self._print_check_json(status)
-        else:
-            self._print_check_brief(status)
-
-        return status["errors_total"] == status["errors_fixed_total"]
-
-    def _check_target(self, target: RepoRW) -> dict[str, int]:
-        """Check the loaded target against its own indices, fixing it with `--fix`.
-
-        Args:
-            target: The loaded target repository.
-
-        Returns:
-            The error and fixed-error totals.
-        """
-        dup_repo = RepoSync.over(target)
-        missing_list, orphan_list = dup_repo.consistency_lists()
-
-        list_err_total: int = 0
-        if len(missing_list) > 0:
-            logger.warning(
-                "Files is not in sync with indices... %s files missing.", len(missing_list)
-            )
-            logger.debug("Missing files: %s", missing_list)
-            list_err_total = len(missing_list)
-
-        if len(orphan_list) > 0:
-            logger.warning("Found %s orphan files in storage.", len(orphan_list))
-            logger.info("Orphan files: %s", orphan_list)
-            list_err_total += len(orphan_list)
-
-        file_err_total, file_err_fixed_total = dup_repo.check(
-            missing_list, orphan_list, fix=self.fix
-        )
-
-        return {
-            "errors_total": list_err_total + file_err_total,
-            "errors_fixed_total": file_err_fixed_total,
-        }
 
     @staticmethod
     def add_selection_cli_args(parser: EnvArgumentParser) -> None:
@@ -422,6 +348,120 @@ class ActionSync(Action):
             help="force sync indices objects, skip deb packages",
             default=False,
         )
+
+
+class ActionCheck(Action):
+    """Check a repository against its own indices.
+
+    Attributes:
+        fix: Delete corrupt payloads and orphans if True.
+    """
+
+    def __init__(self, pars: Namespace, create_path: bool = False):
+        """Initialize ActionCheck.
+
+        Args:
+            pars: Command line arguments from argparser.
+            create_path: Create path or bucket if True.
+
+        Raises:
+            ActionException: An `--architectures` token is not an architecture name; refused
+                before any storage is opened.
+        """
+        self._archs, self._indices_exclude = _selection(pars)
+        super().__init__(pars, create_path=create_path)
+        self.fix: bool = getattr(pars, "fix", False)
+
+    def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
+        """Open the target with the selection applied, verifying its Release.
+
+        Args:
+            pars: Command line arguments from argparser.
+            create_path: Create the target path or bucket if True.
+        """
+        logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
+        storage, params = attach_storage_repo(
+            pars,
+            pars.target_url,
+            create_path=create_path,
+            archs=self._archs,
+            indices_exclude=self._indices_exclude,
+        )
+        self.target_repo = RepoRW(storage, params, gpg=self.gpg)
+
+    def check(self) -> bool:
+        """Check debian repo for consistency.
+
+        Returns:
+            True if repo is consistent.
+        """
+        # `--fix` writes, so it is recorded as one transaction -> STORAGE.md#transactions
+        with (
+            maybe_transaction(self.target_repo.storage, self.history_retention)
+            if self.fix
+            else nullcontext()
+        ):
+            try:
+                # `--fix` deletes what no loaded index claims, so it never skips one
+                # -> [VALIDATION.md](VALIDATION.md#index-loading)
+                self.target_repo.update(skip_unreadable=not self.fix)
+            except ReleaseNotFoundException as exc:
+                logger.error("Target repo is empty: %s", exc)
+                return False
+            status = self._check_target(self.target_repo)
+
+        if self.output == OutputType.json:
+            self._print_check_json(status)
+        else:
+            self._print_check_brief(status)
+
+        return status["errors_total"] == status["errors_fixed_total"]
+
+    def _check_target(self, target: RepoRW) -> dict[str, int]:
+        """Check the loaded target against its own indices, fixing it with `--fix`.
+
+        Args:
+            target: The loaded target repository.
+
+        Returns:
+            The error and fixed-error totals.
+        """
+        report = target.check(fix=self.fix)
+
+        if report.missing:
+            logger.warning(
+                "Files is not in sync with indices... %s files missing.", len(report.missing)
+            )
+            logger.debug("Missing files: %s", report.missing)
+
+        if report.orphans:
+            logger.warning("Found %s orphan files in storage.", len(report.orphans))
+            logger.info("Orphan files: %s", report.orphans)
+
+        return {
+            "errors_total": len(report.missing) + len(report.orphans) + report.failed,
+            "errors_fixed_total": report.fixed,
+        }
+
+    def _print_check_brief(self, status: dict[str, int]) -> None:
+        """Print check brief output.
+
+        Args:
+            status: Dictionary with errors and fixed errors.
+        """
+        print(f"Errors total: {status['errors_total']} files")
+        print(f"Errors fixed: {status['errors_fixed_total']} files")
+
+    def _print_check_json(self, status: dict[str, int]) -> None:
+        """Print check json output.
+
+        Args:
+            status: Dictionary with errors and fixed errors.
+        """
+        json_dict: dict[str, dict[str, Any]] = {"status": status, "metrics": {}}
+        json_dict["metrics"]["target_storage"] = self._target_metrics.dump()
+
+        print(dump_json(json_dict))
 
     @staticmethod
     def add_check_cli_args(parser: EnvArgumentParser) -> None:

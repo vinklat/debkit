@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -107,7 +108,7 @@ class GnuPG:
         """Open the keyring `keyring` in the GnuPG home `home`.
 
         Args:
-            home: GnuPG home directory.
+            home: GnuPG home directory; a leading `~` is expanded, as a shell would.
             keyring: Keyring file, relative to `home`.
             passphrase: Passphrase of the signing key; empty or None sends none.
 
@@ -115,7 +116,7 @@ class GnuPG:
             GPGVerifyException: If the keyring cannot be opened or the gpg binary cannot be run.
         """
         try:
-            self.gnupg = gnupg.GPG(gnupghome=home, keyring=keyring)
+            self.gnupg = gnupg.GPG(gnupghome=os.path.expanduser(home), keyring=keyring)
         except ValueError as exc:
             raise GPGVerifyException(f"Keyring error. {exc}") from exc
         except OSError as exc:

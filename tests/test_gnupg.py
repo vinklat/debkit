@@ -1,7 +1,9 @@
-"""Coverage for `debkit.repo.gnupg`.
+"""Coverage for `debkit.repo.gnupg` that a real gpg cannot produce on demand.
 
-Tests mock the underlying ``gnupg.GPG`` to keep the matrix hermetic, per
-``TESTING.md`` ("no real user GPG home").
+These tests mock ``gnupg.GPG`` for the failures and bookkeeping around it: a keyring or
+binary that does not open, tempfile cleanup, a sign that creates nothing, the passphrase
+handling, and the pure `cleartext_body` parsing. What only gpg decides, a good or a bad
+signature, is in ``tests/test_gnupg_real.py`` on throwaway homes.
 """
 
 from __future__ import annotations
@@ -41,6 +43,14 @@ def test_init_opens_the_given_home_and_keyring() -> None:
     gpg_cls.assert_called_once_with(gnupghome=".gnupg", keyring="trustedkeys.gpg")
 
 
+def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gpg does not expand `~`, so the default `~/.gnupg` reaches it as an absolute path."""
+    monkeypatch.setenv("HOME", "/home/builder")
+    with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
+        GnuPG("~/.gnupg", "trustedkeys.gpg", None)
+    gpg_cls.assert_called_once_with(gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg")
+
+
 def test_init_missing_gpg_binary_raises() -> None:
     """python-gnupg raises OSError when it cannot run the gpg binary."""
     with patch("debkit.repo.gnupg.gnupg.GPG", side_effect=OSError("Unable to run gpg (gpg)")):
@@ -58,13 +68,6 @@ def test_verify_inrelease_returns_the_signed_body() -> None:
         gpg = _gnupg()
         out = gpg.verify(inrelease)
     assert out == b"Origin: example\nCodename: bookworm\n\n"
-
-
-def test_verify_invalid_signature_raises() -> None:
-    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=False)):
-        gpg = _gnupg()
-        with pytest.raises(GPGVerifyException):
-            gpg.verify(b"not a signed message")
 
 
 def test_verify_detached_cleans_tempfile_on_failure() -> None:
@@ -88,12 +91,6 @@ def test_verify_detached_cleans_tempfile_when_verify_data_raises() -> None:
     args, _ = mock_gpg.verify_data.call_args
     assert isinstance(args[0], str)
     assert not Path(args[0]).exists()
-
-
-def test_sign_returns_str() -> None:
-    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock()):
-        gpg = _gnupg()
-        assert gpg.sign(b"payload") == "signed-bytes"
 
 
 def test_sign_returns_nothing_when_gpg_created_no_signature() -> None:

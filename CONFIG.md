@@ -31,7 +31,7 @@ flags in `argparser.py`, subcommand flags in the owning `Action*` module.
 | `-n`, `--skip-verify` | `DEBKIT_SKIP_VERIFY` | off | Disables TLS, GPG, and digest verification → [CRYPTO.md](CRYPTO.md#verification-switches) |
 | `--skip-verify-ssl` | `DEBKIT_SKIP_VERIFY_SSL` | off | Disables TLS certificate verification |
 | `--skip-verify-gpg` | `DEBKIT_SKIP_VERIFY_GPG` | off | Disables GPG verification and Release signing → [CRYPTO.md](CRYPTO.md#verification-switches) |
-| `--gnupg-home` | `DEBKIT_GNUPG_HOME` | `.gnupg` | GnuPG home directory → [CRYPTO.md](CRYPTO.md#gpg) |
+| `--gnupg-home` | `DEBKIT_GNUPG_HOME` | `~/.gnupg` | GnuPG home directory, the trust root of every Release verification; a leading `~` is expanded → [CRYPTO.md](CRYPTO.md#gpg) |
 | `--gnupg-keyring` | `DEBKIT_GNUPG_KEYRING` | `trustedkeys.gpg` | Trusted keyring filename |
 | `--history-keep` | `DEBKIT_HISTORY_KEEP` | `20` | Newest transactions never pruned; values → [VALIDATION.md](VALIDATION.md#history-retention) |
 | `--history-max-age` | `DEBKIT_HISTORY_MAX_AGE` | `90` | Days after which a transaction outside `--history-keep` is pruned; `0` disables pruning |
@@ -99,9 +99,10 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 Also accepts `--architectures` and `--indices-exclude` with the same variables and defaults as
 [Sync](#sync): a check builds its index and package sets the same way a sync does, so other values
 report the difference as missing or orphan objects. `--fix` deletes those orphans, so a check
-narrower than the sync that built the mirror purges what it leaves out. Missing are only the
-payloads and the parsed component indices the target listing lacks: the root Release files were
-just read, and nothing is probed.
+narrower than the sync that built the mirror purges what it leaves out; what another dist sharing
+the target root claims is never an orphan → [VALIDATION.md](VALIDATION.md#index-selection). Missing
+are only the payloads and the parsed component indices the target listing lacks: the root Release
+files were just read, and nothing is probed.
 
 ## Log
 

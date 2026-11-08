@@ -11,6 +11,7 @@ from helpers.factories import make_package, make_packages, make_params, make_sto
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
+from debkit.repo.package import PackageException
 from debkit.repo.params import RepoParams
 
 _DIGEST = {"SHA256": "a" * 64}
@@ -381,3 +382,29 @@ def test_copied_release_digest_records_are_independent() -> None:
 
     assert repo.release.digests["main/binary-amd64/Packages"]["SHA256"] == "old"
     assert repo.release.root_digests["Release"]["SHA256"] == "root"
+
+
+# --- diff ---------------------------------------------------------------------------------------
+
+
+def test_diff_compares_packages_even_when_the_release_hashes_match() -> None:
+    """A target load that skipped an unreadable index keeps the source's Release bytes."""
+    source, target = _repo(), _repo()
+    source.release.hash = target.release.hash = "same"
+    _with_component_package(source, _DEB, _DIGEST)
+
+    diff = source.diff(target)
+
+    assert diff.get_filenames_to_copy() == {_DEB}
+
+
+# --- stats --------------------------------------------------------------------------------------
+
+
+def test_stats_refuses_a_package_size_that_is_not_a_byte_count() -> None:
+    """A malformed index `Size` is a read error, not a stray `ValueError` from `int()`."""
+    repo = _repo()
+    _with_component_package(repo, _DEB, {"Size": "12kB"})
+
+    with pytest.raises(PackageException, match="malformed Size"):
+        repo.stats()

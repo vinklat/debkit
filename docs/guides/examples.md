@@ -196,6 +196,11 @@ debkit sync --indices-exclude '*/Contents-all,*/Contents-amd64,*/Contents-arm64'
 An excluded index is also removed from the target →
 [VALIDATION.md](../../VALIDATION.md#index-exclude-globs).
 
+Several dists can share one target root, as in the Debian archive: sync each into the same URL
+with its own dist. A sync removes only what its own dist drops, and keeps every other dist's
+`dists/<dist>/` tree and the `pool/` files that dist lists →
+[VALIDATION.md](../../VALIDATION.md#index-selection).
+
 Source packages are mirrored only when you select the `source` architecture, which brings both the
 `Sources` indices and every `.dsc`, `.orig.tar.*`, and `.debian.tar.*` payload they name:
 

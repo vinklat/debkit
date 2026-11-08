@@ -146,4 +146,5 @@ either tool are read by the other.
 | Help | `--help` no longer prints secret values taken from the environment. |
 | Secret flags | `-t`/`--s3-secret` and `--gnupg-passphrase` are gone: set `DEBKIT_S3_SECRET` and `DEBKIT_GNUPG_PASSPHRASE` instead → [CONFIG.md](CONFIG.md#secrets). |
 | Pool layout | An inserted `.deb` lands in Debian's source pool layout under its source package name, not its upload path's first letter and `Package` name → [VALIDATION.md](VALIDATION.md#filename-safety). Old pool keys stay valid; re-inserting an existing version adds a second stanza under its new key. |
+| GnuPG home | `--gnupg-home` defaults to `~/.gnupg`, not `.gnupg` under the working directory, so a checkout cannot plant the trusted keyring → [CONFIG.md](CONFIG.md#global-flags). Keep a per-directory home with `DEBKIT_GNUPG_HOME=$PWD/.gnupg`. |
 | Signing without a passphrase | Fixed: with no `DEBKIT_GNUPG_PASSPHRASE`, gpg read the first line of the Release as the passphrase, so `Release.gpg` and `InRelease` signed the Release without it. Re-sign such a repository with any `insert` or `remove`. |
