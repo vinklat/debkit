@@ -17,7 +17,7 @@ CM -> TStor: history_lock acquire\n[blocks; S3 times out after 300 s]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
-ActionSync -> Tgt: update()
+ActionSync -> Tgt: update(skip_unreadable=True)
 Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
 note over ActionSync: target_floor = run_floor = copy(target.release), before any reset\ntarget_before = copy(target)
 
@@ -34,7 +34,7 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
   end
 
   opt a later pass
-    ActionSync -> Tgt: update()
+    ActionSync -> Tgt: update(skip_unreadable=True)
     note right: reads through the transaction\nthe bytes the previous pass staged
     note over ActionSync: target_floor = copy(target.release), before any reset
   end

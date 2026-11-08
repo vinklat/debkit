@@ -10,7 +10,7 @@ if (allow_release_rollback?) then (yes)
 endif
 
 partition "with maybe_transaction(target.storage)" {
-  :target.update();
+  :target.update(skip_unreadable=True);
   note right
     under history_lock, so a peer commit
     that landed while waiting is seen;
