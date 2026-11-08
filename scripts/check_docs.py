@@ -29,7 +29,9 @@ Checks (SETUP.md quality gates; AGENTS.md contract writing rules):
 - every ``docs/<dir>/`` holding pages has a ``README.md`` that links each sibling page;
 - the ``README.md`` "Current version" line equals ``[project].version``;
 - packages resolve from public PyPI only: ``pyproject.toml`` declares no custom index and every
-  ``uv.lock`` registry is ``https://pypi.org/simple``.
+  ``uv.lock`` registry is ``https://pypi.org/simple``;
+- every link into the txstore repository names the tag of the txstore version ``uv.lock`` resolves,
+  so a linked contract describes the storage debkit runs on.
 
 Code facts are read from the source tree with ``ast``, never imported, so the checker runs with
 only the standard library, as in CI.
@@ -88,6 +90,7 @@ TABLE_SEP_RE = re.compile(r"^\|[\s:|-]+\|?\s*$")
 CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
 README_VERSION_RE = re.compile(r"Current version: \*\*([^*]+)\*\*")
+TXSTORE_LINK_RE = re.compile(r"https://github\.com/vinklat/txstore/(?:blob|tree)/([^/\s)#]+)")
 TODO_RE = re.compile(r"\b(?:TODO|FIXME|XXX)\b")
 URL_RE = re.compile(r"https?://")
 CODE_REF_RE = re.compile(r"\b([A-Z][A-Z]+\.md)#([a-z0-9-]+)")
@@ -689,6 +692,31 @@ def check_version(docs: dict[str, str]) -> list[str]:
     return [f"README.md: version {found or 'missing'}, pyproject.toml has {expected}"]
 
 
+def check_txstore_links(docs: dict[str, str]) -> list[str]:
+    """Every link into the txstore repository names the tag of the locked txstore version."""
+    lock = REPO_ROOT / "uv.lock"
+    if not lock.is_file():
+        return []
+    locked = next(
+        (
+            package.get("version")
+            for package in tomllib.loads(lock.read_text()).get("package", [])
+            if package.get("name") == "txstore"
+        ),
+        None,
+    )
+    if locked is None:
+        return ["uv.lock: no txstore package to pin the txstore links to"]
+    expected = f"v{locked}"
+    return [
+        f"{name}:{number}: txstore link names {ref}, uv.lock resolves {expected}"
+        for name, text in docs.items()
+        for number, line in enumerate(text.splitlines(), start=1)
+        for ref in TXSTORE_LINK_RE.findall(line)
+        if ref != expected
+    ]
+
+
 def check_package_sources() -> list[str]:
     """Dependencies resolve from public PyPI only."""
     errors: list[str] = []
@@ -734,6 +762,7 @@ def main() -> int:
         *check_docs_index(all_docs),
         *check_version(docs),
         *check_package_sources(),
+        *check_txstore_links(all_docs),
     ]
     for error in errors:
         print(error)

@@ -60,7 +60,8 @@ code, `CONFIG.md` flag and variable parity with the option registrations, `EXCEP
 with the exception classes and the `cli.py` exit groups, an exit group, a raise, and a test for
 every exception class, every `Exception (group)` notation, 100-column prose, table rows with as many
 cells as their header, no `TODO` markers in contracts, the `docs/*/README.md` indexes, the README
-version, PyPI-only package sources, and the [diagram](#diagrams) fence and embed rules.
+version, PyPI-only package sources, txstore links pinned to the tag of the txstore version `uv.lock`
+resolves, and the [diagram](#diagrams) fence and embed rules.
 
 ## Diagrams
 

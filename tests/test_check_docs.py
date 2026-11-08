@@ -389,3 +389,29 @@ def test_package_sources_refuse_custom_indexes(repo: Path) -> None:
         "pyproject.toml: declares [[tool.uv.index]]; packages resolve from PyPI",
         "uv.lock: b resolves from https://mirror.example/simple",
     ]
+
+
+def test_txstore_links_name_the_locked_tag(repo: Path) -> None:
+    """A txstore bump without the links would describe storage debkit no longer runs on."""
+    _write(repo, "uv.lock", '[[package]]\nname = "txstore"\nversion = "0.1.2"\n')
+    base = "https://github.com/vinklat/txstore"
+    docs = {
+        "STORAGE.md": f"→ [txstore]({base}/blob/v0.1.2/STORAGE.md)\n",
+        "docs/a.md": (
+            f"intro\nsee [x]({base}/blob/v0.1.1/STORAGE.md) and [y]({base}/tree/main/docs)\n"
+        ),
+        "CONFIG.md": "[home](https://github.com/vinklat/debkit/blob/v0.0.1/README.md)\n",
+    }
+
+    assert check_docs.check_txstore_links(docs) == [
+        "docs/a.md:2: txstore link names v0.1.1, uv.lock resolves v0.1.2",
+        "docs/a.md:2: txstore link names main, uv.lock resolves v0.1.2",
+    ]
+
+
+def test_txstore_links_need_a_locked_txstore(repo: Path) -> None:
+    _write(repo, "uv.lock", '[[package]]\nname = "other"\nversion = "1"\n')
+
+    assert check_docs.check_txstore_links({}) == [
+        "uv.lock: no txstore package to pin the txstore links to"
+    ]
