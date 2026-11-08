@@ -74,3 +74,15 @@ def test_package_equality_with_another_type_is_false() -> None:
     pkg.parse(_STANZA)
     assert pkg != None  # noqa: E711
     assert pkg not in [None, 1]
+
+
+def test_package_get_filename_returns_the_filename() -> None:
+    pkg = Package()
+    pkg.set_filename("pool/main/f/foo/foo_1.0_amd64.deb")
+    assert pkg.get_filename() == "pool/main/f/foo/foo_1.0_amd64.deb"
+
+
+@pytest.mark.parametrize("fields", [{}, {"Filename": ""}], ids=["missing", "empty"])
+def test_package_get_filename_without_a_filename_raises(fields: dict[str, str]) -> None:
+    with pytest.raises(PackageException, match="filename is empty"):
+        Package(fields=fields).get_filename()

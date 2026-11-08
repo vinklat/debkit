@@ -50,7 +50,6 @@ class DebFile:
         storage (Storage): Storage backend the file lives on.
         path (str): Path of the ``.deb`` file inside ``storage``.
         comp (Optional[str]): Component name the package belongs to.
-        filename_field (str): Pool-relative filename (populated by ``get_package``).
         control (bytes | str | None): Content of the ``control`` file in ``control.tar``.
     """
 
@@ -67,7 +66,6 @@ class DebFile:
         """
         self.storage = storage
         self.path = path
-        self.filename_field = path
         self.comp = comp
         try:
             self.control = self._read_control()
@@ -120,11 +118,9 @@ class DebFile:
         if not _PACKAGE_NAME.fullmatch(source):
             raise DebFileException(f"{self.path} names no valid Source: {source!r}")
 
-        filename_field = pool_path(self.comp, source, self.path)
-        if is_unsafe_path(filename_field):
-            raise DebFileException(f"unsafe pool path for {self.path}: {filename_field!r}")
-        self.filename_field = filename_field
-
-        package.set_filename(self.filename_field)
+        filename = pool_path(self.comp, source, self.path)
+        if is_unsafe_path(filename):
+            raise DebFileException(f"unsafe pool path for {self.path}: {filename!r}")
+        package.set_filename(filename)
 
         return package

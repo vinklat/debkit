@@ -73,9 +73,9 @@ def _target(action: ActionPkg) -> MagicMock:
 def _debfile_mock(mock_debfile_cls: MagicMock, *, arch: str = "amd64") -> MagicMock:
     """Wire up a DebFile mock and return it."""
     instance = MagicMock()
-    instance.filename_field = "pool/main/h/hello/hello_1.0_amd64.deb"
     pkg = MagicMock()
     pkg.get_arch.return_value = arch
+    pkg.get_filename.return_value = "pool/main/h/hello/hello_1.0_amd64.deb"
     instance.get_package.return_value = pkg
     mock_debfile_cls.return_value = instance
     return instance
@@ -224,9 +224,8 @@ def _insert_into_real_repo(
         StorageFS(str(tmp_path / "repo")), make_params(verify_gpg=gpg is not None), gpg=gpg
     )
     instance = MagicMock()
-    instance.filename_field = pool_path("main", name, deb)
     instance.get_package.return_value = make_package(
-        instance.filename_field, Package=name, Version="1.0", Architecture="amd64"
+        pool_path("main", name, deb), Package=name, Version="1.0", Architecture="amd64"
     )
     mock_debfile_cls.return_value = instance
 
@@ -324,7 +323,6 @@ def _changes_upload(
 
     def debfile(_storage: object, filename: str, comp: str) -> MagicMock:
         instance = MagicMock()
-        instance.filename_field = f"pool/{comp}/{filename}"
         instance.get_package.return_value = make_package(
             filename, Architecture=filename.removesuffix(".deb").rsplit("_", 1)[1]
         )
@@ -606,10 +604,10 @@ def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
             *("--incoming-url", f"fs://{tmp_path / 'in'}"),
         ]
     )
+    pool = "pool/main/f/foo/foo_1.0_amd64.deb"
     instance = MagicMock()
-    instance.filename_field = "pool/main/f/foo/foo_1.0_amd64.deb"
     instance.get_package.return_value = make_package(
-        instance.filename_field, Package="foo", Version="1.0", Architecture="amd64"
+        pool, Package="foo", Version="1.0", Architecture="amd64"
     )
     mock_debfile_cls.return_value = instance
 
@@ -617,7 +615,7 @@ def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
         ActionPkg(pars, create_path=True).insert()
 
     assert wiring.call_args.args[1] == HistoryRetention(keep=2, max_age_days=30)
-    assert (tmp_path / "repo" / instance.filename_field).read_bytes() == b"foo"
+    assert (tmp_path / "repo" / pool).read_bytes() == b"foo"
 
 
 def test_insert_from_a_missing_incoming_directory_fails_without_creating_it(
@@ -665,12 +663,11 @@ def test_insert_checks_each_deb_against_its_changes_digest(
     action.changes_filename = "foo_1.0_amd64.changes"
     action.target_repo = RepoRW(StorageFS(str(tmp_path / "repo")), make_params(verify_digests=True))
     instance = MagicMock()
-    instance.filename_field = f"pool/main/f/foo/{deb}"
     instance.get_package.return_value = make_package(
-        instance.filename_field, Package="foo", Version="1.0", Architecture="amd64"
+        f"pool/main/f/foo/{deb}", Package="foo", Version="1.0", Architecture="amd64"
     )
     mock_debfile_cls.return_value = instance
-    pool = tmp_path / "repo" / instance.filename_field
+    pool = tmp_path / "repo" / "pool/main/f/foo" / deb
 
     if not swapped:
         action.insert()

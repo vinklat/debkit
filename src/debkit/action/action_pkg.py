@@ -279,7 +279,7 @@ class ActionPkg(Action):
                 archs = self._target_archs(filename, package, binary_archs)
 
                 digests = self.target_repo.transfer_from(
-                    self.incoming_storage, filename, path_dst=debfile_obj.filename_field
+                    self.incoming_storage, filename, path_dst=package.get_filename()
                 )
                 # the pinned `.changes` lists each payload's digest, so a payload swapped in
                 # the incoming storage is refused; raising discards the staged transfer

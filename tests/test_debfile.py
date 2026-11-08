@@ -134,18 +134,14 @@ def test_get_package_rejects_non_bytes_control() -> None:
         deb.get_package()
 
 
-def test_get_package_populates_filename_field_with_component() -> None:
-    deb = DebFile(_streaming(_CONTROL), _PATH, comp="main")
-    pkg = deb.get_package()
-
-    assert deb.filename_field == "pool/main/f/foo/foo_1.0_amd64.deb"
-    assert pkg.fields["Filename"] == "pool/main/f/foo/foo_1.0_amd64.deb"
+def test_get_package_names_the_pool_path_with_component() -> None:
+    pkg = DebFile(_streaming(_CONTROL), _PATH, comp="main").get_package()
+    assert pkg.get_filename() == "pool/main/f/foo/foo_1.0_amd64.deb"
 
 
 def test_get_package_without_component_uses_flat_pool_path() -> None:
     deb = DebFile(_streaming(b"Package: bar\nVersion: 1.0\n"), "bar_1.0_amd64.deb")
-    deb.get_package()
-    assert deb.filename_field == "pool/b/bar/bar_1.0_amd64.deb"
+    assert deb.get_package().get_filename() == "pool/b/bar/bar_1.0_amd64.deb"
 
 
 @pytest.mark.parametrize(

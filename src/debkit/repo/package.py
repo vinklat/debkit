@@ -91,6 +91,20 @@ class Package:
         filename: str | None = self.fields[FILENAME_FIELD_KEY]
         return filename
 
+    def get_filename(self) -> str:
+        """Get the Filename field.
+
+        Raises:
+            PackageException: If the filename is missing or empty.
+
+        Returns:
+            str: The pool-relative filename.
+        """
+        filename = self.fields.get(FILENAME_FIELD_KEY)
+        if not filename:
+            raise PackageException("filename is empty")
+        return str(filename)
+
     def set_filename(self, filename: str) -> None:
         """Set the Filename field.
 
