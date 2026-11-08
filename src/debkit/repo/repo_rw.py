@@ -93,17 +93,6 @@ class RepoRW(Repo):
         self.components = {}
         self.release.reset()
 
-    def add_component(self, name: str) -> None:
-        """Add component to the repo.
-
-        Args:
-            name (str): component name
-        """
-        new_component = Component(self.storage, self.params, self.release, name)
-
-        self.components[name] = new_component
-        self.modified = True
-
     def remove_pkg(self, fields_patterns: dict[str, re.Pattern[str]]) -> bool:
         """Drop packages matching ``fields_patterns`` from the indices and delete their payloads.
 

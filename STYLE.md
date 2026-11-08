@@ -9,8 +9,10 @@ style conflicts. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
   where Ruff is silent, strict type hints, and Google-style docstrings for public symbols.
 - Ruff owns formatting, lint, and import order at line length 100: standard library, third-party
   (`txstore` among them), then `debkit`. Commands → [SETUP.md](SETUP.md#quality-gates).
-- mypy runs in strict mode over `src/debkit`, `tests`, and `scripts`; `# type: ignore` names its
-  error code.
+- mypy runs in strict mode with `warn_unreachable` over `src/debkit`, `tests`, and `scripts`;
+  `# type: ignore` names its error code.
+- No commented-out code (Ruff `ERA`) and no `TODO`-style markers in code (Ruff `FIX`); record
+  planned work and deviations in [ROADMAP.md](ROADMAP.md#known-deviations).
 - A `# noqa` names an enabled Ruff rule the line breaks (`RUF100` flags any other); no pragmas for
   tools outside the gates.
 - In `src/debkit`, import at module top; no import is deferred →

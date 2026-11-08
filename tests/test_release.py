@@ -77,6 +77,12 @@ def test_parse_again_replaces_the_digest_block() -> None:
     assert r.hashfuns == ["SHA256"]
 
 
+def test_parse_keeps_the_last_of_duplicate_fields() -> None:
+    r = Release(MagicMock(), _params())
+    r.parse(b"Origin: first\nCodename: bookworm\nOrigin: last\n")
+    assert r.fields == {"Origin": "last", "Codename": "bookworm"}
+
+
 def test_reset_clears_the_digest_block() -> None:
     """A reset target records nothing, so no stale digest can settle a sync decision."""
     r = Release(MagicMock(), _params())

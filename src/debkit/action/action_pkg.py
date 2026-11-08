@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 from humanize import naturalsize
 from txstore import maybe_transaction
 
-# from pympler import tracker
 from debkit.action import (
     Action,
     ActionException,

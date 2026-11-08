@@ -32,10 +32,6 @@ INDICES_EXCLUDE_DEFAULT = ""
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-RESET_TARGET_DEFAULT = False
-IGNORE_TARGET_INDEX_DEFAULT = False
-SKIP_DEBS_DEFAULT = False
-
 # a maximum number of repetitions if the source has changed during synchronization
 MAX_UPDATED_REPO_RETRIES = 4
 

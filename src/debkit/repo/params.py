@@ -2,7 +2,6 @@
 
 import logging
 import re
-from pprint import pformat
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -147,14 +146,6 @@ class RepoParams:
         logger.debug(
             "Parse deb source: url=%s, dist=%s, components=%s", self.url, self.dist, self.components
         )
-
-    def __str__(self) -> str:
-        """Return a string representation of the RepoParams (multi-line).
-
-        Returns:
-            str: A string representation of the RepoParams.
-        """
-        return pformat(vars(self), indent=4)
 
     def __eq__(self, other: object) -> bool:
         """Check if this RepoParams is equal to another RepoParams.

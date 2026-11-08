@@ -1,6 +1,6 @@
 """Unit tests for ``Packages`` (TESTING.md § 7b).
 
-Covers: parse / modify-rules, file discovery, checksum verification, load/save
+Covers: parse, file discovery, checksum verification, load/save
 round-trips, insert/remove (including security guards), diff, and helpers.
 Storage is mocked; no real backend or .deb payloads.
 """
@@ -38,27 +38,13 @@ def _storage(pkgs: Packages) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_packages_parse_indices_round_trip_no_modify() -> None:
+def test_packages_parse_indices_round_trip() -> None:
     pkgs = _new_packages()
     data = make_packages_block("foo") + "\n" + make_packages_block("bar")
     n = pkgs._parse_indices(data)
     assert n == 2
     assert len(pkgs) == 2
     assert pkgs.modified is False
-
-
-def test_packages_parse_indices_rule_no_match_leaves_modified_false() -> None:
-    pkgs = _new_packages()
-    pkgs._parse_indices(make_packages_block("foo"), modify_rules=[("Package", "nope", "x")])
-    assert pkgs.modified is False
-
-
-def test_packages_parse_indices_rule_match_sets_modified() -> None:
-    pkgs = _new_packages()
-    pkgs._parse_indices(make_packages_block("foo"), modify_rules=[("Package", "foo", "FOO")])
-    assert pkgs.modified is True
-    [pkg] = pkgs.packages.values()
-    assert pkg.fields["Package"] == "FOO"
 
 
 def test_packages_parse_indices_trailing_blank_block_does_not_stop() -> None:
@@ -119,16 +105,6 @@ def test_packages_parse_indices_drops_only_the_unsafe_stanza() -> None:
 
     assert n == 2
     assert not any("outside" in key for key in pkgs.packages)
-
-
-def test_packages_parse_indices_rule_missing_field_logs_warning(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    pkgs = _new_packages()
-    with caplog.at_level(logging.WARNING):
-        pkgs._parse_indices(make_packages_block("foo"), modify_rules=[("Missing", ".*", "x")])
-    assert pkgs.modified is False
-    assert any("Modify rule failed" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +456,13 @@ def test_packages_remove_all_fields_match() -> None:
     assert "pool/foo.deb" not in pkgs.packages
     assert "pool/bar.deb" in pkgs.packages
     assert pkgs.modified is True
+
+
+def test_packages_size_follows_a_removal_after_parse() -> None:
+    pkgs = _new_packages()
+    pkgs._parse_indices(make_packages_block("foo") + "\n" + make_packages_block("bar"))
+    pkgs.remove({"Package": re.compile("^foo$")})
+    assert pkgs.size == 1
 
 
 def test_packages_remove_rejects_traversal_filename() -> None:

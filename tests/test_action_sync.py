@@ -624,7 +624,7 @@ def test_sync_verify_existing_replaces_a_corrupt_payload_in_one_transaction(
 
 
 # ---------------------------------------------------------------------------
-# check()
+# check() — consistency of the target with its own indices
 # ---------------------------------------------------------------------------
 
 

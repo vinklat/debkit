@@ -1,7 +1,6 @@
 """Class containing fields data from Debian package."""
 
 import os
-import re
 from email import policy
 from email.message import EmailMessage
 from email.parser import Parser
@@ -10,26 +9,6 @@ from typing import Any
 from debkit.repo.hashes import SUPPORT_HASH_LIST
 
 MANDATORY_FIELDS = ["Package", "Filename", "Size"]
-
-# DEB_CONTROL_FIELDS = [
-#     'Package', 'Package-Type', 'Version', 'Maintainer', 'Description', 'Section',
-#     'Priority', 'Installed-Size', 'Protected', 'Essential', 'Build-Essential',
-#     'Architecture', 'Origin', 'Bugs', 'Homepage', 'Tag', 'Multi-Arch', 'Source',
-#     'Subarchitecture', 'Kernel-Version', 'Installer-Menu-Item', 'Depends', 'Pre-Depends',
-#     'Recommends', 'Suggests', 'Breaks', 'Conflicts', 'Replaces', 'Enhances', 'Provides',
-#     'Built-Using', 'Built-For-Profiles', 'Auto-Built-Package', 'Build-Ids'
-# ]
-
-# DEB_OTHER_FIELDS = [
-#     'Filename', 'Size', 'MD5sum', 'SHA1', 'SHA256', 'SHA512', 'Description-md5',
-#     'Ghc-Package', 'Python-Version', 'Ruby-Versions', 'Python-Egg-Name', 'Important',
-#     'Go-Import-Path', 'Efi-Vendor', 'Gstreamer-Decoders', 'Description-Md5',
-#     'Gstreamer-Elements', 'X-Cargo-Built-Using', 'Gstreamer-Encoders',
-#     'Cnf-Extra-Commands', 'Gstreamer-Version', 'Gstreamer-Uri-Sinks',
-#     'Gstreamer-Uri-Sources', 'Lua-Versions', 'Postgresql-Catversion',
-#     'Cnf-Visible-Pkgname', 'Cnf-Ignore-Commands', 'Cnf-Priority-Bonus',
-#     'Original-Maintainer', 'Task', 'Xul-Appid', 'Modaliases', 'Ubuntu-Oem-Kernel-Flavour'
-# ]
 
 FILENAME_FIELD_KEY = "Filename"
 
@@ -98,11 +77,8 @@ class Package:
         if not parsed:
             return None
 
-        # may not work - email.parser + some Debianrepo: newlines leaks
-        # self.fields = dict(parsed)
-
-        # workaround
-        # update note2: add strip workaround due to wrap line parse
+        # email.parser keeps the line breaks of a folded value, and some Debian repositories
+        # leak newlines through it, so each value is joined back and stripped
         self.fields.update(
             {field: data.replace("\n", "").strip() for field, data in parsed.items()}
         )
@@ -172,24 +148,6 @@ class Package:
             Dict[str, Any]: The package fields.
         """
         return self.fields
-
-    def field_re_sub(self, field: str, pattern: str, repl: str) -> None:
-        """Replace field value using regexp.
-
-        Args:
-            field (str): The field to replace.
-            pattern (str): The pattern to replace.
-            repl (str): The replacement string.
-
-        Raises:
-            PackageException: If field not exist.
-        """
-        try:
-            result = re.sub(pattern, repl, self.fields[field])
-        except KeyError as exc:
-            raise PackageException(f"field '{field}' not exist - not modified!") from exc
-        self.fields[field] = result
-        self.modified = True
 
     def get_digests(self) -> dict[str, str]:
         """Return all hexdigests from fields.

@@ -101,7 +101,6 @@ def make_packages(storage: Storage, params: RepoParams, pkgs: Iterable[Package])
     """Build a Packages container pre-populated by Filename."""
     container = Packages(storage, params)
     container.packages = {pkg.fields["Filename"]: pkg for pkg in pkgs}
-    container.size = len(container.packages)
     return container
 
 

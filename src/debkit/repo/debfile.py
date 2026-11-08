@@ -63,8 +63,7 @@ class DebFile:
                 logger.debug(
                     "UnsupportedOperation: %s in stream; falling back to get memory object", exc
                 )
-                self.memobj = storage.get(path)
-                self.fileobj = BytesIO(self.memobj)
+                self.fileobj = BytesIO(storage.get(path))
                 self.deb = debfile.DebFile(fileobj=self.fileobj)
         except StorageException as exc:
             raise DebFileException(f"Cannot read .deb file {path}: {exc}") from exc

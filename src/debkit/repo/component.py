@@ -114,19 +114,11 @@ class Component:
         ret.modified = self.modified
         return ret
 
-    def load(
-        self,
-        archs: list[str],
-        modify_rules: list[tuple[str, str, str]] | None = None,
-        strict_arch: bool = False,
-    ) -> int:
+    def load(self, archs: list[str], strict_arch: bool = False) -> int:
         """Load package sets (Packages objects) for all architectures.
 
         Args:
             archs (List[str]): The list of architectures.
-            modify_rules (Optional[List[Tuple[str, str, str]]]): A list of modification rules.
-                Each rule is a tuple containing a field name, a pattern, and a replacement string.
-                Defaults to None.
             strict_arch (bool): If True, strict architecture check is performed.
                 Defaults to False.
 
@@ -152,7 +144,7 @@ class Component:
                     continue
 
             try:
-                packages.load(self.root_release, self.name, arch, modify_rules=modify_rules)
+                packages.load(self.root_release, self.name, arch)
             except PackagesException as exc:
                 if strict_arch:
                     raise ComponentException(f"Cannot load {self.name}: {arch}") from exc
@@ -247,7 +239,6 @@ class Component:
             self.packages[arch] = packages
 
         logger.info("Insert package: %s %s", package, arch)
-        # package.fields["X-Factory-Architecture"] = arch
 
         self.packages[arch].insert(package)
         self.modified = True

@@ -77,11 +77,9 @@ class HexDigests:
             bool: True if the checksum is valid, False otherwise.
         """
         if filename not in self.digests:
-            # logging.debug("File not found in Release: %s", filename)
             return False
 
         if not compare_digests(self.digests[filename], incoming_digests):
-            # logging.debug("Invalid checksums for file: %s", filename)
             return False
 
         return True

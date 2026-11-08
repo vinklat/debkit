@@ -70,13 +70,12 @@ def test_indices_prefix_with_no_dist() -> None:
     assert p.indices_prefix == ""
 
 
-def test_repr_and_equality() -> None:
+def test_equality() -> None:
     a = RepoParams(dist="bookworm")
     b = RepoParams(dist="bookworm")
     assert a == b
     a.url = "https://x"
     assert a != b
-    assert "bookworm" in str(a)
 
 
 _LAYOUTS = [
@@ -98,7 +97,7 @@ _LAYOUTS = [
     ),
     # flat-real-dist: <dist>/<inner>
     ("stable", True, None, "Packages.xz", ("stable/Packages.xz", "Packages.xz")),
-    # flat-rootless (e.g. dist == "/")
+    # flat-rootless, e.g. a "/" dist
     ("/", True, None, "Packages.xz", ("Packages.xz", "Packages.xz")),
     # non-flat with empty indices_prefix — falls back to comp-relative
     (

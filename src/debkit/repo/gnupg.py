@@ -124,7 +124,6 @@ class GnuPG:
         # An empty string would make python-gnupg pass `--passphrase-fd 0` without writing a
         # passphrase, so gpg reads the first line of the signed data as one and drops it.
         self.passphrase: str | None = passphrase or None
-        # logging.debug("GPG public key: %s", self.gnupg.list_keys())
 
     def verify(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
         """Verifying GPG signature.

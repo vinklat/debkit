@@ -109,10 +109,7 @@ class RepoDiff:
         for component in self.removed_pkgs.values():
             for arch in component.values():
                 pkgs.extend(arch)
-        # Disabled - due the package with same name may be in added
-        # for component in self.old_versions_pkgs.values():
-        #     for arch in component.values():
-        #         pkgs.extend(arch)
+        # old versions are not removed: a package of the same name may be among the added ones
         return pkgs
 
     def count_pkgs_to_remove(self) -> int:

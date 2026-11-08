@@ -92,8 +92,6 @@ def main(argv: list[str] | None = None) -> None:
                 ActionHistory(pars).revert()
             case "prune":
                 ActionHistory(pars).prune()
-            case _:
-                pass
 
     except (
         RepoReadException,

@@ -41,16 +41,11 @@ class Sources(Packages):
     this container refuses every mutation -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
     """
 
-    def _parse_indices(
-        self, data: str, modify_rules: list[tuple[str, str, str]] | None = None
-    ) -> int:
+    def _parse_indices(self, data: str) -> int:
         """Expand every stanza into one `Package` per payload file.
 
         Args:
             data (str): Decoded `Sources` index.
-            modify_rules (Optional[List[Tuple[str, str, str]]]): Accepted for signature
-                parity with `Packages`; a source index is never rewritten, so they are
-                ignored.
 
         Raises:
             PackagesException: If a stanza names no usable `Directory`, an unsafe file
@@ -59,9 +54,6 @@ class Sources(Packages):
         Returns:
             int: The number of payload files known after parsing.
         """
-        if modify_rules:
-            logger.debug("Modify rules do not apply to a read-only Sources index.")
-
         for block in re.split(r"\n{2,}", data):
             if not block.strip():
                 continue
@@ -73,7 +65,6 @@ class Sources(Packages):
                     logger.debug("%s is listed with differing digests across stanzas.", name)
                 self.packages[name] = package
 
-        self.size = len(self.packages)
         return self.size
 
     def _expand_stanza(self, block: str) -> list[Package]:

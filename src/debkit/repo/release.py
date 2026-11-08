@@ -21,8 +21,6 @@ from debkit.repo.hashes import (
 )
 
 if TYPE_CHECKING:
-    from email.message import Message
-
     from txstore import Storage
 
     from debkit.repo.gnupg import GnuPG
@@ -200,24 +198,6 @@ class Release(HexDigests):
         """Return string representation of the Release object."""
         return "<empty>" if self.filename is None else self.filename
 
-    def __parsed2dict(self, parsed: "Message") -> dict[str, str]:
-        """Convert parsed headers to a dictionary.
-
-        If there are multiple headers with the same name, the last one is used.
-
-        Args:
-            parsed (Message): The parsed headers.
-
-        Returns:
-            Dict[str, str]: The dictionary of parsed headers.
-        """
-        ret: dict[str, str] = {}
-
-        for field, data in parsed.items():
-            ret[field] = data
-
-        return ret
-
     @staticmethod
     def _fix_unindented_continuations(text: str) -> str:
         """Re-join bare continuation tokens that lack a leading space.
@@ -299,7 +279,8 @@ class Release(HexDigests):
         data = self._fix_unindented_continuations(data)
         parser = Parser()
         parsed = parser.parsestr(data)
-        self.fields = self.__parsed2dict(parsed)
+        # `dict(parsed)` would keep the first of duplicate fields; `items()` lets the last win
+        self.fields = dict(parsed.items())
 
         # a reload replaces the manifest: a key or algorithm the new file drops must
         # not survive from the previous parse
@@ -552,8 +533,6 @@ class Release(HexDigests):
             msg.add_header(field, data)
 
         ret: str = msg.as_string().rstrip()
-
-        # logging.debug("hashfuns=%s", self.hashfuns)
 
         if self.hashfuns:
             for hashfun in self.hashfuns:

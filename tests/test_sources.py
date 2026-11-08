@@ -111,17 +111,6 @@ def test_sources_parse_logs_when_a_shared_payload_disagrees(
     assert "differing digests" in caplog.text
 
 
-def test_sources_parse_ignores_modify_rules(caplog: pytest.LogCaptureFixture) -> None:
-    """A read-only index is never rewritten, so rules cannot apply."""
-    src = _new_sources()
-
-    with caplog.at_level(logging.DEBUG):
-        src._parse_indices(_STANZA_3, modify_rules=[("Package", "hello", "HELLO")])
-
-    assert src.packages[f"{_DIR}/hello_2.10-3.dsc"].fields["Package"] == "hello"
-    assert src.modified is False
-
-
 # ---------------------------------------------------------------------------
 # validation
 # ---------------------------------------------------------------------------

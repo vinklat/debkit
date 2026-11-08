@@ -67,6 +67,8 @@ select = [
     "PT",  # flake8-pytest-style
     "LOG", # flake8-logging: module loggers, never the root logger
     "G",   # flake8-logging-format: %-style lazy arguments
+    "ERA", # eradicate: no commented-out code
+    "FIX", # flake8-fixme: no TODO/FIXME/XXX/HACK; deviations go to ROADMAP.md
     "PLC0415", # import-outside-toplevel: local imports only for a named cycle or deferral
     "RUF100",  # unused noqa: every suppression names an enabled rule
 ]
@@ -93,6 +95,7 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+warn_unreachable = true
 
 # python-gnupg ships no type information.
 [[tool.mypy.overrides]]

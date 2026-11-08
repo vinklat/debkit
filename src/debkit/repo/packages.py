@@ -15,7 +15,7 @@ from txstore import calc_digests, compare_digests, is_unsafe_path
 
 from debkit.repo.compress import CODECS, codec_for
 from debkit.repo.hashes import ChecksumException
-from debkit.repo.package import Package, PackageException
+from debkit.repo.package import Package
 from debkit.repo.release import Release
 
 if TYPE_CHECKING:
@@ -71,7 +71,6 @@ class Packages:
         self.packages: dict[str, Package] = {}
         self.used_indices_path = ""
         self.found_indices_paths: list[str] = []
-        self.size = 0
         self.modified = False
 
     def __copy__(self) -> Packages:
@@ -85,9 +84,13 @@ class Packages:
         ret.packages = copy(self.packages)
         ret.used_indices_path = self.used_indices_path
         ret.found_indices_paths = self.found_indices_paths.copy()
-        ret.size = self.size
         ret.modified = self.modified
         return ret
+
+    @property
+    def size(self) -> int:
+        """Number of packages, derived on each read so no insert or removal leaves it stale."""
+        return len(self.packages)
 
     def _index_inner(self, arch: str, suffix: str = "") -> str:
         """Compose the Release-relative inner path of a package index.
@@ -122,25 +125,17 @@ class Packages:
         if not self.params.is_flat:
             self.release.setup_component(comp, arch)
 
-    def _parse_indices(
-        self, data: str, modify_rules: list[tuple[str, str, str]] | None = None
-    ) -> int:
+    def _parse_indices(self, data: str) -> int:
         """Read list of packages from data from Packages file.
 
         Use decompress function for unpack, parse data from headers format.
 
         Args:
             data (str): The data from the Packages file.
-            modify_rules (Optional[List[Tuple[str, str, str]]]): A list of modification rules.
-                Each rule is a tuple containing a field name, a pattern, and a replacement string.
-                Defaults to None (no rules).
 
         Returns:
             int: The number of packages parsed.
         """
-        if modify_rules is None:
-            modify_rules = []
-
         blocks = re.split(r"\n{2,}", data)
         for block in blocks:
             if not block.strip():
@@ -159,18 +154,7 @@ class Packages:
                 logger.warning("%s named in an index is an unsafe package path. Skipped.", pkg_name)
                 continue
 
-            # apply modification rules; only mark `modified` if a rule actually changed a field
-            for field, pattern, replace in modify_rules:
-                try:
-                    before = package.fields.get(field)
-                    package.field_re_sub(field, pattern, replace)
-                    if package.fields.get(field) != before:
-                        self.modified = True
-                except PackageException as exc:
-                    logger.warning("Modify rule failed for %s: %s", pkg_name, exc)
-
             self.packages[pkg_name] = package
-        self.size = len(self.packages)
         return self.size
 
     def _serialize_indices(self) -> str:
@@ -268,7 +252,6 @@ class Packages:
         root_release: Release,
         comp: str,
         arch: str,
-        modify_rules: list[tuple[str, str, str]] | None = None,
     ) -> bool:
         """Load 'Packages' indices file from repo.
 
@@ -276,8 +259,6 @@ class Packages:
             root_release (Release): The root release object.
             comp (str): The component name.
             arch (str): The architecture name.
-            modify_rules (Optional[List[Tuple[str, str, str]]]): The modify rules function.
-                Defaults to None.
 
         Raises:
             ChecksumException: Checksum mismatch for Packages file.
@@ -314,7 +295,7 @@ class Packages:
 
         data = raw.decode("utf-8")
 
-        pkgs_total = self._parse_indices(data, modify_rules=modify_rules)
+        pkgs_total = self._parse_indices(data)
 
         if comp and arch:
             logger.info("Found %s packages in %s arch %s.", pkgs_total, comp, arch)
