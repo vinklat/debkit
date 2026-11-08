@@ -87,7 +87,7 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 | `--architectures`          | `DEBKIT_ARCHITECTURES`          | `amd64,arm64` | Comma-separated list; `source` selects source packages → [VALIDATION.md](VALIDATION.md#architectures)            |
 | `--indices-exclude`        | `DEBKIT_INDICES_EXCLUDE`        | empty string  | Comma-separated globs of Release-listed index paths to skip → [VALIDATION.md](VALIDATION.md#index-exclude-globs) |
 | `--allow-release-rollback` | `DEBKIT_ALLOW_RELEASE_ROLLBACK` | off           | Skips the Release freshness checks → [CRYPTO.md](CRYPTO.md#release-freshness)                                    |
-| `--verify-existing`        | none                            | off           | Verify target packages before sync                                                                               |
+| `--verify-existing` | none | off | Verify target packages before the first pass; each that fails is deleted, and the sync copies it again |
 | `--indices-only`           | none                            | off           | Sync index objects only                                                                                          |
 
 ## Check
@@ -99,7 +99,9 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 Also accepts `--architectures` and `--indices-exclude` with the same variables and defaults as
 [Sync](#sync): a check builds its index and package sets the same way a sync does, so other values
 report the difference as missing or orphan objects. `--fix` deletes those orphans, so a check
-narrower than the sync that built the mirror purges what it leaves out.
+narrower than the sync that built the mirror purges what it leaves out. Missing are only the
+payloads and the parsed component indices the target listing lacks: the root Release files were
+just read, and nothing is probed.
 
 ## Log
 

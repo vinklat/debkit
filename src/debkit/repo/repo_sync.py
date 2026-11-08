@@ -7,7 +7,7 @@ The module-level rules decide which Release-listed indices a mirror carries;
 import fnmatch
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -428,28 +428,14 @@ class RepoSync(Repo):
 
         indices = self._get_indices()
 
+        # missing packages a previous failed sync left, and orphans; an unlisted target
+        # proves neither
         repair_files: set[str] = set()
         purge_files: set[str] = set()
-
-        # search for missing packages in target repo
-        # caused by previous failed sync
         if can_list:
-            for file in all_pkg_files:
-                if (
-                    (file not in copy_pkg_files)
-                    and (file not in remove_pkg_files)
-                    and (file not in existing_files)
-                ):
-                    repair_files.add(file)
-
-        # search useless files (orphans) in target repo
-        for file in existing_files:
-            if (
-                (file not in indices)
-                and (file not in all_pkg_files)
-                and (file not in remove_pkg_files)
-            ):
-                purge_files.add(file)
+            repair_files, purge_files = self._repair_and_purge(
+                all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
+            )
 
         # reduce copy_pkg_files by existing files
         # files done by previous terminated sync
@@ -506,6 +492,58 @@ class RepoSync(Repo):
         )
 
         return copy_list, delete_list
+
+    @staticmethod
+    def _repair_and_purge(
+        payloads: set[str],
+        indices: Collection[str],
+        existing_files: set[str],
+        planned: set[str] | None = None,
+    ) -> tuple[set[str], set[str]]:
+        """Compare a target listing with the package and index sets.
+
+        Args:
+            payloads (Set[str]): Every payload path the package set holds.
+            indices (Collection[str]): Every index path the index set holds.
+            existing_files (Set[str]): Paths the target listing returned.
+            planned (Optional[Set[str]]): Paths a package diff already copies or
+                removes, left out of both results.
+
+        Returns:
+            Tuple[Set[str], Set[str]]: The payloads the listing lacks, and the listed
+                paths neither set holds.
+        """
+        planned = planned or set()
+        repair = payloads - planned - existing_files
+        purge = {file for file in existing_files - payloads - planned if file not in indices}
+        return repair, purge
+
+    def consistency_lists(self) -> tuple[list[str], list[str]]:
+        """List what this repository's own storage lacks and what it holds unclaimed.
+
+        Missing are the payloads and the parsed component indices the listing lacks:
+        the root Release files were just read and nothing is probed, so a listing that
+        disagrees with a read cannot make them missing. Orphans are listed paths that
+        neither the package set nor the index set holds
+        -> [CONFIG.md](CONFIG.md#check).
+
+        Returns:
+            Tuple[List[str], List[str]]: Missing and orphan paths, sorted; both empty
+                when the storage cannot list.
+        """
+        try:
+            existing_files = set(self.storage.list())
+        except NotImplementedError:
+            return [], []
+
+        indices = self._get_indices()
+        missing, orphans = self._repair_and_purge(self._payload_files(), indices, existing_files)
+        parsed = {
+            path for component in self.components.values() for path in component.get_indices_paths()
+        }
+        root_files = set(self.release.get_indices_paths())
+        missing |= (parsed & indices.keys()) - root_files - existing_files
+        return sorted(missing), sorted(orphans)
 
     def _indices_to_copy(
         self,

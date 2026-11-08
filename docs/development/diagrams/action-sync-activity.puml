@@ -5,16 +5,6 @@ if (source_repo and target_repo initialized?) then (no)
   stop
 endif
 
-if (verify_existing?) then (yes)
-  partition "verify existing, before the lock" {
-    :target.update();
-    :dup_repo = RepoSync(target.storage, target.params);
-    :dup_repo.copy_from(target);
-    :missing = dup_repo.build_sync_lists(target);
-    :dup_repo.check(missing, [], fix=True);
-  }
-endif
-
 if (allow_release_rollback?) then (yes)
   :log warning "Release freshness checks skipped";
 endif
@@ -30,6 +20,18 @@ partition "with maybe_transaction(target.storage)" {
     ChecksumException    -> log warn, target.reset()
   end note
   :target_before = copy(target);
+  if (verify_existing?) then (yes)
+    :checker = RepoSync over target.storage, copy_from(target);
+    :missing = checker.consistency_lists();
+    :err, fixed = checker.check(missing, [], fix=True);
+    note right
+      deletions are staged in the transaction;
+      the first pass copies them again
+    end note
+    if (err > fixed?) then (yes)
+      :log warning;
+    endif
+  endif
   repeat
     :source.update(strict_arch=True);
     if (prev_hash == source.release.hash?) then (yes)

@@ -8,11 +8,6 @@ participant "maybe_transaction" as CM
 
 Caller -> ActionSync: sync()
 
-opt verify_existing
-  ActionSync -> Tgt: update()
-  ActionSync -> Src: dup_repo.check(missing, [], fix=True)
-end
-
 opt allow_release_rollback
   note over ActionSync: log "Release freshness checks skipped" once
 end
@@ -25,6 +20,11 @@ CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 ActionSync -> Tgt: update()
 Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
 note over ActionSync: target_before = copy(target)
+
+opt verify_existing
+  ActionSync -> TStor: list()\n[checker.consistency_lists()]
+  ActionSync -> TStor: read, delete the failing payloads\n[checker.check(missing, [], fix=True);\nstaged in the transaction]
+end
 
 loop pass_cnt > 0
   ActionSync -> Src: update(strict_arch=True)

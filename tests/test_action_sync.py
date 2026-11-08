@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import io
+import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,7 +14,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from helpers.storage import NonTxnStorageStub, TxnStorageStub
-from txstore import HistoryRetention, Storage, StorageFS, is_transactional, maybe_transaction
+from txstore import (
+    HistoryRetention,
+    Storage,
+    StorageException,
+    StorageFS,
+    TransactionHistory,
+    is_transactional,
+    maybe_transaction,
+)
 
 from debkit.action import OutputType
 from debkit.action.action_sync import ActionSync
@@ -250,8 +259,16 @@ def _write_tree(base: Path, date: str, version: str) -> None:
         (base / path).write_bytes(data)
 
 
-def _fs_action(source_storage: StorageFS, target_dir: Path) -> ActionSync:
-    """A real ActionSync between two `StorageFS` trees, every source signature accepted."""
+def _fs_action(
+    source_storage: StorageFS,
+    target_dir: Path | None = None,
+    *,
+    target_storage: Storage | None = None,
+) -> ActionSync:
+    """A real ActionSync between two storages, every source signature accepted.
+
+    The target is a `StorageFS` on `target_dir` unless `target_storage` is given.
+    """
     from debkit.repo.repo_rw import RepoRW
     from debkit.repo.repo_sync import RepoSync
 
@@ -267,7 +284,7 @@ def _fs_action(source_storage: StorageFS, target_dir: Path) -> ActionSync:
         source_storage, RepoParams("bookworm", ["main"], ["amd64"]), gpg=gpg
     )
     action.target_repo = RepoRW(
-        StorageFS(str(target_dir)), RepoParams("bookworm", ["main"], ["amd64"])
+        target_storage or StorageFS(str(target_dir)), RepoParams("bookworm", ["main"], ["amd64"])
     )
     return action
 
@@ -462,19 +479,189 @@ def test_sync_stops_on_a_target_it_cannot_read() -> None:
     _source(action).sync.assert_not_called()
 
 
-def test_sync_verify_existing_reads_the_target_again_under_the_lock() -> None:
-    """Verifying existing objects runs before the lock, so its target read is not reused."""
+def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction() -> None:
+    """The verify deletions are staged with the sync, on the one target load under the lock."""
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
     action.verify_existing = True
     began_at_load: list[bool] = []
+    began_at_check: list[bool] = []
     _target(action).update.side_effect = lambda: began_at_load.append(txn.began)
 
-    with patch("debkit.action.action_sync.RepoSync") as dup_repo:
-        dup_repo.return_value.build_sync_lists.return_value = ([], [])
+    def check(missing: list[str], orphans: list[str], fix: bool = False) -> tuple[int, int]:
+        began_at_check.append(txn.began and not txn.committed)
+        return 0, 0
+
+    with patch("debkit.action.action_sync.RepoSync") as checker:
+        checker.return_value.consistency_lists.return_value = (["gone.deb"], ["junk"])
+        checker.return_value.check.side_effect = check
         action.sync()
 
-    assert began_at_load == [False, True]
+    assert began_at_load == [True]
+    assert began_at_check == [True]
+    checker.return_value.check.assert_called_once_with(["gone.deb"], [], fix=True)
+
+
+def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    action = _make_action(storage=TxnStorageStub())
+    action.verify_existing = True
+
+    with patch("debkit.action.action_sync.RepoSync") as checker:
+        checker.return_value.consistency_lists.return_value = ([], [])
+        checker.return_value.check.return_value = (3, 1)
+        with caplog.at_level(logging.WARNING):
+            action.sync()
+
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING] == [
+        "2 target files failed verification and were not deleted"
+    ]
+
+
+class _UnreadableIndicesFS(StorageFS):
+    """A backend whose every index read and every listing fails."""
+
+    def get(self, path: str) -> bytes:
+        if path.startswith("dists/"):
+            raise StorageException(f"backend down reading {path}")
+        return super().get(path)
+
+    def list(self, *args: Any, **kwargs: Any) -> list[str]:
+        raise StorageException("backend down listing")
+
+
+def test_sync_verify_existing_propagates_the_target_read_failure(tmp_path: Path) -> None:
+    """No check runs on a target that did not load, so its read failure is what surfaces."""
+    from debkit.repo import RepoReadException
+
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    action = _fs_action(
+        StorageFS(str(tmp_path / "src")),
+        target_storage=_UnreadableIndicesFS(str(tmp_path / "tgt")),
+    )
+    action.verify_existing = True
+
+    with pytest.raises(RepoReadException, match="backend down reading"):
+        action.sync()
+
+
+def test_sync_verify_existing_replaces_a_corrupt_payload_in_one_transaction(
+    tmp_path: Path,
+) -> None:
+    _write_tree(tmp_path / "src", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    deb = tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb"
+    deb.write_bytes(b"corrupt")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.verify_existing = True
+
+    action.sync()
+
+    assert deb.read_bytes() == b"deb 2"
+    assert len(TransactionHistory(StorageFS(str(tmp_path / "tgt"))).load()) == 1
+
+
+# ---------------------------------------------------------------------------
+# check()
+# ---------------------------------------------------------------------------
+
+
+def _check_action(
+    storage: Storage, *, fix: bool = False, output: OutputType = OutputType.brief
+) -> ActionSync:
+    """A real `check` over a target storage; check runs without a source."""
+    from debkit.repo.repo_rw import RepoRW
+
+    action = ActionSync.__new__(ActionSync)
+    action.output = output
+    action.fix = fix
+    action.history_retention = HistoryRetention(max_age_days=0)
+    action.source_repo = None
+    action.target_repo = RepoRW(storage, RepoParams("bookworm", ["main"], ["amd64"]))
+    return action
+
+
+def test_check_finds_a_consistent_repository_consistent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+
+    assert _check_action(StorageFS(str(tmp_path))).check() is True
+    assert capsys.readouterr().out == "Errors total: 0 files\nErrors fixed: 0 files\n"
+
+
+class _ListingHidesFS(StorageFS):
+    """A listing that disagrees with reads: it omits every path ending in `hidden`."""
+
+    hidden = ""
+
+    def list(self, *args: Any, **kwargs: Any) -> list[str]:
+        return [path for path in super().list(*args, **kwargs) if not path.endswith(self.hidden)]
+
+
+@pytest.mark.parametrize(
+    ("hidden", "consistent"),
+    [("Release.gpg", True), ("Packages.gz", False), (".deb", False)],
+    ids=["root-release-file", "parsed-index", "payload"],
+)
+def test_check_counts_missing_only_what_a_parse_or_package_proves(
+    tmp_path: Path, hidden: str, consistent: bool
+) -> None:
+    """A root Release file was just read, so a listing that omits it is not a missing file."""
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    storage = _ListingHidesFS(str(tmp_path))
+    storage.hidden = hidden
+
+    assert _check_action(storage).check() is consistent
+
+
+@pytest.mark.parametrize("fix", [False, True])
+def test_check_reports_an_orphan_and_fix_deletes_it(tmp_path: Path, fix: bool) -> None:
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    orphan = tmp_path / "pool/main/o/old/old_1_amd64.deb"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"old")
+
+    assert _check_action(StorageFS(str(tmp_path)), fix=fix).check() is fix
+    assert orphan.exists() is not fix
+
+
+def test_check_fix_cannot_repair_a_missing_payload(tmp_path: Path) -> None:
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    (tmp_path / "pool/main/f/foo/foo_2_amd64.deb").unlink()
+
+    assert _check_action(StorageFS(str(tmp_path)), fix=True).check() is False
+
+
+@pytest.mark.parametrize("fix", [False, True])
+def test_check_records_a_transaction_only_with_fix(tmp_path: Path, fix: bool) -> None:
+    """`check --fix` deletes, so its writes are recorded like any other write."""
+    from debkit.action import action_sync
+
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    action = _check_action(StorageFS(str(tmp_path)), fix=fix)
+
+    with patch.object(action_sync, "maybe_transaction", wraps=maybe_transaction) as wiring:
+        action.check()
+
+    assert wiring.call_count == int(fix)
+
+
+def test_check_prints_json_status(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    (tmp_path / "junk").write_bytes(b"x")
+
+    assert _check_action(StorageFS(str(tmp_path)), output=OutputType.json).check() is False
+    assert json.loads(capsys.readouterr().out)["status"] == {
+        "errors_total": 1,
+        "errors_fixed_total": 0,
+    }
+
+
+def test_check_reports_an_empty_target_inconsistent(tmp_path: Path) -> None:
+    assert _check_action(StorageFS(str(tmp_path))).check() is False
 
 
 # ---------------------------------------------------------------------------

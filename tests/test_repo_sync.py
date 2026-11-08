@@ -859,6 +859,47 @@ def test_check_orphans_without_fix_are_not_touched() -> None:
 
 
 # =========================================================================
+# § 3c. consistency_lists (what check and --verify-existing act on)
+# =========================================================================
+
+_PARSED_INDEX = "dists/bookworm/main/binary-amd64/Packages.gz"
+_LISTED_ONLY = "main/dep11/Components-amd64.yml.gz"
+
+
+def _self_check_repo(listing: list[str]) -> RepoSync:
+    """A repo whose own storage lists `listing`: one payload, one parsed and one listed index."""
+    src, _ = _two_repos(
+        src_components={"main": {"amd64": [make_package("p1.deb")]}},
+        tgt_components={},
+        listed=[_entry(_LISTED_ONLY)],
+        src_component_indices={"main": [_PARSED_INDEX]},
+    )
+    _mock_storage(src).list.return_value = listing
+    return src
+
+
+def test_consistency_lists_reports_only_what_a_parse_or_package_proves_missing() -> None:
+    """The root Release files and a listed-only index are never missing, and nothing is probed."""
+    src = _self_check_repo(["junk.deb"])
+
+    assert src.consistency_lists() == ([_PARSED_INDEX, "p1.deb"], ["junk.deb"])
+    _mock_storage(src).exists.assert_not_called()
+
+
+def test_consistency_lists_keeps_every_held_index_and_payload() -> None:
+    src = _self_check_repo(["p1.deb", _PARSED_INDEX, f"dists/bookworm/{_LISTED_ONLY}", *INDICES])
+
+    assert src.consistency_lists() == ([], [])
+
+
+def test_consistency_lists_proves_nothing_on_a_storage_that_cannot_list() -> None:
+    src = _self_check_repo([])
+    _mock_storage(src).list.side_effect = NotImplementedError
+
+    assert src.consistency_lists() == ([], [])
+
+
+# =========================================================================
 # § 3d. _transfer_file
 # =========================================================================
 

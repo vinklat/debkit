@@ -4,6 +4,7 @@
 
 import logging
 from argparse import BooleanOptionalAction
+from contextlib import nullcontext
 from copy import copy
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 
     from debkit._options import EnvArgumentParser
     from debkit.repo.repo_diff import RepoDiff
+    from debkit.repo.repo_rw import RepoRW
 
 ARCHITECTURES_DEFAULT = "amd64,arm64"
 INDICES_EXCLUDE_DEFAULT = ""
@@ -50,6 +52,20 @@ def _split_csv(value: str) -> list[str]:
         List[str]: The non-empty tokens, in order.
     """
     return [token for token in value.split(",") if token]
+
+
+def _checker_for(target: "RepoRW") -> RepoSync:
+    """Wrap a loaded target in a `RepoSync` that checks the target's own storage.
+
+    Args:
+        target (RepoRW): The loaded target repository.
+
+    Returns:
+        RepoSync: A repository over the target storage holding the target's indices.
+    """
+    checker = RepoSync(target.storage, target.params)
+    checker.copy_from(target)
+    return checker
 
 
 class ActionSync(Action):
@@ -136,18 +152,6 @@ class ActionSync(Action):
             logging.error("Source or target repo is not initialized")
             return
 
-        if self.verify_existing:
-            try:
-                logging.info(
-                    "---------- Load target repo to verify (%s)...", self.target_repo.params.url
-                )
-                self._load_target()
-            finally:
-                dup_repo = RepoSync(self.target_repo.storage, self.target_repo.params)
-                dup_repo.copy_from(self.target_repo)
-                missing_list, _ = dup_repo.build_sync_lists(self.target_repo)
-                dup_repo.check(missing_list, [], fix=True)
-
         if self.allow_release_rollback:
             logging.warning("Release freshness checks skipped: --allow-release-rollback is set")
 
@@ -160,6 +164,8 @@ class ActionSync(Action):
             self._load_target()
             # the report compares against the target as this run found it
             target_before = copy(self.target_repo)
+            if self.verify_existing:
+                self._verify_existing(self.target_repo)
 
             while pass_cnt > 0:
                 if pass_cnt == MAX_UPDATED_REPO_RETRIES:
@@ -226,6 +232,27 @@ class ActionSync(Action):
             logging.warning("Target repo corrupted: %s indices IGNORED", exc)
             self.target_repo.reset()
 
+    @staticmethod
+    def _verify_existing(target: "RepoRW") -> None:
+        """Verify the loaded target's payloads, deleting each that fails.
+
+        Runs inside the sync transaction, so the deletions are staged and recorded
+        with the sync, whose repair pass copies each deleted payload again
+        -> [STORAGE.md](STORAGE.md#transactions).
+
+        Args:
+            target (RepoRW): The loaded target repository.
+        """
+        logging.info("---------- Verify target repo packages...")
+        checker = _checker_for(target)
+        missing_list, _ = checker.consistency_lists()
+        err_total, err_fixed_total = checker.check(missing_list, [], fix=True)
+        if err_total > err_fixed_total:
+            logging.warning(
+                "%d target files failed verification and were not deleted",
+                err_total - err_fixed_total,
+            )
+
     def _print_check_brief(self, status: dict[str, int]) -> None:
         """Print check brief output.
 
@@ -257,15 +284,37 @@ class ActionSync(Action):
             logging.error("Target repo is not initialized")
             return False
 
-        try:
-            self.target_repo.update()
-        except ReleaseNotFoundException as exc:
-            logging.error("Target repo is empty: %s", exc)
-            return False
+        # `--fix` writes, so it is recorded as one transaction -> STORAGE.md#transactions
+        with (
+            maybe_transaction(self.target_repo.storage, self.history_retention)
+            if self.fix
+            else nullcontext()
+        ):
+            try:
+                self.target_repo.update()
+            except ReleaseNotFoundException as exc:
+                logging.error("Target repo is empty: %s", exc)
+                return False
+            status = self._check_target(self.target_repo)
 
-        dup_repo = RepoSync(self.target_repo.storage, self.target_repo.params)
-        dup_repo.copy_from(self.target_repo)
-        missing_list, orphan_list = dup_repo.build_sync_lists(self.target_repo)
+        if self.output == OutputType.json:
+            self._print_check_json(status)
+        else:
+            self._print_check_brief(status)
+
+        return status["errors_total"] == status["errors_fixed_total"]
+
+    def _check_target(self, target: "RepoRW") -> dict[str, int]:
+        """Check the loaded target against its own indices, fixing it with `--fix`.
+
+        Args:
+            target (RepoRW): The loaded target repository.
+
+        Returns:
+            Dict[str, int]: The error and fixed-error totals.
+        """
+        dup_repo = _checker_for(target)
+        missing_list, orphan_list = dup_repo.consistency_lists()
 
         list_err_total: int = 0
         if len(missing_list) > 0:
@@ -284,17 +333,10 @@ class ActionSync(Action):
             missing_list, orphan_list, fix=self.fix
         )
 
-        status = {
+        return {
             "errors_total": list_err_total + file_err_total,
             "errors_fixed_total": file_err_fixed_total,
         }
-
-        if self.output == OutputType.json:
-            self._print_check_json(status)
-        else:
-            self._print_check_brief(status)
-
-        return (file_err_total + list_err_total) == file_err_fixed_total
 
     @staticmethod
     def add_selection_cli_args(parser: "EnvArgumentParser") -> None:
