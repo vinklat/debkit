@@ -316,6 +316,27 @@ def test_build_sync_lists_indices_only_forces_indices_and_skips_packages() -> No
     assert delete_list == []
 
 
+def test_build_sync_lists_indices_only_plans_no_payloads(caplog: pytest.LogCaptureFixture) -> None:
+    """`--indices-only` skips the package diff, the payload digest checks, and their counts."""
+    p1 = make_package("p1.deb")
+    src, tgt = _two_repos(
+        src_components={"main": {"amd64": [p1, make_package("p2.deb")]}},
+        tgt_components={"main": {"amd64": []}},
+        tgt_list=["p1.deb", *INDICES],
+    )
+    diff = MagicMock(wraps=src.diff)
+    digest_unchanged = MagicMock(wraps=src._digest_unchanged)
+    src.diff = diff  # type: ignore[method-assign]
+    src._digest_unchanged = digest_unchanged  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.INFO):
+        src.build_sync_lists(tgt, indices_only=True)
+
+    diff.assert_not_called()
+    assert "p1.deb" not in [call.args[0] for call in digest_unchanged.call_args_list]
+    assert "packages" not in caplog.text
+
+
 def test_build_sync_lists_duplicate_all_deb_across_archs() -> None:
     """An arch-all .deb appears in both amd64 and arm64 indices.
 

@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from debkit.repo.package import Package
     from debkit.repo.params import RepoParams
     from debkit.repo.release import IndexEntry
+    from debkit.repo.repo_diff import RepoDiff
     from debkit.repo.repo_rw import RepoRW
 
 
@@ -194,45 +195,73 @@ class RepoSync(Repo):
 
         Args:
             target_repo (Repo): The target repo to sync with.
-            indices_only (bool): Sync only indices. Defaults to False.
+            indices_only (bool): Force the index pass and plan no payload copy or
+                deletion. Defaults to False.
 
         Returns:
             tuple: The paths to copy, the paths to delete, and the copied index paths
                 no load or parse proved the source publishes, which `sync` skips when
                 the source lacks them.
         """
-        force_indices_copy = False
-        copy_pkgs: list[Package] = []
-        # remove_pkgs: List[Package] = []
-        copy_pkg_files: set[str] = set()
-        remove_pkg_files: set[str] = set()
-
-        diff = self.diff(target_repo)
-
-        # an index-only source change (i18n, dep11) leaves the package diff empty
-        if self.release.hash != target_repo.release.hash:
-            force_indices_copy = True
-
-        if not diff.is_empty():
-            force_indices_copy = True
-            copy_pkgs = diff.get_pkgs_to_copy()
-            # remove_pkgs = diff.get_pkgs_to_remove()
-            copy_pkg_files = diff.get_filenames_to_copy()
-            # a vanished stanza naming an index must not delete what the index set keeps
-            remove_pkg_files = self._drop_release_owned(diff.get_filenames_to_remove())
-
-        all_pkg_files: set[str] = self._payload_files()
-        copy_pkg_files &= all_pkg_files
-
-        # if target repo can't list files skip some optimizations
-        can_list: bool = True
         try:
             existing_files = set(target_repo.storage.list())
+            can_list = True
         except NotImplementedError:
-            existing_files = set()
-            can_list = False
+            existing_files, can_list = set(), False
 
         indices = self._get_indices()
+
+        copy_list: list[str] = []
+        delete_list: list[str] = []
+        forced = True
+        if not indices_only:
+            diff = self.diff(target_repo)
+            # an index-only source change (i18n, dep11) leaves the package diff empty
+            forced = self.release.hash != target_repo.release.hash or not diff.is_empty()
+            copy_list, delete_list = self._plan_payloads(
+                diff, indices, target_repo, existing_files, can_list=can_list
+            )
+
+        logging.info("     indices: %d objects", len(indices))
+        logging.info(" target repo: %d objects already existing", len(existing_files))
+
+        index_copies = self._indices_to_copy(
+            indices, target_repo, existing_files, forced=forced, can_list=can_list
+        )
+        unproven = {
+            file
+            for file in index_copies
+            if not indices[file].known_published and file not in existing_files
+        }
+
+        return copy_list + index_copies, delete_list, unproven
+
+    def _plan_payloads(
+        self,
+        diff: "RepoDiff",
+        indices: Collection[str],
+        target_repo: "RepoRW",
+        existing_files: set[str],
+        *,
+        can_list: bool,
+    ) -> tuple[list[str], list[str]]:
+        """Plan the payload copies and deletions a package diff and the target listing call for.
+
+        Args:
+            diff (RepoDiff): This repo against the target.
+            indices (Collection[str]): Every index path the index set holds.
+            target_repo (RepoRW): The target repo to sync with.
+            existing_files (Set[str]): Paths the target listing returned.
+            can_list (bool): Whether `existing_files` is a real listing of the target.
+
+        Returns:
+            Tuple[List[str], List[str]]: Payloads to copy, repairs included, and
+                payloads to delete, orphans included; both sorted.
+        """
+        all_pkg_files = self._payload_files()
+        copy_pkg_files = diff.get_filenames_to_copy() & all_pkg_files
+        # a vanished stanza naming an index must not delete what the index set keeps
+        remove_pkg_files = self._drop_release_owned(diff.get_filenames_to_remove())
 
         # missing packages a previous failed sync left, and orphans; an unlisted target
         # proves neither
@@ -243,65 +272,61 @@ class RepoSync(Repo):
                 all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
             )
 
-        # reduce copy_pkg_files by existing files
-        # files done by previous terminated sync
-        if not indices_only:
-            seen: dict[str, dict[str, str]] = {}
-            for package in copy_pkgs:
-                pkg_name = str(package)
-                if pkg_name in seen:
-                    if package.get_digests() != seen[pkg_name]:
-                        logging.warning(
-                            "%s has inconsistent digests across indices in source repo",
-                            package,
-                        )
-                    continue
-                seen[pkg_name] = package.get_digests()
-                if pkg_name in existing_files:
-                    if not self.params.verify_digests or self._digest_unchanged(
-                        pkg_name, package.get_digests(), target_repo
-                    ):
-                        copy_pkg_files.discard(pkg_name)
-                    else:
-                        logging.warning(
-                            "%s have not valid checksums in target repo. It will be copied again.",
-                            package,
-                        )
-
-        # reduce remove_pkg_files by not existing files
-        # files not deleted by previous failed sync
-        for file in remove_pkg_files.copy():
-            if file not in existing_files:
-                remove_pkg_files.remove(file)
+        copy_pkg_files = self._reduce_copies(
+            diff.get_pkgs_to_copy(), copy_pkg_files, target_repo, existing_files
+        )
+        # files a previous failed sync never got to delete
+        remove_pkg_files &= existing_files
 
         logging.info(" source repo: %d packages (total)", len(all_pkg_files))
         logging.info("     to copy: %d packages", len(copy_pkg_files))
         logging.info("   to remove: %d packages", len(remove_pkg_files))
-        logging.info("     indices: %d objects", len(indices))
-        logging.info(" target repo: %d objects already existing", len(existing_files))
         logging.info("   to repair: %d objects (corrupted or missing)", len(repair_files))
         logging.info("    to purge: %d objects (orphans)", len(purge_files))
 
-        copy_list: list[str] = []
-        delete_list: list[str] = []
+        return sorted(copy_pkg_files | repair_files), sorted(remove_pkg_files | purge_files)
 
-        if not indices_only:
-            copy_list = sorted(copy_pkg_files.union(repair_files))
-            delete_list = sorted(remove_pkg_files.union(purge_files))
-        else:
-            force_indices_copy = True
+    def _reduce_copies(
+        self,
+        packages: list["Package"],
+        copy_files: set[str],
+        target_repo: "RepoRW",
+        existing_files: set[str],
+    ) -> set[str]:
+        """Drop the payloads the target already holds unchanged, as a terminated sync leaves them.
 
-        index_copies = self._indices_to_copy(
-            indices, target_repo, existing_files, forced=force_indices_copy, can_list=can_list
-        )
-        copy_list.extend(index_copies)
-        unproven = {
-            file
-            for file in index_copies
-            if not indices[file].known_published and file not in existing_files
-        }
+        Args:
+            packages (List[Package]): Packages the diff copies, one per index naming them.
+            copy_files (Set[str]): Payload paths to copy.
+            target_repo (RepoRW): The target repo to sync with.
+            existing_files (Set[str]): Paths the target listing returned.
 
-        return copy_list, delete_list, unproven
+        Returns:
+            Set[str]: `copy_files` without the payloads the target already holds.
+        """
+        ret = set(copy_files)
+        seen: dict[str, dict[str, str]] = {}
+        for package in packages:
+            pkg_name = str(package)
+            if pkg_name in seen:
+                if package.get_digests() != seen[pkg_name]:
+                    logging.warning(
+                        "%s has inconsistent digests across indices in source repo", package
+                    )
+                continue
+            seen[pkg_name] = package.get_digests()
+            if pkg_name not in existing_files:
+                continue
+            if not self.params.verify_digests or self._digest_unchanged(
+                pkg_name, package.get_digests(), target_repo
+            ):
+                ret.discard(pkg_name)
+            else:
+                logging.warning(
+                    "%s have not valid checksums in target repo. It will be copied again.",
+                    package,
+                )
+        return ret
 
     @staticmethod
     def _repair_and_purge(
