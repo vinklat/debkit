@@ -45,6 +45,12 @@ partition "with maybe_transaction(target.storage)" {
   while (more filenames?) is (yes)
     :debfile = DebFile(incoming_storage, filename, comp);
     :package = debfile.get_package();
+    note right
+      DebFileException (Read) before any transfer:
+      malformed .deb (read in DebFile()),
+      Package or Source not a policy name,
+      unsafe pool key
+    end note
     :pkg_arch = package.get_arch();
     if (pkg_arch set and not an architecture name?) then (yes)
       :raise ActionException

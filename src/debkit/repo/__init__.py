@@ -232,8 +232,8 @@ class Repo:
     def dump(self, brief: bool = False) -> dict[str, dict[str, Any]]:
         """Dump the repository data to a dict.
 
-        Parameters:
-            brief (bool): Whether to dump a brief version of output. Defaults to False.
+        Args:
+            brief: Whether to dump a brief version of output. Defaults to False.
 
         Returns:
             A dict representation of the repository. The dictionary includes the release, components
