@@ -230,7 +230,6 @@ class Action:
             create_path (bool): Create path or bucket if True.
         """
         self.source_repo: RepoSync | None = None
-        self.target_repo: RepoRW | None = None
         self.gpg: GnuPG | None = None
         self.history_retention: HistoryRetention = history_retention(pars)
 
@@ -257,17 +256,17 @@ class Action:
             (source_storage, source_repo_params) = attach_storage_repo(pars, url=pars.source_url)
             self.source_repo = RepoSync(source_storage, source_repo_params, gpg=self.gpg)
 
-        if hasattr(pars, "target_url"):
-            logging.debug("Prepare target URL: %s", pars.target_url)
-            (target_storage, target_repo_params) = attach_storage_repo(
-                pars, url=pars.target_url, create_path=create_path
-            )
-            # With a source repository the target is overwritten, so its GnuPG check is skipped.
-            self.target_repo = RepoRW(
-                target_storage,
-                target_repo_params,
-                gpg=self.gpg if self.source_repo is None else None,
-            )
+        # `--target-url` is required, so every action has a target
+        logging.debug("Prepare target URL: %s", pars.target_url)
+        (target_storage, target_repo_params) = attach_storage_repo(
+            pars, url=pars.target_url, create_path=create_path
+        )
+        # With a source repository the target is overwritten, so its GnuPG check is skipped.
+        self.target_repo: RepoRW = RepoRW(
+            target_storage,
+            target_repo_params,
+            gpg=self.gpg if self.source_repo is None else None,
+        )
 
     @staticmethod
     def add_output_cli_args(parser: "EnvArgumentParser") -> None:

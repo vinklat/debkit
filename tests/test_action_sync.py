@@ -24,7 +24,7 @@ from txstore import (
     maybe_transaction,
 )
 
-from debkit.action import OutputType
+from debkit.action import ActionException, OutputType
 from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionSync
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
@@ -476,6 +476,17 @@ def test_sync_loads_the_target_inside_the_transaction() -> None:
     action.sync()
 
     assert began_at_load == [True]
+
+
+def test_sync_refuses_to_run_without_a_source() -> None:
+    txn = TxnStorageStub()
+    action = _make_action(storage=txn)
+    action.source_repo = None
+
+    with pytest.raises(ActionException, match="source repository"):
+        action.sync()
+
+    assert not txn.began
 
 
 def test_sync_treats_a_missing_target_as_empty() -> None:

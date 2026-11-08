@@ -100,16 +100,14 @@ class ActionSync(Action):
                     raise ActionException(f"Invalid architecture: {arch!r}")
             if self.source_repo is not None:
                 self.source_repo.params.archs = archs
-            if self.target_repo is not None:
-                self.target_repo.params.archs = archs
+            self.target_repo.params.archs = archs
 
         # index excludes apply to both repos so --verify-existing agrees with the sync
         if getattr(pars, "indices_exclude", "") != "":
             excludes = _split_csv(pars.indices_exclude)
             if self.source_repo is not None:
                 self.source_repo.params.indices_exclude = excludes
-            if self.target_repo is not None:
-                self.target_repo.params.indices_exclude = excludes
+            self.target_repo.params.indices_exclude = excludes
 
     def _print_sync_brief(self, diff: "RepoDiff") -> None:
         """Print sync brief output.
@@ -117,9 +115,6 @@ class ActionSync(Action):
         Args:
             diff (RepoDiff): Repository diff object.
         """
-        if self.source_repo is None or self.target_repo is None:
-            return
-
         print(f"Added {diff.count_pkgs_to_copy()} packages.")
         print(f"Removed {diff.count_pkgs_to_remove()} packages.")
         print(
@@ -127,30 +122,26 @@ class ActionSync(Action):
             f"({naturalsize(self.target_repo.storage.metrics.write_bytes)}) transferred."
         )
 
-    def _print_sync_json(self, diff: "RepoDiff") -> None:
+    def _print_sync_json(self, diff: "RepoDiff", source: RepoSync) -> None:
         """Print sync json output.
 
         Args:
             diff (RepoDiff): Repository diff object.
+            source (RepoSync): The source repository the sync read.
         """
-        if self.source_repo is None or self.target_repo is None:
-            return
-
         json_dict: dict[str, Any] = {
             "packages": diff.dump(),
             "transfer": {"metrics": {}},
         }
-        json_dict["transfer"]["metrics"]["source_storage"] = self.source_repo.storage.metrics.dump()
+        json_dict["transfer"]["metrics"]["source_storage"] = source.storage.metrics.dump()
         json_dict["transfer"]["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
 
         print(dump_json(json_dict, indent=4))
 
     def sync(self) -> None:
         """Sync debian repo from source storage to target storage."""
-        if self.source_repo is None or self.target_repo is None:
-            # TODO raise exception
-            logging.error("Source or target repo is not initialized")
-            return
+        if self.source_repo is None:
+            raise ActionException("sync needs a source repository (--source-url)")
 
         if self.allow_release_rollback:
             logging.warning("Release freshness checks skipped: --allow-release-rollback is set")
@@ -215,7 +206,7 @@ class ActionSync(Action):
 
         ret_diff = self.source_repo.diff(target_before)
         if self.output == OutputType.json:
-            self._print_sync_json(ret_diff)
+            self._print_sync_json(ret_diff, self.source_repo)
         else:
             self._print_sync_brief(ret_diff)
 
@@ -225,8 +216,6 @@ class ActionSync(Action):
         A target that fails a checksum is reset, so nothing it recorded settles an
         index -> [VALIDATION.md](VALIDATION.md#index-selection).
         """
-        if self.target_repo is None:
-            return
         try:
             self.target_repo.update()
         except ReleaseNotFoundException as exc:
@@ -272,8 +261,7 @@ class ActionSync(Action):
             status (dict[str, int]): Dictionary with errors and fixed errors.
         """
         json_dict: dict[str, dict[str, Any]] = {"status": status, "metrics": {}}
-        if self.target_repo is not None:
-            json_dict["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
+        json_dict["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
 
         print(dump_json(json_dict, indent=4))
 
@@ -283,10 +271,6 @@ class ActionSync(Action):
         Returns:
             bool: True if repo is consistent.
         """
-        if self.target_repo is None:
-            logging.error("Target repo is not initialized")
-            return False
-
         # `--fix` writes, so it is recorded as one transaction -> STORAGE.md#transactions
         with (
             maybe_transaction(self.target_repo.storage, self.history_retention)

@@ -6,7 +6,7 @@ if (XOR of changes_filename / deb_filename?) then (no)
   stop
 endif
 
-if (incoming_storage and target_repo set?) then (no)
+if (incoming_storage set?) then (no)
   stop
 endif
 

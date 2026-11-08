@@ -1,7 +1,7 @@
 @startuml
 start
-if (source_repo and target_repo initialized?) then (no)
-  :log error;
+if (source_repo set?) then (no)
+  :raise ActionException;
   stop
 endif
 

@@ -1,8 +1,5 @@
 @startuml
 start
-if (target_repo set?) then (no)
-  stop
-endif
 if (pkg_pattern provided?) then (no)
   :raise ValueError("No package pattern provided.");
   stop

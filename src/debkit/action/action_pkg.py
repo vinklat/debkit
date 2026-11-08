@@ -71,9 +71,6 @@ class ActionPkg(Action):
 
     def dump(self) -> None:
         """Dump repository to stdout."""
-        if self.target_repo is None:
-            return
-
         self.target_repo.update()
         logging.debug("%s", str(self.target_repo.storage.metrics))
         dump_dict = self.target_repo.dump(brief=self.output == OutputType.brief)
@@ -127,9 +124,6 @@ class ActionPkg(Action):
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
-        if self.target_repo is None:
-            return
-
         self.target_repo.update()
         stats = self.target_repo.stats()
 
@@ -145,9 +139,6 @@ class ActionPkg(Action):
             stats (Dict[str, Dict[str, Dict[str, int]]]): A dictionary containing
                 the stats data.
         """
-        if self.target_repo is None:
-            return
-
         print("Packages:")
         for component, arch in stats.items():
             print(f"  {component}:")
@@ -172,9 +163,6 @@ class ActionPkg(Action):
             stats (Dict[str, Dict[str, Dict[str, int]]]): A dictionary containing
                 the stats data.
         """
-        if self.target_repo is None:
-            return
-
         ret = {
             "packages": stats,
             "indices": {
@@ -188,9 +176,6 @@ class ActionPkg(Action):
 
     def list(self) -> None:
         """List packages in repository to stdout."""
-        if self.target_repo is None:
-            return
-
         self.target_repo.update()
 
         if self.output == OutputType.brief:
@@ -208,8 +193,6 @@ class ActionPkg(Action):
         Returns:
             List[str]: The repository architectures without the source one.
         """
-        if self.target_repo is None:
-            return []
         return [arch for arch in self.target_repo.get_archs() if arch != SOURCE_ARCH]
 
     def _changes_deb_files(
@@ -260,7 +243,7 @@ class ActionPkg(Action):
                 "Please provide either --changes-filename or --deb-filename, not both"
             )
 
-        if self.incoming_storage is None or self.target_repo is None:
+        if self.incoming_storage is None:
             return
 
         # load or setup target repository
@@ -334,9 +317,6 @@ class ActionPkg(Action):
         Raises:
             ValueError: If the pattern str is not a valid JSON.
         """
-        if self.target_repo is None:
-            return
-
         if self.pkg_pattern is None:
             raise ValueError("No package pattern provided.")
 
@@ -367,9 +347,6 @@ class ActionPkg(Action):
         Args:
             diff (RepoDiff): Repository diff object.
         """
-        if self.target_repo is None:
-            return
-
         if diff.count_pkgs_to_copy() > 0:
             print(f"Inserted {diff.count_pkgs_to_copy()} packages.")
         if diff.count_pkgs_to_remove() > 0:
@@ -386,9 +363,6 @@ class ActionPkg(Action):
         Args:
             diff (RepoDiff): Repository diff object.
         """
-        if self.target_repo is None:
-            return
-
         json_dict: dict[str, Any] = {
             "packages": diff.dump(),
             "transfer": {"metrics": {}, "errors": {}},
