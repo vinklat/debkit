@@ -147,6 +147,9 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | `RepoSync` index set   | Release-listed index key and path pass the unsafe-key rule.                                                                                                         | Entry dropped from the index set and logged  |
 | `Packages` index parse | Stanza `Filename` passes the unsafe-key rule.                                                                                                                       | Stanza dropped from the container and logged |
 | `Sources` payload      | Stanza `Directory` and the joined payload key pass the unsafe-key rule.                                                                                             | → `PackagesException` (Read)                 |
+| Insert `Package` name | The `.deb` control `Package` field is present and a Debian Policy name, `^[a-z0-9][a-z0-9+.-]+$`, checked before the transfer. | → `DebFileException` (Read) |
+| Insert pool path | The pool key `pool/[<component>/]<first letter>/<package>/<upload path>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
+| `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Write) |
 | Storage paths          | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety).          | → `StorageException` (Generic)               |
 
 ## Log levels
@@ -224,6 +227,7 @@ path.
 | Release token | A root Release `Architectures` or `Architecture` token follows the token rule.                                                                                              | Dropped and logged                       |
 | No Release token | A root Release with neither `Architectures` nor a valid `Architecture` token selects the empty arch in a flat repo; a componented one selects each arch its digest block lists `<component>/binary-<arch>/Packages*` for, under the token rule, `all` skipped. | Bad token dropped and logged |
 | Upload token  | Every `.changes` `Architecture` token and the `.deb` control `Architecture` follow the token rule, checked before the transfer.                                             | → `ActionException` (Generic)            |
+| Index slot | `Component.insert_pkg` refuses an arch that is neither empty nor a token, whatever its caller checked. | → `ComponentException` (Read) |
 | Insert target | A `.deb` goes to its control `Architecture` alone; an `all` or missing one goes to every root Release architecture but `source`. The `.changes` field and its file order play no part. | — |
 | No binary target | An `all` or arch-less `.deb` while the root Release lists no architecture but `source`, refused before its transfer. | → `ActionException` (Generic) |
 | `source`      | Selects the source pseudo-architecture: `<component>/source/Sources*` is parsed and every payload it lists joins the package set. The index is mirrored, never regenerated. | —                                        |

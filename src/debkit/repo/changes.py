@@ -6,6 +6,8 @@ import re
 from email.parser import Parser
 from typing import TYPE_CHECKING, Any
 
+from txstore import is_unsafe_path
+
 from debkit.repo.hashes import ChecksumException, HexDigests, parse_hash_block
 from debkit.repo.params import SOURCE_ARCH
 
@@ -55,6 +57,7 @@ class Changes(HexDigests):
 
         Raises:
             ChangesException: If no SHA256 checksums found in changes file.
+            ChangesException: If a listed file is not a bare, safe file name.
         """
         data = enc_data.decode("utf-8")
 
@@ -68,6 +71,10 @@ class Changes(HexDigests):
 
         self.hashfuns.append("SHA256")
         for hashstr, size, filename in parse_hash_block(self.fields[SHA256KEY]):
+            # a listed name is read from the incoming storage and names the pool key, so
+            # it is a bare file name -> [VALIDATION.md](VALIDATION.md#filename-safety)
+            if "/" in filename or is_unsafe_path(filename):
+                raise ChangesException(f"unsafe file name: {filename!r}")
             digests = {"Size": str(size), "SHA256": hashstr}
             self.update_digests(filename, digests)
 

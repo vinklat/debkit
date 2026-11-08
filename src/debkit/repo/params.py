@@ -35,6 +35,24 @@ FLAT_COMPONENT = "/"
 _ARCH_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
+def pool_path(comp: str | None, package: str, filename: str) -> str:
+    """Build the pool key an inserted `.deb` lands on.
+
+    The key nests the upload under its first letter and package name, below the component
+    when one is given -> [VALIDATION.md](VALIDATION.md#filename-safety).
+
+    Args:
+        comp (str | None): Component name, or None for a pool without one.
+        package (str): The `Package` control field.
+        filename (str): The upload path inside the incoming storage.
+
+    Returns:
+        str: The pool key, e.g. `pool/main/f/foo/foo_1.0_amd64.deb`.
+    """
+    head = f"pool/{comp}" if comp is not None else "pool"
+    return f"{head}/{filename[0].lower()}/{package}/{filename}"
+
+
 def remove_prefix_from_path(path: str, prefix: str) -> str:
     """Return `path` without the leading `prefix` directory, or unchanged when it lacks it.
 

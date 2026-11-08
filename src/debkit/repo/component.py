@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from txstore import StorageException
 
 from debkit.repo.packages import Packages, PackagesException
-from debkit.repo.params import ARCH_ANY, SOURCE_ARCH
+from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
 from debkit.repo.release import Release
 from debkit.repo.sources import Sources
 
@@ -228,7 +228,14 @@ class Component:
         Args:
             arch (str): The architecture.
             package (Package): The Package object to insert.
+
+        Raises:
+            ComponentException: If ``arch`` is neither empty nor an architecture name.
         """
+        # the arch names the `binary-<arch>/` index path, so a caller that skipped the
+        # action-layer check cannot steer it -> [VALIDATION.md](VALIDATION.md#architectures)
+        if arch and not is_valid_arch(arch):
+            raise ComponentException(f"invalid architecture: {arch!r}")
         if arch not in self.packages:
             packages = container_for(arch)(self.storage, self.params)
             packages.setup(self.name, arch)

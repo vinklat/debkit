@@ -100,3 +100,10 @@ def test_load_matching_digest_parses() -> None:
     changes = Changes(_storage_with(_CHANGES_BLOB))
     changes.load("incoming.changes", digest_expected=digest)
     assert "foo_1.0_amd64.deb" in changes.digests
+
+
+@pytest.mark.parametrize("name", ["../foo_1.0_amd64.deb", "sub/foo_1.0_amd64.deb", "/abs.deb"])
+def test_parse_refuses_a_listed_file_that_is_not_a_bare_name(name: str) -> None:
+    blob = f"Format: 1.8\nChecksums-Sha256:\n deadbeef 1 {name}\n".encode()
+    with pytest.raises(ChangesException, match="unsafe file name"):
+        Changes(_storage_with(blob)).parse(blob)

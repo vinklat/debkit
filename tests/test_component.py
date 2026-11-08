@@ -332,3 +332,14 @@ def test_component_insert_pkg_refuses_the_read_only_source_index() -> None:
 
     with pytest.raises(PackagesException):
         comp.insert_pkg(SOURCE_ARCH, pkg)
+
+
+@pytest.mark.parametrize("arch", ["../../evil", "AMD64", "-x"])
+def test_component_insert_pkg_refuses_an_arch_that_is_not_a_token(arch: str) -> None:
+    """The arch names the `binary-<arch>/` index path, so the repo layer refuses it too."""
+    comp = _component()
+
+    with pytest.raises(ComponentException, match="invalid architecture"):
+        comp.insert_pkg(arch, make_package("pool/main/f/foo.deb"))
+
+    assert arch not in comp.packages
