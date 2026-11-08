@@ -25,7 +25,7 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | `ReleaseFreshnessException` | `repo/release.py`    | Source Release expired, older than the target Release, missing its `Date`, or carrying a malformed date |
 | `PackagesException`         | `repo/packages.py`   | Packages or Sources index parse or serialize failure, or a mutation of the read-only Sources index      |
 | `PackageException`          | `repo/package.py`    | Single package parse or serialize failure                                                               |
-| `ComponentException`        | `repo/component.py`  | Component load failure                                                                                  |
+| `ComponentException`        | `repo/component.py`  | Component load failure, or an index slot refused for an invalid architecture |
 | `ChangesException`          | `repo/changes.py`    | `.changes` parse or validation failure                                                                  |
 | `DebFileException`          | `repo/debfile.py`    | `.deb` inspection failure                                                                               |
 | `RepoParamsException`       | `repo/params.py`     | Invalid deb source or params                                                                            |
@@ -73,4 +73,4 @@ Exits outside the groups:
 Add the class in the owning module and its row here, and adjust the catch tuple in `cli.py` when
 exit behavior changes; `tests/test_cli_main.py` asserts every group message →
 [TESTING.md](TESTING.md#required-coverage). `scripts/check_docs.py` verifies both tables against the
-code, that every class resolves to an exit group, and that each is raised and tested.
+code; raise and test coverage per class → [TESTING.md](TESTING.md#required-coverage).

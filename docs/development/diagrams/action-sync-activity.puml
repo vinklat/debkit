@@ -58,10 +58,10 @@ partition "with maybe_transaction(target.storage)" {
       :log "Nothing to sync";
       break
     endif
-    :try: source.sync(target, copy_list, delete_list, unproven);
+    :source.sync(target, copy_list, delete_list, unproven);
     note right
-      ChecksumException -> log error + raise
-      propagates out of the loop and
+      ChecksumException propagates (cli.py logs it)
+      out of the loop and
       out of the maybe_transaction CM.
       An object still failing after the
       retries raises RepoSyncException,

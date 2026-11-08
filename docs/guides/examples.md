@@ -30,10 +30,11 @@ the Debian archive keys first, as in the [quick start](../../README.md#quick-sta
 debkit --target-url="https://deb.debian.org/debian bookworm main contrib non-free" list
 ```
 
-From a local directory (`debian` under the current working directory; `..` cannot escape it):
+From a local directory (`debian`, resolved against the current working directory; any absolute or
+relative path works, `..` included). The dist and components follow the path as for any source:
 
 ```bash
-debkit --target-url="debian" list
+debkit --target-url="debian bookworm main contrib non-free" list
 ```
 
 From an S3 bucket; the secret key is read only from its variable, never from a flag:
@@ -172,7 +173,7 @@ Mirrors a public repository into `debian` under the current working directory. T
 
 ```bash
 export DEBKIT_SOURCE_URL="https://deb.debian.org/debian bookworm main contrib non-free"
-export DEBKIT_TARGET_URL="debian"
+export DEBKIT_TARGET_URL="debian bookworm main contrib non-free"
 
 debkit sync
 ```
@@ -255,7 +256,9 @@ debkit check --fix --architectures amd64,arm64,source
 ## Transaction history
 
 Every `insert`, `remove`, `sync`, and `check --fix` that changed something is recorded, on `fs://`
-and `s3://` targets, so the latest change can be undone.
+and `s3://` targets, so the latest change can be undone. These commands address only the storage
+root, so the URL needs no dist or components →
+[STORAGE.md](../../STORAGE.md#history-commands).
 
 ```bash
 debkit --target-url="debian" log

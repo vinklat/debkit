@@ -7,6 +7,8 @@ if (XOR of changes_filename / deb_filename?) then (no)
 endif
 
 if (incoming_storage set?) then (no)
+  :raise ActionException
+   ("insert needs --incoming-url or DEBKIT_INCOMING_URL");
   stop
 endif
 

@@ -57,7 +57,12 @@ ActionPkg -> Tgt: diff(prev_repo)
 Tgt --> ActionPkg: ret_diff
 opt ret_diff non-empty
   ActionPkg -> Tgt: save()
-  Tgt -> TStor: put Packages / Release / InRelease (staged)
+  Tgt -> TStor: put Packages / Release (staged)
+  alt GPG verification on
+    Tgt -> TStor: put InRelease / Release.gpg (staged)
+  else --skip-verify-gpg
+    Tgt -> TStor: delete stale InRelease / Release.gpg (staged)
+  end
 end
 
 ActionPkg -> CM: __exit__(None)

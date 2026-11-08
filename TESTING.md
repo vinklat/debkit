@@ -26,7 +26,8 @@ not copied here.
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Validation        | Every rule in `VALIDATION.md` has a success and a failure case.                                                                     |
 | Configuration     | Every `CONFIG.md` flag resolves in the [resolution order](CONFIG.md#resolution); `tests/test_argparser.py` holds the cases.         |
-| Exceptions        | Every class debkit defines is raised in `src/` and named by a `pytest.raises` outside `tests/test_cli_main.py`, enforced by `check_docs.py`; txstore classes are exempt, since txstore owns their raising. Every exit group is asserted by message in `tests/test_cli_main.py`. |
+| Exception classes | Every class debkit defines is raised in `src/` and named by a `pytest.raises` outside `tests/test_cli_main.py`, enforced by `check_docs.py`; txstore classes are exempt, since txstore owns their raising. |
+| Exit groups | Every exit group is asserted by message in `tests/test_cli_main.py`. |
 | Public methods    | Every validator and public method has at least one success and one failure case.                                                    |
 | Coverage          | `uv run pytest --cov` measures `debkit` and fails below the branch-coverage `fail_under` in `pyproject.toml`.                       |
 | Scripts           | `scripts/` is outside the coverage source; the Contract docs and Diagrams rows hold its tests.                                      |
@@ -43,19 +44,29 @@ not copied here.
 | Option failures | An invalid variable or one outside the choices exits 2 naming it; a required option resolves from its variable or exits 2 naming both. |
 | Secrets | A secret resolves from its variable and has no flag; no secret value appears in `--help`. |
 | Logging                 | Plain and JSON lines; the DEBUG format and the quiet third-party loggers.                                                                                                                                                                                                                       |
-| Actions                 | Orchestration, argument combinations, error propagation; transaction wiring: begin and commit on success, discard on failure, no-op on a non-transactional storage, and the retention policy built by `Action.__init__` reaches `maybe_transaction`.                                            |
+| Actions | Orchestration, argument combinations, and error propagation. |
+| Action transactions | Begin and commit on success, discard on failure, and no-op on a non-transactional storage. |
+| Action retention | The retention policy built by `Action.__init__` reaches `maybe_transaction`. |
 | Storage construction    | A bare path becomes an absolute `fs://` URL; the resolved flags reach `make_storage` → [STORAGE.md](STORAGE.md#construction).                                                                                                                                                                   |
 | History commands        | `log`, `revert`, and `prune` output in brief and JSON, dry run, the guards → [STORAGE.md](STORAGE.md#history-commands).                                                                                                                                                                         |
 | Repo classes            | Parse and serialize round-trips, mutation invariants, checksum decisions, sync/diff behavior; the `Sources` expansion into one record per payload file and its refusal to write.                                                                                                                |
 | Sync index set          | A Release-listed index present at the source is copied, one absent there is skipped, and one already in the target is not purged.                                                                                                                                                               |
-| Sync index filters      | The component, architecture, and exclude-glob filters each drop an entry, the exclude glob reaching a component-discovered index while the root Release files survive it; source indices follow the `source` selection, and an index directory nothing parses is dropped.                       |
-| Sync index safety | An unsafe Release-listed path is dropped and logged, the source is never listed or probed, an unproven index the source lacks is skipped at transfer while a proven one fails the run → [VALIDATION.md](VALIDATION.md#index-selection), and the flat layouts round-trip their prefix through `release_key`. |
-| Sync index copying      | An index whose target digests match is skipped, a stale one is recopied, the root Release files copy only as the bytes their load verified and only when both signed forms agree, and a source Release hash change forces indices with no package diff.                                         |
+| Sync index filters | The component, architecture, and exclude-glob filters each drop an entry; the exclude glob reaches a component-discovered index while the root Release files survive it. |
+| Sync source indices | Source indices follow the `source` selection, and an index directory nothing parses is dropped. |
+| Sync index safety | An unsafe Release-listed path is dropped and logged; the source is never listed or probed. |
+| Sync index publication | An unproven index the source lacks is skipped at transfer while a proven one fails the run → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Sync flat layouts | The flat layouts round-trip their prefix through `release_key`. |
+| Sync index copying | An index whose target digests match is skipped, and a stale one is recopied. |
+| Sync root Release copy | The root Release files copy only as the bytes their load verified, and only when both signed forms agree. |
+| Sync forced indices | A source Release hash change forces indices with no package diff. |
 | Sync index ownership    | A stanza naming a Release-listed index is neither copied nor removed as a package, whichever side holds it, and the index set still purges one it drops → [VALIDATION.md](VALIDATION.md#index-selection).                                                                                       |
 | Sync index Release skip | The Release-block skip with its metadata fallback → [VALIDATION.md](VALIDATION.md#index-selection) is asserted from both sides.                                                                                                                                                                 |
 | Sync index recovery     | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync.                                                                                                        |
 | Validation              | Every documented boundary rule, success and failure.                                                                                                                                                                                                                                            |
-| Crypto                  | GPG verify and sign paths, skip-verify branches; a real-gpg round trip in `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring, right and wrong passphrase; the checksum source order `Repo.verify_checksum` walks; hash-block parsing and `HexDigests` in `repo/hashes.py`; each Release freshness rule.                                                                                                  |
+| Crypto GPG | GPG verify and sign paths and the skip-verify branches. |
+| Crypto real gpg | `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring, right and wrong passphrase. |
+| Crypto checksums | The checksum source order `Repo.verify_checksum` walks; hash-block parsing and `HexDigests` in `repo/hashes.py`. |
+| Crypto freshness | Each Release freshness rule. |
 
 ## Package contracts
 

@@ -71,7 +71,7 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 | `--changes-sha256`   | `DEBKIT_CHANGES_SHA256`   | none    | Expected SHA256 of the `.changes` file                                     |
 | `--deb-filename`     | `DEBKIT_DEB_FILENAME`     | none    | Single `.deb` input                                                        |
 | `--incoming-url`     | `DEBKIT_INCOMING_URL`     | —       | Incoming storage URL or path → [VALIDATION.md](VALIDATION.md#storage-urls) |
-| `--component`        | `DEBKIT_COMPONENT`        | `main`  | Target component; ignored for a flat target → [VALIDATION.md](VALIDATION.md#repository-index-paths) |
+| `--component`        | `DEBKIT_COMPONENT`        | `main`  | Target component; a flat target keeps its single index slot but still nests the pool key under it → [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 
 ## Remove
 
@@ -144,7 +144,8 @@ Root-scoped, and accepts `--dry-run` and `-o`.
   through txstore's `redact_url` →
   [txstore CONFIG.md](https://github.com/vinklat/txstore/blob/v0.1.1/CONFIG.md#secrets).
 - A credentialed URL goes in its variable (`DEBKIT_TARGET_URL`, `DEBKIT_SOURCE_URL`,
-  `DEBKIT_INCOMING_URL`) or in `~/.netrc`, which txstore prefers over URL userinfo; the
+  `DEBKIT_INCOMING_URL`) or, for `http(s)://`, in `~/.netrc` →
+  [txstore CONFIG.md](https://github.com/vinklat/txstore/blob/v0.1.1/CONFIG.md#secrets); the
   `--*-url` flags take the same value but expose it on the command line like any flag.
 
 ## Maintenance

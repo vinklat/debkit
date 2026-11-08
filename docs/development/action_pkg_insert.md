@@ -6,6 +6,7 @@ single `.deb`, never both, inside one transaction so pool objects and rewritten 
 together. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
 [CONFIG.md](../../CONFIG.md#insert) (flags),
 [VALIDATION.md](../../VALIDATION.md#debian-source-strings) (deb source and file rules),
+[VALIDATION.md](../../VALIDATION.md#filename-safety) (upload names),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups) (exit groups), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
@@ -28,26 +29,33 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
+- An unsafe `.changes` entry, `Package` name, or pool path is refused before any transfer →
+  [VALIDATION.md](../../VALIDATION.md#filename-safety).
 - `transfer_from` is the only path that writes package content; index files (`Packages`, `Release`,
-  `InRelease`) are emitted by `target.save()` only when the diff is non-empty.
+  and its signatures) are emitted by `target.save()` only when the diff is non-empty →
+  [CRYPTO.md](../../CRYPTO.md#gpg).
 - Any in-loop failure (corrupt `.deb`, transport error, digest mismatch) discards every staged
   footmark and leaves the live repository untouched → [STORAGE.md](../../STORAGE.md#transactions).
 - A non-transactional target skips begin, commit, and discard entirely; the same link explains why
   `FootmarkMixin` is the discriminator.
 - Escaped `ActionException`, `ValueError`, and `StorageException` reach the CLI as the Generic
-  group; a digest mismatch is Distrustful → [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).
+  group, a refused `.deb` (`DebFileException`) as Read, a refused `.changes` (`ChangesException`) as
+  Write, and a digest mismatch as Distrustful →
+  [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).
 
 ## Testing notes
 
 `tests/test_action_pkg.py` covers argument combinations, error propagation, and the transaction
 wiring (begin/commit on success, discard on failure, no-op on a non-transactional storage);
-`tests/test_repo_rw.py` covers the index mutations →
+`tests/test_repo_rw.py` covers the index mutations; `tests/test_debfile.py` and
+`tests/test_changes.py` cover the upload-name refusals →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 
 - [STYLE.md](../../STYLE.md#layers), [CONFIG.md](../../CONFIG.md#insert),
   [VALIDATION.md](../../VALIDATION.md#debian-source-strings),
+  [VALIDATION.md](../../VALIDATION.md#filename-safety),
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [action_pkg_remove.md](action_pkg_remove.md), [action_sync.md](action_sync.md),
   [repo_sync_indices.md](repo_sync_indices.md),

@@ -6,9 +6,7 @@ commands. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 Storage is the [txstore](https://github.com/vinklat/txstore) package; its contracts own the
 `Storage` interface, backends, transactions, footmarks, history files, retention rules, locking, S3
 ACL handling, and digests → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md).
-This file states only what debkit chooses. Backend failure → `StorageException` (Generic); object
-missing on `get` or `get_stream` → `StorageNotFoundException` (Generic), unless debkit re-raises
-it, as [construction](#construction) does → [EXCEPTIONS.md](EXCEPTIONS.md#domain-exceptions).
+This file states only what debkit chooses.
 
 ## Construction
 
@@ -28,6 +26,13 @@ through it or the `attach_storage_*` helpers built on it →
 | Construction failure | `make_storage` raising `StorageException` (empty URL, no host, unresolved S3 key, uncreatable path): `--target-url` or `--source-url` → `RepoReadException` (Read). |
 | Construction failure, plain URL | The same on `--incoming-url` or a `log`, `revert`, or `prune` target → `StorageException` (Generic). |
 | Digest sink              | `RepoSync` builds a `StorageNull` directly to digest a source object without storing it → [ROADMAP.md](ROADMAP.md#known-deviations).                                            |
+
+## Storage errors
+
+| Condition | Result |
+| -- | -- |
+| Backend failure | → `StorageException` (Generic) |
+| Object missing on `get` or `get_stream` | → `StorageNotFoundException` (Generic), unless debkit re-raises it; a construction failure on `--target-url` or `--source-url` is re-raised → [Construction](#construction) |
 
 ## Transactions
 

@@ -34,8 +34,8 @@ uv run pytest
 uv run pytest --cov
 ```
 
-`tests/test_gnupg_real.py` runs the `gpg` binary when it is on `PATH` and skips otherwise; CI
-installs it, so a missing binary there fails the job.
+Real-gpg tests need the `gpg` binary on `PATH`; skip and CI behavior →
+[TESTING.md](TESTING.md#harness-and-gates).
 
 ## Quality gates
 
