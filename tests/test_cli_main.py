@@ -33,7 +33,6 @@ from debkit.repo.release import (
     ReleaseReadException,
     ReleaseWriteException,
 )
-from debkit.repo.repo_rw import RepoWriteException
 from debkit.repo.repo_sync import RepoSyncException
 
 
@@ -193,11 +192,6 @@ def test_main_maps_storage_url_error_to_read_exit(
         (ReleaseReadException("x"), "Can't read repository.", None),
         (ChecksumException("x"), "Distrustful object.", None),
         (ReleaseFreshnessException("x"), "Distrustful object.", None),
-        (
-            RepoWriteException("x"),
-            "Can't write repository.",
-            "Some data may have been left unfinished.",
-        ),
         (
             ReleaseWriteException("x"),
             "Can't write repository.",

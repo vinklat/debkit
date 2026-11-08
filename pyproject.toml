@@ -115,7 +115,7 @@ omit = ["*/tests/*"]
 branch = true
 
 [tool.coverage.report]
-fail_under = 86
+fail_under = 94
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

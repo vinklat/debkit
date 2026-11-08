@@ -22,18 +22,6 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-class RepoWriteException(Exception):
-    """Exception raised for errors in writing to the repository.
-
-    Attributes:
-        message (str): explanation of the error
-    """
-
-    def __init__(self, message: str) -> None:
-        """Initialize with error message."""
-        super().__init__(f"{message}")
-
-
 class RepoRW(Repo):
     """Class that extens Repo with modificaton functionality.
 

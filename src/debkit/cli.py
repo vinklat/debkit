@@ -34,7 +34,6 @@ from debkit.repo.release import (
     ReleaseReadException,
     ReleaseWriteException,
 )
-from debkit.repo.repo_rw import RepoWriteException
 from debkit.repo.repo_sync import RepoSyncException
 
 logger = logging.getLogger(__name__)
@@ -109,11 +108,7 @@ def main(argv: list[str] | None = None) -> None:
         logger.critical(exc)
         err_exit("Distrustful object.")
 
-    except (
-        RepoWriteException,
-        ReleaseWriteException,
-        ChangesException,
-    ) as exc:
+    except (ReleaseWriteException, ChangesException) as exc:
         logger.critical(exc)
         logger.warning("Some data may have been left unfinished.")
         err_exit("Can't write repository.")

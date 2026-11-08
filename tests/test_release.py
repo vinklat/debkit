@@ -20,6 +20,7 @@ from debkit.repo.release import (
     ReleaseFreshnessException,
     ReleaseNotFoundException,
     ReleaseReadException,
+    ReleaseWriteException,
     parse_release_date,
 )
 
@@ -177,18 +178,52 @@ def test_save_unsigned_without_signatures_only_writes_the_release(
     assert "removed stale signature" not in caplog.text
 
 
+def _signing_gpg(inline: str = "inline", detached: str = "detached") -> MagicMock:
+    gpg = MagicMock()
+    gpg.sign.side_effect = lambda data, detach=False: detached if detach else inline
+    return gpg
+
+
 def test_save_signed_keeps_and_rewrites_the_root_signatures() -> None:
     storage = MagicMock()
-    gpg = MagicMock()
-    gpg.sign.side_effect = lambda data, detach=False: "detached" if detach else "inline"
+    gpg = _signing_gpg()
     r = Release(storage, _params(verify_gpg=True), gpg=gpg)
     r.setup(fields={"Origin": "test"})
 
-    r.save()
+    digests = r.save()
 
     storage.delete.assert_not_called()
+    written = {call.args[0]: call.args[1] for call in storage.put.call_args_list}
+    assert list(written) == [f"{_ROOT}/Release", f"{_ROOT}/InRelease", f"{_ROOT}/Release.gpg"]
+    body = written[f"{_ROOT}/Release"]
+    assert written[f"{_ROOT}/InRelease"] == b"inline"
+    assert written[f"{_ROOT}/Release.gpg"] == b"detached"
+    assert digests == calc_digests(body)
+    assert [call.args[0] for call in gpg.sign.call_args_list] == [body, body]
+
+
+def test_save_refuses_an_empty_inline_signature_before_writing_inrelease() -> None:
+    """`GnuPG.sign` returns an empty signature when signing fails, e.g. on a wrong passphrase."""
+    storage = MagicMock()
+    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(inline=""))
+    r.setup(fields={"Origin": "test"})
+
+    with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
+        r.save()
+
+    assert [call.args[0] for call in storage.put.call_args_list] == [f"{_ROOT}/Release"]
+
+
+def test_save_refuses_an_empty_detached_signature() -> None:
+    storage = MagicMock()
+    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(detached=""))
+    r.setup(fields={"Origin": "test"})
+
+    with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
+        r.save()
+
     written = [call.args[0] for call in storage.put.call_args_list]
-    assert written == [f"{_ROOT}/Release", f"{_ROOT}/InRelease", f"{_ROOT}/Release.gpg"]
+    assert written == [f"{_ROOT}/Release", f"{_ROOT}/InRelease"]
 
 
 def test_save_of_a_component_release_leaves_the_root_signatures() -> None:

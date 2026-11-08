@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import cast
@@ -435,3 +436,103 @@ def test_insert_refuses_a_changes_whose_arch_is_not_an_architecture(
         action.insert()
 
     _target(action).insert_pkg.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# dump(), stats(), list() — read-only views of a real repository
+# ---------------------------------------------------------------------------
+
+_HELLO = "pool/main/h/hello/hello_1.0_amd64.deb"
+_WORLD = "pool/main/w/world/world_1.0_arm64.deb"
+
+
+def _view_action(tmp_path: Path, output: OutputType, *, empty: bool = False) -> ActionPkg:
+    """Action over an `fs` repository holding hello (amd64) and world (arm64) unless *empty*."""
+    storage = StorageFS(str(tmp_path))
+    built = RepoRW(storage, make_params())
+    built.setup({"Architectures": "amd64 arm64", "Components": "main"})
+    for arch, payload, size in (("amd64", _HELLO, 1000), ("arm64", _WORLD, 2000)):
+        storage.put(payload, b"deb")
+        built.insert_pkg("main", arch, make_package(payload, size=size, Version="1.0"))
+    if empty:
+        built.remove_pkg({"Package": re.compile(".")})
+    built.save()
+
+    action = _make_pkg_action()
+    action.output = output
+    action.target_repo = RepoRW(storage, make_params())
+    return action
+
+
+def test_dump_brief_prints_the_release_and_the_package_count_per_arch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _view_action(tmp_path, OutputType.brief).dump()
+
+    out = capsys.readouterr().out
+    assert out.startswith("Release:\n")
+    assert "  Origin: bookworm\n" in out
+    assert "Components:\n  main:\n" in out
+    assert "    amd64: Component: main, Architecture: amd64\n      1 packages\n" in out
+    assert "    arm64: Component: main, Architecture: arm64\n      1 packages\n" in out
+
+
+def test_dump_json_carries_the_release_fields_and_every_package(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _view_action(tmp_path, OutputType.json).dump()
+
+    dump = json.loads(capsys.readouterr().out)
+    assert dump["release"]["data"]["Origin"] == "bookworm"
+    assert dump["release"]["digests"]
+    assert set(dump["components"]["main"]) == {"amd64", "arm64"}
+
+
+def test_stats_brief_prints_sizes_and_counts_per_arch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _view_action(tmp_path, OutputType.brief).stats()
+
+    out = capsys.readouterr().out
+    assert "    amd64: 1.0 kB, 1 packages\n" in out
+    assert "    arm64: 2.0 kB, 1 packages\n" in out
+    assert out.splitlines()[-2] == "Indices read:"
+
+
+def test_stats_json_reports_package_and_index_totals(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _view_action(tmp_path, OutputType.json).stats()
+
+    stats = json.loads(capsys.readouterr().out)
+    assert stats["packages"]["main"]["amd64"] == {"packages_total": 1, "packages_bytes": 1000}
+    assert stats["indices"]["files_total"] > 0
+    assert stats["indices"]["files_bytes"] > 0
+
+
+def test_list_brief_prints_one_filename_per_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _view_action(tmp_path, OutputType.brief).list()
+
+    assert sorted(capsys.readouterr().out.split()) == [_HELLO, _WORLD]
+
+
+def test_list_json_prints_the_fields_of_every_package(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _view_action(tmp_path, OutputType.json).list()
+
+    packages = json.loads(capsys.readouterr().out)
+    assert sorted(pkg["Filename"] for pkg in packages) == [_HELLO, _WORLD]
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"), [(OutputType.brief, "\n"), (OutputType.json, "[]\n")]
+)
+def test_list_of_a_repository_without_packages_prints_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], output: OutputType, expected: str
+) -> None:
+    _view_action(tmp_path, output, empty=True).list()
+
+    assert capsys.readouterr().out == expected

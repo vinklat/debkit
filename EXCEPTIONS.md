@@ -18,11 +18,10 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | --------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------- |
 | `ActionException`           | `action/__init__.py` | Orchestration failure, including "no package matched" and unsupported history operations                |
 | `RepoReadException`         | `repo/__init__.py`   | Repository read or update failure                                                                       |
-| `RepoWriteException`        | `repo/repo_rw.py`    | Repository write or persist failure                                                                     |
 | `RepoSyncException`         | `repo/repo_sync.py`  | Sync or mirror failure                                                                                  |
 | `ReleaseReadException`      | `repo/release.py`    | Release parse or verify failure                                                                         |
 | `ReleaseNotFoundException` | `repo/release.py` | Neither a root `Release` nor an `InRelease` exists; subclass of `ReleaseReadException` |
-| `ReleaseWriteException`     | `repo/release.py`    | Release write or sign failure                                                                           |
+| `ReleaseWriteException` | `repo/release.py` | Release signing failure, including an empty signature from GnuPG |
 | `ReleaseFreshnessException` | `repo/release.py`    | Source Release expired, older than the target Release, missing its `Date`, or carrying a malformed date |
 | `PackagesException`         | `repo/packages.py`   | Packages or Sources index parse or serialize failure, or a mutation of the read-only Sources index      |
 | `PackageException`          | `repo/package.py`    | Single package parse or serialize failure                                                               |
@@ -44,7 +43,7 @@ are enumerations and mirror the `except` tuples in `cli.py` exactly.
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------ |
 | Read        | `RepoReadException`, `GPGVerifyException`, `ComponentException`, `DebFileException`, `PackageException`, `PackagesException`, `ReleaseReadException` | `Can't read repository.`  | none                                       |
 | Distrustful | `ChecksumException`, `ReleaseFreshnessException`                                                                                                     | `Distrustful object.`     | none                                       |
-| Write       | `RepoWriteException`, `ReleaseWriteException`, `ChangesException`                                                                                    | `Can't write repository.` | `Some data may have been left unfinished.` |
+| Write | `ReleaseWriteException`, `ChangesException` | `Can't write repository.` | `Some data may have been left unfinished.` |
 | Sync        | `RepoSyncException`                                                                                                                                  | `Sync failed.`            | `Some data may have remained incomplete.`  |
 | Generic     | `ActionException`, `RepoParamsException`, `ValueError`, `StorageException`                                                                           | original message          | none                                       |
 
@@ -63,7 +62,8 @@ Exits outside the groups:
 | `remove` matches no package                                                               | `RepoRW.remove_pkg` returns `False`; `ActionPkg.remove` raises `ActionException` (Generic).                                                                                           |
 | `insert` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: a new repository is set up; any other `ReleaseReadException` (Read) stops the run, so an existing repository is never set up again. |
 | `sync` or `check` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: `sync` treats the target as empty, `check` reports it inconsistent; any other `ReleaseReadException` (Read) stops the run. |
-| Release file cannot be saved                                                              | `RepoWriteException` (Write); reserved for true persistence failures.                                                                                                                 |
+| Release file cannot be signed | `ReleaseWriteException` (Write). |
+| Release file cannot be put | `StorageException` (Generic). |
 | `log` / `revert` / `prune` on a non-transactional backend, or `revert` with empty history | `ActionException` (Generic) → [STORAGE.md](STORAGE.md#history-commands).                                                                                                              |
 | `log` / `revert` / `prune` hit any storage failure                                        | `ActionHistory` re-wraps `StorageException` as `ActionException` (Generic), so a malformed history record reaches the CLI as `ActionException`. Same group, so the exit is unchanged. |
 | A storage URL txstore rejects (relative `fs://`, query, unknown scheme)                   | `ValueError` (Generic) → [VALIDATION.md](VALIDATION.md#storage-urls).                                                                                                                 |

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, call
@@ -34,6 +36,36 @@ def test_setup_marks_modified() -> None:
 
 def test_save_no_op_when_unmodified() -> None:
     assert _repo()[0].save() is False
+
+
+def test_save_stamps_and_writes_the_release_after_a_component_saved() -> None:
+    repo, release = _repo()
+    saved, untouched = MagicMock(), MagicMock()
+    saved.save.return_value = True
+    untouched.save.return_value = False
+    repo.components = cast(dict[str, Component], {"main": saved, "contrib": untouched})
+    repo.modified = True
+
+    assert repo.save() is True
+
+    saved.save.assert_called_once_with()
+    untouched.save.assert_called_once_with()
+    assert release.fields["Components"] == "main contrib"
+    assert parsedate_to_datetime(release.fields["Date"]).tzinfo == UTC
+    release.save.assert_called_once_with()
+
+
+def test_save_leaves_the_release_when_no_component_saved() -> None:
+    repo, release = _repo()
+    untouched = MagicMock()
+    untouched.save.return_value = False
+    repo.components = cast(dict[str, Component], {"main": untouched})
+    repo.modified = True
+
+    assert repo.save() is False
+
+    assert release.fields == {}
+    release.save.assert_not_called()
 
 
 def test_insert_pkg_creates_missing_component() -> None:

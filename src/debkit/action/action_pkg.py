@@ -104,8 +104,6 @@ class ActionPkg(Action):
                     except KeyError:
                         print("<No release data>")
                     print(f"      {arch['packages']['data']} packages")
-        if "packages" in dump:
-            print("  1 packages")
 
     def _print_json_dump(self, dump: dict[str, Any]) -> None:
         """Print the dump in JSON format.
