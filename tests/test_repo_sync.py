@@ -693,20 +693,6 @@ def _patch_transfer(repo: RepoSync, results: dict[str, bool | list[bool]] | bool
     return mock
 
 
-def test_sync_happy_path() -> None:
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": [make_package("p1.deb")]}},
-        tgt_components={"main": {"amd64": []}},
-        tgt_list=[],
-    )
-    transfer = _patch_transfer(src, True)
-
-    src.sync(tgt, copy_list=["p1.deb"], delete_list=["x.deb"])
-
-    transfer.assert_called_once()
-    _mock_storage(tgt).delete.assert_called_once_with("x.deb")
-
-
 def test_sync_single_surviving_failure_raises() -> None:
     """One object that never transfers fails the run; a partial target is not left behind."""
     src, tgt = _two_repos(

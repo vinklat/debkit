@@ -196,11 +196,12 @@ def test_save_unsigned_removes_the_stale_root_signatures(
     r.modified = True
 
     with caplog.at_level(logging.WARNING):
-        assert r.save() is not None
+        digests = r.save()
 
     assert not storage.exists(f"{_ROOT}/InRelease")
     assert not storage.exists(f"{_ROOT}/Release.gpg")
     assert storage.get(f"{_ROOT}/Release") == b"Origin: new"
+    assert digests == calc_digests(b"Origin: new")
     assert r.found_indices_files == [f"{_ROOT}/Release"]
     assert sum("removed stale signature" in rec.message for rec in caplog.records) == 2
 
@@ -213,9 +214,9 @@ def test_save_unsigned_without_signatures_only_writes_the_release(
     r.setup(fields={"Origin": "test"})
 
     with caplog.at_level(logging.WARNING):
-        assert r.save() is not None
+        digests = r.save()
 
-    assert storage.exists(f"{_ROOT}/Release")
+    assert digests == calc_digests(storage.get(f"{_ROOT}/Release"))
     assert "removed stale signature" not in caplog.text
 
 
@@ -326,6 +327,15 @@ def test_save_of_a_component_release_leaves_the_root_signatures() -> None:
     r.save()
 
     storage.delete.assert_not_called()
+
+
+def test_parse_falls_back_to_latin_1_for_a_non_utf_8_release() -> None:
+    r = Release(MagicMock(), _params())
+
+    r.parse(b"Origin: Caf\xe9\nSuite: bookworm\n")
+
+    assert r.fields["Origin"] == "Café"
+    assert r.fields["Suite"] == "bookworm"
 
 
 def test_parse_nonstandard_continuation_lines() -> None:

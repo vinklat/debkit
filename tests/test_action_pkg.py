@@ -513,6 +513,20 @@ def test_dump_brief_prints_the_release_and_the_package_count_per_arch(
     assert "    arm64: Component: main, Architecture: arm64\n      1 packages\n" in out
 
 
+def test_dump_brief_marks_an_arch_without_its_own_release(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A per-arch Release is optional; dump still prints the arch and its package count."""
+    action = _view_action(tmp_path, OutputType.brief)
+    (tmp_path / "dists/bookworm/main/binary-amd64/Release").unlink()
+
+    action.dump()
+
+    out = capsys.readouterr().out
+    assert "    amd64: <No release data>\n      1 packages\n" in out
+    assert "    arm64: Component: main, Architecture: arm64\n      1 packages\n" in out
+
+
 def test_dump_json_carries_the_release_fields_and_every_package(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

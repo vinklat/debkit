@@ -69,7 +69,7 @@ class ActionPkg(Action):
 
         if self.output == OutputType.brief:
             self._print_brief_dump(dump_dict)
-        elif self.output == OutputType.json:
+        else:
             self._print_json_dump(dump_dict)
 
     def _print_brief_dump(self, dump: dict[str, Any]) -> None:
@@ -79,23 +79,20 @@ class ActionPkg(Action):
             dump (Dict[str, Any]): A dictionary containing the dump data.
         """
         print("Release:")
-        try:
-            for key, value in dump["release"]["data"].items():
-                print(f"  {key}: {value}")
-        except KeyError:
-            print("  <No release data>")
+        for key, value in dump["release"]["data"].items():
+            print(f"  {key}: {value}")
 
-        if "components" in dump:
-            print("Components:")
-            for component_name, component in dump["components"].items():
-                print(f"  {component_name}:")
-                for arch_name, arch in component.items():
-                    try:
-                        print(f"    {arch_name}:", end=" ")
-                        print(", ".join(f"{k}: {v}" for k, v in arch["release"]["data"].items()))
-                    except KeyError:
-                        print("<No release data>")
-                    print(f"      {arch['packages']['data']} packages")
+        print("Components:")
+        for component_name, component in dump["components"].items():
+            print(f"  {component_name}:")
+            for arch_name, arch in component.items():
+                # a per-arch Release is optional, so its dump key may be absent
+                if "release" in arch:
+                    release = ", ".join(f"{k}: {v}" for k, v in arch["release"]["data"].items())
+                else:
+                    release = "<No release data>"
+                print(f"    {arch_name}: {release}")
+                print(f"      {arch['packages']['data']} packages")
 
     def _print_json_dump(self, dump: dict[str, Any]) -> None:
         """Print the dump in JSON format.
@@ -112,7 +109,7 @@ class ActionPkg(Action):
 
         if self.output == OutputType.brief:
             self._print_brief_stats(stats)
-        elif self.output == OutputType.json:
+        else:
             self._print_json_stats(stats)
 
     def _print_brief_stats(self, stats: dict[str, dict[str, dict[str, int]]]) -> None:
@@ -126,13 +123,10 @@ class ActionPkg(Action):
         for component, arch in stats.items():
             print(f"  {component}:")
             for arch_name, arch_data in arch.items():
-                try:
-                    print(
-                        f"    {arch_name}: {naturalsize(arch_data['packages_bytes'])}, "
-                        f"{arch_data['packages_total']} packages"
-                    )
-                except KeyError:
-                    print(f"    {arch_name}: <no data>")
+                print(
+                    f"    {arch_name}: {naturalsize(arch_data['packages_bytes'])}, "
+                    f"{arch_data['packages_total']} packages"
+                )
         print("Indices read:")
         print(
             f"  {naturalsize(self.target_repo.storage.metrics.read_bytes)}, "
@@ -163,7 +157,7 @@ class ActionPkg(Action):
 
         if self.output == OutputType.brief:
             print("\n".join(str(package) for package in self.target_repo.get_packages()))
-        elif self.output == OutputType.json:
+        else:
             json_formatted_str = dump_json(list(self.target_repo.get_packages()))
             print(json_formatted_str)
 
@@ -352,7 +346,7 @@ class ActionPkg(Action):
         """
         if self.output == OutputType.brief:
             self._print_pkg_brief(diff)
-        elif self.output == OutputType.json:
+        else:
             self._print_pkg_json(diff)
 
     def remove(self) -> None:

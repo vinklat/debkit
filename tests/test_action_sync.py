@@ -408,6 +408,20 @@ def test_sync_then_check_finds_the_mirror_consistent(tmp_path: Path) -> None:
     assert action.check() is False
 
 
+def test_sync_prints_json_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`sync -o json` reports the added package and both storages' transfer metrics."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.output = OutputType.json
+
+    action.sync()
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["packages"]["added"]["main"]["amd64"][0]["Package"] == "foo"
+    assert report["transfer"]["metrics"].keys() == {"source_storage", "target_storage"}
+    assert report["transfer"]["metrics"]["target_storage"]["write_objects_total"] > 0
+
+
 def test_sync_over_an_older_mirror_replaces_its_stale_payload(tmp_path: Path) -> None:
     """A real fs→fs v2→v3 sync deletes the payload v3 no longer lists, in one transaction."""
     _write_tree(tmp_path / "src", "Wed, 01 Oct 2025 00:00:00 UTC", "2")
