@@ -124,6 +124,7 @@ inherits, through the decoders in `repo/compress.py`.
 | Stream integrity | A compressed index decodes to its end-of-stream marker; truncated or corrupt data is refused. | → `PackagesException` (Read) |
 | LZMA dictionary | An `.xz` or `.lzma` stream asking for a dictionary over 128 MiB is refused before it is allocated. | → `PackagesException` (Read) |
 | Stream padding | Any run of NUL bytes between or after compressed streams is skipped. | — |
+| Encoding | The decoded index is UTF-8, as Debian Policy 5.1 requires of control data. | → `PackagesException` (Read) |
 | Stanza separation | A blank or whitespace-only line ends a stanza, as Debian Policy 5.1 allows. | — |
 | Line ends | CRLF line ends are read as LF. | — |
 
@@ -183,8 +184,19 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | Insert source name | The control `Source` field, a trailing ` (<version>)` stripped, else the `Package` field, is a Debian Policy name as above, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool path | The Debian source pool key `pool/[<component>/]<prefix>/<source>/<upload file name>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool prefix | `lib` and the next letter for a source name longer than 3 starting with `lib`, else its first letter. | — |
-| `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Write) |
+| `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Read) |
 | Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
+
+## Control file encoding
+
+Implemented by `DebFile.get_package()`, `Changes.parse()`, and `Release.parse()`. Debian Policy 5.1
+requires UTF-8 control data; indices → [Index decoding](#index-decoding).
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| `.deb` control file | UTF-8, checked before the transfer. | → `DebFileException` (Read) |
+| `.changes` file | UTF-8; a clearsigned one is checked on its signed body. | → `ChangesException` (Read) |
+| `Release` | UTF-8, else read as latin-1, as some repositories publish it; an `InRelease` body is decoded the same way. | — |
 
 ## Log levels
 

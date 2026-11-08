@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -336,6 +338,29 @@ def test_insert_stops_on_a_target_index_that_fails_its_digest(
         _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar", verify_digests=True)
 
     assert storage.get(_PACKAGES) == damaged
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_stops_on_a_target_index_that_is_not_utf_8(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """The Release lists the latin-1 index's own digest, so only its encoding fails."""
+    storage = StorageFS(str(tmp_path / "repo"))
+    stanza = b"Package: foo\nVersion: 1.0\nArchitecture: amd64\nMaintainer: Jos\xe9\n"
+    index = gzip.compress(stanza + b"Filename: pool/main/f/foo/foo_1.0_amd64.deb\nSize: 3\n")
+    storage.put(_PACKAGES, index)
+    storage.put(
+        "dists/bookworm/Release",
+        b"Suite: bookworm\nArchitectures: amd64\nComponents: main\nSHA256:\n "
+        + f"{hashlib.sha256(index).hexdigest()} {len(index)} ".encode()
+        + b"main/binary-amd64/Packages.gz\n",
+    )
+
+    with pytest.raises(ComponentException, match="Cannot decode indices"):
+        _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar", verify_digests=True)
+
+    assert storage.get(_PACKAGES) == index
+    assert not storage.exists("pool/main/b/bar/bar_1.0_amd64.deb")
 
 
 @patch("debkit.action.action_pkg.DebFile")

@@ -25,7 +25,7 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 
 | Operation | Behavior |
 | -- | -- |
-| `cleartext_body(data)` | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else. |
+| `cleartext_body(data)` | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else. Works on bytes, so the body keeps its encoding. |
 | `canonical_text(data)` | `data` with the line canonicalization of `cleartext_body`, so a detached `Release` compares with an `InRelease` body. |
 | `verify(data)` | Inline `InRelease` verification; returns `cleartext_body(data)`. |
 | `verify(data, detach_sign)` | Detached `Release` + `Release.gpg` verification; returns `data`. The signature is staged in a `tempfile.NamedTemporaryFile` removed in `finally`, because `python-gnupg` needs a path on disk. |
@@ -113,7 +113,7 @@ older Release no longer lists.
 | `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off; a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | Parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. |
-| `insert` `.changes` with malformed armor | → `ChangesException` (Write). |
+| `insert` `.changes` with malformed armor | → `ChangesException` (Read). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure | `GPGVerifyException` (Read). |
 

@@ -186,6 +186,7 @@ def test_main_maps_storage_url_error_to_read_exit(
         (RepoReadException("x"), "Can't read repository.", None),
         (GPGVerifyException("x"), "Can't read repository.", None),
         (ComponentException("x"), "Can't read repository.", None),
+        (ChangesException("x"), "Can't read repository.", None),
         (DebFileException("x"), "Can't read repository.", None),
         (PackageException("x"), "Can't read repository.", None),
         (PackagesException("x"), "Can't read repository.", None),
@@ -194,11 +195,6 @@ def test_main_maps_storage_url_error_to_read_exit(
         (ReleaseFreshnessException("x"), "Distrustful object.", None),
         (
             ReleaseWriteException("x"),
-            "Can't write repository.",
-            "Some data may have been left unfinished.",
-        ),
-        (
-            ChangesException("x"),
             "Can't write repository.",
             "Some data may have been left unfinished.",
         ),

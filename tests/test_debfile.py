@@ -192,6 +192,14 @@ def test_get_package_rejects_non_bytes_control() -> None:
         deb.get_package()
 
 
+def test_get_package_refuses_a_control_file_that_is_not_utf_8() -> None:
+    """Debian Policy 5.1: a latin-1 control file is a typed refusal, not a traceback."""
+    deb = DebFile(_streaming(_CONTROL + b"Maintainer: Jos\xe9\n"), _PATH)
+
+    with pytest.raises(DebFileException, match="not UTF-8"):
+        deb.get_package()
+
+
 def test_get_package_names_the_pool_path_with_component() -> None:
     pkg = DebFile(_streaming(_CONTROL), _PATH, comp="main").get_package()
     assert pkg.get_filename() == "pool/main/f/foo/foo_1.0_amd64.deb"

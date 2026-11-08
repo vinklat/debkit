@@ -42,9 +42,9 @@ are enumerations and mirror the `except` tuples in `cli.py` exactly.
 
 | Group | Caught exceptions | Exit message | Extra warning |
 | -- | -- | -- | -- |
-| Read | `RepoReadException`, `GPGVerifyException`, `ComponentException`, `DebFileException`, `PackageException`, `PackagesException`, `ReleaseReadException` | `Can't read repository.` | none |
+| Read | `RepoReadException`, `GPGVerifyException`, `ComponentException`, `ChangesException`, `DebFileException`, `PackageException`, `PackagesException`, `ReleaseReadException` | `Can't read repository.` | none |
 | Distrustful | `ChecksumException`, `ReleaseFreshnessException` | `Distrustful object.` | none |
-| Write | `ReleaseWriteException`, `ChangesException` | `Can't write repository.` | `Some data may have been left unfinished.` |
+| Write | `ReleaseWriteException` | `Can't write repository.` | `Some data may have been left unfinished.` |
 | Sync | `RepoSyncException` | `Sync failed.` | `Some data may have remained incomplete.` |
 | Generic | `ActionException`, `RepoParamsException`, `ValueError`, `StorageException` | original message | none |
 

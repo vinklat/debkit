@@ -34,6 +34,8 @@ def cleartext_body(data: bytes) -> bytes:
     and hashes each line with trailing spaces, tabs and CR stripped. Every line is
     canonicalized the same way before parsing, so no unsigned byte reaches the
     caller and nothing may follow the signature -> [CRYPTO.md](CRYPTO.md#gpg).
+    Works on bytes like `canonical_text`, so the body keeps its encoding and each
+    caller decodes it as it decodes an unsigned file.
 
     Args:
         data: Signed message
@@ -45,7 +47,8 @@ def cleartext_body(data: bytes) -> bytes:
     Returns:
         The canonical signed body, dash-escaping undone, each line ending in a newline.
     """
-    lines = [line.rstrip(" \t\r") for line in data.decode("utf-8").split("\n")]
+    # latin-1 maps every byte to one character and back, so no input fails to decode
+    lines = [line.rstrip(" \t\r") for line in data.decode("latin-1").split("\n")]
     if lines[0] != CLEARSIGN_BEGIN:
         raise GPGVerifyException("Signed message is not in correct format.")
 
@@ -69,7 +72,7 @@ def cleartext_body(data: bytes) -> bytes:
             raise GPGVerifyException("Signed message has an unescaped dash line.")
         body.append(f"{line}\n")
 
-    return "".join(body).encode("utf-8")
+    return "".join(body).encode("latin-1")
 
 
 def canonical_text(data: bytes) -> bytes:

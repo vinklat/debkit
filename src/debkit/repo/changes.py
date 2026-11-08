@@ -8,7 +8,7 @@ import re
 from email.parser import Parser
 from typing import TYPE_CHECKING, Any
 
-from txstore import is_unsafe_path
+from txstore import StorageException, is_unsafe_path
 
 from debkit.repo.gnupg import CLEARSIGN_BEGIN, GPGVerifyException, cleartext_body
 from debkit.repo.hashes import ChecksumException, HexDigests, parse_hash_block
@@ -60,6 +60,7 @@ class Changes(HexDigests):
         signature itself is not verified -> [CRYPTO.md](CRYPTO.md#verification-failures).
 
         Raises:
+            ChangesException: If the file is not UTF-8.
             ChangesException: If no SHA256 checksums found in changes file.
             ChangesException: If a listed file is not a bare, safe file name.
             ChangesException: If a clearsigned file is malformed.
@@ -69,7 +70,12 @@ class Changes(HexDigests):
                 enc_data = cleartext_body(enc_data)
             except GPGVerifyException as exc:
                 raise ChangesException(f"malformed signed file: {exc}") from exc
-        data = enc_data.decode("utf-8")
+        # Debian Policy 5.1: control data is UTF-8
+        # -> [VALIDATION.md](VALIDATION.md#control-file-encoding)
+        try:
+            data = enc_data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ChangesException(f"not UTF-8: {exc}") from exc
 
         data = re.sub("\n\n", "\n", data)  # fix - remove blank lines
         parser = Parser()
@@ -95,12 +101,16 @@ class Changes(HexDigests):
             digest_expected: The expected digest of the data.
 
         Raises:
+            ChangesException: If the file cannot be read or is empty.
             ChecksumException: If the checksum of the file does not match the expected checksum.
         """
-        data: bytes = self.storage.get(filename)
+        try:
+            data: bytes = self.storage.get(filename)
+        except StorageException as exc:
+            raise ChangesException(f"Cannot read .changes file {filename}: {exc}") from exc
 
         if not data:
-            raise ChangesException(f"Empty or missing changes file: {filename}")
+            raise ChangesException(f"Empty changes file: {filename}")
 
         digest = hashlib.sha256(data).hexdigest()
         if (digest_expected is not None) and (digest_expected != digest):

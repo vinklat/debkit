@@ -6,9 +6,11 @@ See ``TESTING.md`` § "Repo classes" for the matrix this file implements.
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from txstore import StorageFS
 
 from debkit.repo.changes import Changes, ChangesException
 from debkit.repo.hashes import ChecksumException
@@ -84,8 +86,14 @@ def test_get_deb_files_filters_extension() -> None:
 
 def test_load_empty_payload_raises() -> None:
     changes = Changes(_storage_with(b""))
-    with pytest.raises(ChangesException):
+    with pytest.raises(ChangesException, match="Empty changes file"):
         changes.load("incoming.changes")
+
+
+def test_load_wraps_a_missing_file(tmp_path: Path) -> None:
+    """A missing upload is a refused `.changes` (Read), as a missing `.deb` is."""
+    with pytest.raises(ChangesException, match="Cannot read .changes file"):
+        Changes(StorageFS(str(tmp_path))).load("incoming.changes")
 
 
 def test_load_checksum_mismatch_raises_checksum_exc() -> None:
@@ -128,4 +136,18 @@ def test_parse_reads_a_clearsigned_file_through_its_signed_body() -> None:
 def test_parse_malformed_clearsigned_file_raises() -> None:
     blob = b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n" + _CHANGES_BLOB
     with pytest.raises(ChangesException, match="malformed signed file"):
+        Changes(_storage_with(blob)).parse(blob)
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        _CHANGES_BLOB + b"Maintainer: Jos\xe9\n",
+        _clearsigned(_CHANGES_BLOB + b"Maintainer: Jos\xe9\n"),
+    ],
+    ids=["plain", "clearsigned"],
+)
+def test_parse_refuses_a_file_that_is_not_utf_8(blob: bytes) -> None:
+    """Debian Policy 5.1: a latin-1 `.changes` is a typed refusal, not a traceback."""
+    with pytest.raises(ChangesException, match="not UTF-8"):
         Changes(_storage_with(blob)).parse(blob)

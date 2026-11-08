@@ -280,8 +280,9 @@ class Packages:
         Raises:
             ChecksumException: Checksum mismatch for Packages file.
             PackagesNotFoundException: No Packages* file the Release lists is in storage.
-            PackagesException: The index is truncated or does not decode, or it decodes past
-                `MAX_INDICES_BYTES`; a missing one raises the `PackagesNotFoundException` subclass.
+            PackagesException: The index is truncated, does not decode, decodes past
+                `MAX_INDICES_BYTES`, or is not UTF-8; a missing one raises the
+                `PackagesNotFoundException` subclass.
 
         Returns:
             True if the packages indices file is successfully loaded, False otherwise.
@@ -314,7 +315,11 @@ class Packages:
         except CorruptStreamError as exc:
             raise PackagesException(f"Cannot decode indices {indices_path}: {exc}") from exc
 
-        data = raw.decode("utf-8")
+        # Debian Policy 5.1: control data is UTF-8 -> [VALIDATION.md](VALIDATION.md#index-decoding)
+        try:
+            data = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise PackagesException(f"Cannot decode indices {indices_path}: {exc}") from exc
 
         pkgs_total = self._parse_indices(data)
 

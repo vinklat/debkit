@@ -98,6 +98,7 @@ def main(argv: list[str] | None = None) -> None:
         RepoReadException,
         GPGVerifyException,
         ComponentException,
+        ChangesException,
         DebFileException,
         PackageException,
         PackagesException,
@@ -110,7 +111,7 @@ def main(argv: list[str] | None = None) -> None:
         logger.critical(exc)
         err_exit("Distrustful object.")
 
-    except (ReleaseWriteException, ChangesException) as exc:
+    except ReleaseWriteException as exc:
         logger.critical(exc)
         logger.warning("Some data may have been left unfinished.")
         err_exit("Can't write repository.")

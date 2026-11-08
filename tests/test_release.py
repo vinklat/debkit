@@ -758,6 +758,15 @@ def test_load_root_reads_an_inrelease_body_unverified_with_verification_disabled
     gpg.verify.assert_not_called()
 
 
+def test_load_root_falls_back_to_latin_1_for_an_inrelease_body() -> None:
+    """The signed body is decoded as a detached `Release` is, latin-1 fallback included."""
+    inrelease = _INRELEASE.replace(b"Origin: inline", b"Origin: Caf\xe9")
+    r = Release(_root_storage({"dists/bookworm/InRelease": inrelease}), _params())
+
+    r.load()
+    assert r.fields["Origin"] == "Café"
+
+
 def test_reset_and_copy_carry_the_root_digests() -> None:
     from copy import copy
 

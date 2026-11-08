@@ -103,6 +103,7 @@ class DebFile:
 
         Raises:
             DebFileException: If the control file is not a bytes object.
+            DebFileException: If the control file is not UTF-8.
             DebFileException: If the `Package` field is missing or not a policy name.
             DebFileException: If the `Source` field, without its version, is not a policy name.
             DebFileException: If the pool key would be an unsafe storage path.
@@ -113,7 +114,12 @@ class DebFile:
         control_lines = self.control
         if not isinstance(control_lines, bytes):
             raise DebFileException(f"control file of {self.path} is not a bytes object")
-        control_lines = control_lines.decode()
+        # Debian Policy 5.1: control data is UTF-8
+        # -> [VALIDATION.md](VALIDATION.md#control-file-encoding)
+        try:
+            control_lines = control_lines.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise DebFileException(f"control file of {self.path} is not UTF-8: {exc}") from exc
         package: Package = Package(fields={"Filename": "", "Size": "0"})
         package.parse(control_lines, controls_only=True)
         pkg_name = package.fields.get("Package")

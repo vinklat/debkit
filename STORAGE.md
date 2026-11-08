@@ -18,7 +18,7 @@ through it or the `attach_storage_*` helpers built on it →
 | -- | -- |
 | URL | A value without `://` is a filesystem path, made absolute and prefixed with `fs://`; any other value passes to txstore unchanged → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | `create_path` | Set only on the write target of `insert`, `remove`, and `sync`: creates the S3 bucket or FS directory when missing. |
-| `--incoming-url` | Opened without `create_path`; a missing upload → `DebFileException` (Read) for a `.deb`, `StorageNotFoundException` (Generic) for a `.changes`. |
+| `--incoming-url` | Opened without `create_path`; a missing upload → `DebFileException` or `ChangesException` (Read). |
 | `verify_ssl` | `not (skip_verify or skip_verify_ssl)` → [CRYPTO.md](CRYPTO.md#verification-switches). |
 | `s3_access`, `s3_secret` | The resolved `--s3-access` and `DEBKIT_S3_SECRET` values, unset ones left to txstore → [CONFIG.md](CONFIG.md#resolution); an `s3://` URL missing either key is a construction failure below. |
 | `s3_default_acl` | `--s3-default-acl` → [CONFIG.md](CONFIG.md#storage-flags); its default is public because an apt repository serves its objects anonymously. |

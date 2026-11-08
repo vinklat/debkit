@@ -42,9 +42,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 - A non-transactional target skips begin, commit, and discard entirely; the same link explains why
   `FootmarkMixin` is the discriminator.
 - Escaped `ActionException`, `ValueError`, and `StorageException` reach the CLI as the Generic
-  group, a refused `.deb` (`DebFileException`) as Read, a refused `.changes` (`ChangesException`) as
-  Write, and a digest mismatch as Distrustful →
-  [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).
+  group, a refused `.deb` (`DebFileException`) or `.changes` (`ChangesException`) as Read, and a
+  digest mismatch as Distrustful → [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).
 
 ## Testing notes
 

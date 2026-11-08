@@ -160,6 +160,12 @@ def test_cleartext_body_canonicalizes_like_gpg(data: bytes) -> None:
     assert cleartext_body(data) == cleartext_body(_SIGNED)
 
 
+def test_cleartext_body_keeps_a_body_that_is_not_utf_8() -> None:
+    """The body keeps its bytes, so a latin-1 `InRelease` reads as a latin-1 `Release` does."""
+    out = cleartext_body(_SIGNED.replace(b"Origin: example", b"Origin: Caf\xe9"))
+    assert out.startswith(b"Origin: Caf\xe9\n")
+
+
 def test_cleartext_body_accepts_a_message_without_armor_headers() -> None:
     out = cleartext_body(_SIGNED.replace(b"Hash: SHA512\n", b""))
     assert out == b"Origin: example\nSHA256:\n " + b"a" * 64 + b" 1 main/binary-amd64/Packages\n"

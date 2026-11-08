@@ -415,6 +415,23 @@ def test_packages_load_refuses_a_truncated_or_corrupt_index(
     assert pkgs.packages == {}
 
 
+def test_packages_load_refuses_an_index_that_is_not_utf_8(tmp_path: Path) -> None:
+    """Debian Policy 5.1: an index in another encoding is unreadable, not missing."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    stored = gzip.compress(make_packages_block("foo").encode() + b"Maintainer: Jos\xe9\n")
+    root = Release(storage, params)
+    root.update_digests("main/binary-amd64/Packages.gz", calc_digests(stored))
+    storage.put(_INDEX_PATH, stored)
+    pkgs = Packages(storage, params)
+
+    with pytest.raises(PackagesException, match="Cannot decode indices") as excinfo:
+        pkgs.load(root, "main", "amd64")
+
+    assert not isinstance(excinfo.value, PackagesNotFoundException)
+    assert pkgs.packages == {}
+
+
 # ---------------------------------------------------------------------------
 # save
 # ---------------------------------------------------------------------------
