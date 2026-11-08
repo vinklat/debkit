@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
+from debkit.repo.params import FLAT_COMPONENT
 
 if TYPE_CHECKING:
     from txstore import Storage
@@ -66,12 +67,10 @@ class RepoRW(Repo):
             saved = component.save() or saved
 
         if saved:
-            self.release.fields.update(
-                {
-                    "Date": formatdate(localtime=False, usegmt=True),
-                    "Components": " ".join(self.components),
-                }
-            )
+            self.release.fields["Date"] = formatdate(localtime=False, usegmt=True)
+            # a flat Release lists no components; its single slot keeps whatever name it loaded
+            if not self.params.is_flat:
+                self.release.fields["Components"] = " ".join(self.components)
             self.release.save()
 
         return saved
@@ -113,11 +112,18 @@ class RepoRW(Repo):
     def insert_pkg(self, component_name: str, arch: str, package: "Package") -> None:
         """Add deb package object to the repo.
 
+        A flat layout has one component slot, so ``component_name`` is ignored there and the
+        package joins the component the repo loaded
+        -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+
         Args:
             component_name (str): The name of the component.
             arch (str): The architecture.
             package (Package): The Package object to insert.
         """
+        if self.params.is_flat:
+            component_name = next(iter(self.components), FLAT_COMPONENT)
+
         if component_name in self.components:
             component = self.components[component_name]
         else:

@@ -25,6 +25,10 @@ SOURCE_ARCH = "source"
 # binary architecture, so it is always selected and never loaded as its own container.
 ARCH_ANY = "all"
 
+# The component key of a flat repository whose Release names no `Components`: a flat
+# layout holds one index set, so it has exactly one component slot.
+FLAT_COMPONENT = "/"
+
 # A Debian architecture name. The token becomes the `binary-<arch>/` directory of a
 # storage path, so anything else could steer that path
 # -> [VALIDATION.md](VALIDATION.md#architectures).

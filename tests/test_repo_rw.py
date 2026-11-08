@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import UTC
 from email.utils import parsedate_to_datetime
@@ -14,6 +15,7 @@ from helpers.factories import make_package, make_params, make_storage_mock
 from txstore import StorageException, StorageFS
 
 from debkit.repo.component import Component
+from debkit.repo.params import RepoParams
 from debkit.repo.repo_rw import RepoRW
 
 
@@ -156,3 +158,36 @@ def test_remove_pkg_of_an_arch_all_payload_on_a_real_storage(tmp_path: Path) -> 
         "amd64": {},
         "arm64": {},
     }
+
+
+_FLAT_INDEX = b"Package: upstream\nFilename: pool/u/upstream/upstream_1_amd64.deb\nSize: 1\n\n"
+
+
+def _flat_repo(root: Path) -> RepoRW:
+    params = RepoParams(verify_gpg=False, verify_digests=False)
+    params.from_deb_source(f"fs://{root} /")
+    repo = RepoRW(StorageFS(str(root)), params)
+    repo.update()
+    return repo
+
+
+def test_insert_pkg_into_flat_repo_joins_its_single_component(tmp_path: Path) -> None:
+    """Regression: `--component main` added a second slot over the same `Packages` file."""
+    digest = hashlib.sha256(_FLAT_INDEX).hexdigest()
+    (tmp_path / "Packages").write_bytes(_FLAT_INDEX)
+    (tmp_path / "Release").write_text(
+        f"Origin: x\nArchitectures: amd64\nSHA256:\n {digest} {len(_FLAT_INDEX)} Packages\n"
+    )
+    repo = _flat_repo(tmp_path)
+
+    repo.insert_pkg("main", "amd64", make_package("pool/n/new/new_1_amd64.deb", Package="new"))
+    repo.save()
+
+    assert list(repo.components) == ["/"]
+    index = (tmp_path / "Packages").read_text()
+    assert "Package: upstream" in index
+    assert "Package: new" in index
+    assert "Components" not in (tmp_path / "Release").read_text()
+    reloaded = _flat_repo(tmp_path)
+    assert list(reloaded.components) == ["/"]
+    assert reloaded.stats()["/"]["amd64"]["packages_total"] == 2

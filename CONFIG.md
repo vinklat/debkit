@@ -71,7 +71,7 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 | `--changes-sha256`   | `DEBKIT_CHANGES_SHA256`   | none    | Expected SHA256 of the `.changes` file                                     |
 | `--deb-filename`     | `DEBKIT_DEB_FILENAME`     | none    | Single `.deb` input                                                        |
 | `--incoming-url`     | `DEBKIT_INCOMING_URL`     | —       | Incoming storage URL or path → [VALIDATION.md](VALIDATION.md#storage-urls) |
-| `--component`        | `DEBKIT_COMPONENT`        | `main`  | Target component                                                           |
+| `--component`        | `DEBKIT_COMPONENT`        | `main`  | Target component; ignored for a flat target → [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 
 ## Remove
 

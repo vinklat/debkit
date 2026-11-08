@@ -13,7 +13,7 @@ from txstore import StorageException
 
 from debkit.repo.component import Component
 from debkit.repo.packages import Packages
-from debkit.repo.params import ARCH_ANY, RepoParams, is_valid_arch
+from debkit.repo.params import ARCH_ANY, FLAT_COMPONENT, RepoParams, is_valid_arch
 from debkit.repo.release import Release
 from debkit.repo.repo_diff import RepoDiff
 
@@ -115,8 +115,7 @@ class Repo:
             yield from self.release.fields.get("Components", "").split()
 
         else:
-            # flat repo default
-            yield "/"
+            yield FLAT_COMPONENT
 
     def get_archs(self) -> Generator[str]:
         """Get the architectures of the repo.
