@@ -143,6 +143,9 @@ Root-scoped, and accepts `--dry-run` and `-o`.
 - Userinfo and query of a repository or storage URL are secrets: debkit logs and raises a URL only
   through txstore's `redact_url` →
   [txstore CONFIG.md](https://github.com/vinklat/txstore/blob/v0.1.1/CONFIG.md#secrets).
+- A credentialed URL goes in its variable (`DEBKIT_TARGET_URL`, `DEBKIT_SOURCE_URL`,
+  `DEBKIT_INCOMING_URL`) or in `~/.netrc`, which txstore prefers over URL userinfo; the
+  `--*-url` flags take the same value but expose it on the command line like any flag.
 
 ## Maintenance
 

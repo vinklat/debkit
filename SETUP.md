@@ -92,7 +92,7 @@ debkit's dependencies stay installable from Debian testing, as txstore's do.
 | Typing              | Stub and typing-only packages are imported only under `TYPE_CHECKING` and stay in the `dev` group.                                                                                                                                                      |
 | Tests | Run offline from the source distribution, with `pytest` and `moto` as the only test-only packages and no dependence on `addopts` or a coverage plugin. |
 | Source distribution | Holds `src`, `tests`, `docs`, `scripts`, the root documents, `LICENSE`, and `uv.lock`, so a distribution build and its tests need no git checkout.                                                                                                      |
-| CI                  | The `debian-testing` job runs `.github/debian-test.sh`: the suite on Debian's packaged dependencies, pip installing debkit with no index and txstore from PyPI → [ROADMAP.md](ROADMAP.md#known-deviations); triggers → [quality gates](#quality-gates). |
+| CI                  | The `debian-testing` job runs `.github/debian-test.sh`: the suite on Debian's packaged dependencies, pip installing debkit with no index and txstore from PyPI, hash-checked against `uv.lock` → [ROADMAP.md](ROADMAP.md#known-deviations); triggers → [quality gates](#quality-gates). |
 
 A floor raise names the Debian testing version that satisfies it in the change description.
 
