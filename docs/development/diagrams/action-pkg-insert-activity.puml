@@ -23,8 +23,9 @@ partition "load or setup target" {
 }
 
 if (changes_filename provided?) then (yes)
-  :filenames = _changes_deb_files(incoming_storage, changes_filename)
+  :changes = _load_changes(incoming_storage, changes_filename)
    [Changes.load(changes_filename, digest_expected=changes_sha256)];
+  :filenames = changes.get_deb_files();
   if (any Architecture token invalid or "source"?) then (yes)
     :raise ActionException;
     stop
@@ -66,6 +67,11 @@ partition "with maybe_transaction(target.storage)" {
     :digests = target.transfer_from(
         incoming_storage, filename,
         path_dst=debfile.filename_field);
+    if (.changes upload and digests differ from its entry?) then (yes)
+      :raise ChecksumException;
+      note right: the transaction discards the staged transfer
+      stop
+    endif
     :package.set_digests(digests);
     while (more archs?) is (yes)
       :target.insert_pkg(component, arch, package);

@@ -109,7 +109,9 @@ older Release no longer lists.
 | `sync` transfer digest mismatch                            | Target object deleted, then `ChecksumException` (Distrustful); the surrounding transaction discards every staged footmark → [STORAGE.md](STORAGE.md#transactions).           |
 | `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed. An unfixed error exits `Repository is not consistent.` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | `sync --verify-existing` payload digest mismatch | Logged and deleted inside the sync's transaction; the sync copies it again. Nothing is raised. |
-| `insert` payload | Never verified against an index; a `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
+| `insert` `.changes` file | A `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
+| `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off; a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
+| `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | A clearsigned `.changes` is parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. A malformed armor → `ChangesException` (Write). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure                                   | `GPGVerifyException` (Read).                                                                                                                                                 |

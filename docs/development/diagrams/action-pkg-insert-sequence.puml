@@ -47,6 +47,9 @@ loop for filename in filenames
   ActionPkg -> Tgt: transfer_from(Inc, filename, path_dst)
   Tgt -> TStor: put / add_metadata (staged via footmarks)
   Tgt --> ActionPkg: digests
+  opt .changes upload and digests differ from its entry
+    ActionPkg -> ActionPkg: raise ChecksumException\n[staged transfer discarded]
+  end
   ActionPkg -> ActionPkg: package.set_digests(digests)
   loop for arch in archs
     ActionPkg -> Tgt: insert_pkg(component, arch, package)

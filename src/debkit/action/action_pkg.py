@@ -19,6 +19,7 @@ from debkit.action import (
 from debkit.argtypes import component_type, pkg_pattern_type
 from debkit.repo.changes import Changes
 from debkit.repo.debfile import DebFile
+from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
 
@@ -200,10 +201,8 @@ class ActionPkg(Action):
             if arch != SOURCE_ARCH and (arch or is_flat)
         ]
 
-    def _changes_deb_files(
-        self, incoming_storage: "Storage", changes_filename: str
-    ) -> builtins.list[str]:
-        """Load and check a `.changes` upload and list the `.deb` files it carries.
+    def _load_changes(self, incoming_storage: "Storage", changes_filename: str) -> Changes:
+        """Load and check a `.changes` upload, whose digests each listed `.deb` must match.
 
         Args:
             incoming_storage (Storage): The storage holding the upload.
@@ -214,7 +213,7 @@ class ActionPkg(Action):
             ActionException: An architecture token names the source one.
 
         Returns:
-            List[str]: The `.deb` files the upload lists.
+            Changes: The upload; `get_deb_files()` lists its `.deb` files.
         """
         changes = Changes(incoming_storage)
         changes.load(changes_filename, digest_expected=self.changes_sha256)
@@ -228,7 +227,7 @@ class ActionPkg(Action):
         if changes.names_source_arch():
             raise ActionException("Source packages are not supported yet")
 
-        return changes.get_deb_files()
+        return changes
 
     def insert(self) -> None:
         """Insert packages into repository.
@@ -243,6 +242,7 @@ class ActionPkg(Action):
             ActionException: If the package control field names the source architecture.
             ActionException: If an `all` or arch-less package finds no binary architecture
                 in the target.
+            ChecksumException: If a transferred `.deb` does not match its `.changes` digest.
         """
         if (self.changes_filename is None) == (self.deb_filename is None):
             raise ActionException(
@@ -264,8 +264,10 @@ class ActionPkg(Action):
         prev_repo = copy(self.target_repo)
 
         # process deb files
+        changes: Changes | None = None
         if self.changes_filename is not None:
-            filenames = self._changes_deb_files(self.incoming_storage, self.changes_filename)
+            changes = self._load_changes(self.incoming_storage, self.changes_filename)
+            filenames = changes.get_deb_files()
         else:
             if self.deb_filename is None or not self.deb_filename.endswith(".deb"):
                 raise ActionException(f"Invalid .deb filename: {self.deb_filename}")
@@ -302,6 +304,17 @@ class ActionPkg(Action):
                 digests = self.target_repo.transfer_from(
                     self.incoming_storage, filename, path_dst=debfile_obj.filename_field
                 )
+                # the pinned `.changes` lists each payload's digest, so a payload swapped in
+                # the incoming storage is refused; raising discards the staged transfer
+                # -> [CRYPTO.md](CRYPTO.md#verification-failures)
+                if (
+                    changes is not None
+                    and self.target_repo.params.verify_digests
+                    and not changes.verify_digests(filename, digests)
+                ):
+                    raise ChecksumException(
+                        f"{filename} does not match its digest in {self.changes_filename}"
+                    )
                 package.set_digests(digests)
 
                 for arch in archs:

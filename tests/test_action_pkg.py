@@ -602,3 +602,45 @@ def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
 
     assert wiring.call_args.args[1] == HistoryRetention(keep=2, max_age_days=30)
     assert (tmp_path / "repo" / instance.filename_field).read_bytes() == b"foo"
+
+
+@pytest.mark.parametrize("swapped", [False, True], ids=["matching", "swapped"])
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_checks_each_deb_against_its_changes_digest(
+    mock_debfile_cls: MagicMock, tmp_path: Path, swapped: bool
+) -> None:
+    """Regression: a payload swapped after its `.changes` was pinned was published."""
+    import hashlib
+
+    from debkit.repo.hashes import ChecksumException
+
+    deb = "foo_1.0_amd64.deb"
+    listed = b"the built package"
+    incoming = StorageFS(str(tmp_path / "in"))
+    incoming.put(deb, b"a swapped package" if swapped else listed)
+    incoming.put(
+        "foo_1.0_amd64.changes",
+        f"Format: 1.8\nArchitecture: amd64\nChecksums-Sha256:\n"
+        f" {hashlib.sha256(listed).hexdigest()} {len(listed)} {deb}\n".encode(),
+    )
+    action = _make_pkg_action()
+    action.incoming_storage = incoming
+    action.deb_filename = None
+    action.changes_filename = "foo_1.0_amd64.changes"
+    action.target_repo = RepoRW(StorageFS(str(tmp_path / "repo")), make_params(verify_digests=True))
+    instance = MagicMock()
+    instance.filename_field = f"pool/main/f/foo/{deb}"
+    instance.get_package.return_value = make_package(
+        instance.filename_field, Package="foo", Version="1.0", Architecture="amd64"
+    )
+    mock_debfile_cls.return_value = instance
+    pool = tmp_path / "repo" / instance.filename_field
+
+    if not swapped:
+        action.insert()
+        assert pool.read_bytes() == listed
+        return
+    with pytest.raises(ChecksumException, match="does not match its digest"):
+        action.insert()
+    assert not pool.exists()
+    assert not (tmp_path / "repo" / "dists" / "bookworm" / "Release").exists()
