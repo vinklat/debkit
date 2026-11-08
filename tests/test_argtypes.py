@@ -107,44 +107,6 @@ def test_pkg_pattern_type_rejects_too_long_pattern() -> None:
 @pytest.mark.parametrize(
     "pattern",
     [
-        "(a+)+$",
-        "(.*)*",
-        "(x+x+)+y",
-        "(a+){2,}+",
-        "((a+)b)+",
-        "(a*)*b",
-        "(a+)*$",
-        r"(\d{2,})+",
-        r"(?:a+)+$",
-        r"(a+|b)+$",
-    ],
-)
-def test_pkg_pattern_type_rejects_nested_quantifiers(pattern: str) -> None:
-    with pytest.raises(ArgumentTypeError, match="nested quantifiers"):
-        pkg_pattern_type(json.dumps({"Package": pattern}))
-
-
-@pytest.mark.parametrize(
-    "pattern",
-    [
-        "(a|a)+$",
-        "(a|aa)+$",
-        r"(\w|\d)+$",
-        "(.|a)*$",
-        "((?:a|a))+$",
-        "(a|)+",
-        "(?P<name>a|a)+",
-        "(a|b|a){1,}",
-    ],
-)
-def test_pkg_pattern_type_rejects_repeated_overlapping_alternatives(pattern: str) -> None:
-    with pytest.raises(ArgumentTypeError, match="repeated alternatives"):
-        pkg_pattern_type(json.dumps({"Package": pattern}))
-
-
-@pytest.mark.parametrize(
-    "pattern",
-    [
         "foo|bar",
         r"filename_\d+\.deb",
         r"^pool/.*\.deb$",
@@ -161,9 +123,10 @@ def test_pkg_pattern_type_rejects_repeated_overlapping_alternatives(pattern: str
         "(a|a)?",
         "(?P<name>foo|bar)+",
         "(?i:foo|bar)+",
+        "(a+)+$",
     ],
 )
-def test_pkg_pattern_type_accepts_safe_patterns(pattern: str) -> None:
+def test_pkg_pattern_type_accepts_compilable_patterns(pattern: str) -> None:
     assert pkg_pattern_type(json.dumps({"Package": pattern})) == {"Package": re.compile(pattern)}
 
 

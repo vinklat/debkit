@@ -25,8 +25,8 @@ in [examples.md](../guides/examples.md#remove-packages).
   [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
-- The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed or risky
-  pattern exits 2 before the target is read →
+- The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed pattern exits 2
+  before the target is read →
   [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 - `Packages.remove` only drops matching entries from its in-memory index and returns their
   filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
@@ -40,7 +40,7 @@ in [examples.md](../guides/examples.md#remove-packages).
 
 ## Testing notes
 
-`tests/test_argtypes.py` covers pattern parsing and the ReDoS checks; `tests/test_action_pkg.py`
+`tests/test_argtypes.py` covers pattern parsing, length, and compilation; `tests/test_action_pkg.py`
 covers the no-match `ActionException` and the transaction wiring; `tests/test_packages.py` covers
 `Packages.remove()` and its filename-safety check; `tests/test_repo_rw.py` removes an `all` payload
 from a real `StorageFS` → [TESTING.md](../../TESTING.md#required-coverage).

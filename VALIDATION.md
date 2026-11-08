@@ -223,10 +223,7 @@ before the target is read; `Packages.remove()` matches the compiled patterns; fl
 | Shape | Non-empty JSON object mapping package field names to regex strings; any field, no allow-list. | Invalid JSON, another JSON type, `{}`, or a non-string value → `ArgumentTypeError` (Usage) |
 | Match | Every supplied field pattern matches, using `re.search` without anchoring. | — |
 | Length | At most 500 characters per pattern; checked before compilation. | Longer → `ArgumentTypeError` (Usage) |
-| Nested quantifiers | No quantifier (`+`, `*`, `?`, or an unbounded `{n,}`) inside a quantified group, e.g. `(a+)+`; a bounded `{n}` or `{n,m}` never counts as one. Checked before compilation. | → `ArgumentTypeError` (Usage) |
-| Repeated alternatives | No `+`, `*`, or `{n,}` repeats a group whose alternatives, or those of a group inside it, can start with the same character, e.g. `(a\|aa)+`. Checked before compilation. | → `ArgumentTypeError` (Usage) |
-| Any first character | An alternative opening with `.`, a class, an anchor, a letter escape, a group, or nothing counts as starting with any character, so `(\w\|\d)+` is refused. | — |
-| Heuristic gaps | Bounded repeats such as `(a+){2,9}` and adjacent quantifiers such as `a*a*b` pass; patterns come from the operator, never from a repository. | — |
+| Backtracking | Patterns are trusted operator input and are not checked for catastrophic backtracking; anyone who sets the pattern can already remove every package. | — |
 | Compiles | Every pattern compiles with `re.compile`. | `re.error` → `ArgumentTypeError` (Usage) |
 
 ## Architectures

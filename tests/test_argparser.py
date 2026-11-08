@@ -46,7 +46,7 @@ def test_parse_cli_remove_compiles_pkg_pattern() -> None:
     assert ns.pkg_pattern == {"Package": re.compile("^a")}
 
 
-@pytest.mark.parametrize("value", ['["a"]', '{"Package": 5}', "{bad", '{"Package": "(a+)+"}'])
+@pytest.mark.parametrize("value", ['["a"]', '{"Package": 5}', "{bad", '{"Package": "("}'])
 def test_parse_cli_remove_rejects_bad_pkg_pattern(value: str) -> None:
     with pytest.raises(SystemExit) as exc:
         parse_cli(["--target-url", "fs:///tmp dist main", "remove", "--pkg-pattern", value])
