@@ -11,7 +11,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from helpers.factories import make_package, make_params
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history
-from txstore import HistoryRetention, StorageFS, StorageNull, TransactionHistory
+from txstore import (
+    HistoryRetention,
+    StorageFS,
+    StorageNull,
+    TransactionHistory,
+    maybe_transaction,
+)
 
 from debkit.action import OutputType
 from debkit.action.action_pkg import ActionPkg
@@ -564,3 +570,35 @@ def test_insert_without_incoming_storage_raises() -> None:
 
     with pytest.raises(ActionException, match="incoming-url"):
         action.insert()
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """The real `parse_cli` → `ActionPkg.__init__` → `maybe_transaction` chain."""
+    from debkit.action import action_pkg
+    from debkit.argparser import parse_cli
+
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "foo_1.0_amd64.deb").write_bytes(b"foo")
+    pars = parse_cli(
+        [
+            *("--target-url", f"fs://{tmp_path / 'repo'} bookworm main", "--skip-verify-gpg"),
+            *("--history-keep", "2", "--history-max-age", "30"),
+            *("insert", "--deb-filename", "foo_1.0_amd64.deb"),
+            *("--incoming-url", f"fs://{tmp_path / 'in'}"),
+        ]
+    )
+    instance = MagicMock()
+    instance.filename_field = "pool/main/f/foo/foo_1.0_amd64.deb"
+    instance.get_package.return_value = make_package(
+        instance.filename_field, Package="foo", Version="1.0", Architecture="amd64"
+    )
+    mock_debfile_cls.return_value = instance
+
+    with patch.object(action_pkg, "maybe_transaction", wraps=maybe_transaction) as wiring:
+        ActionPkg(pars, create_path=True).insert()
+
+    assert wiring.call_args.args[1] == HistoryRetention(keep=2, max_age_days=30)
+    assert (tmp_path / "repo" / instance.filename_field).read_bytes() == b"foo"

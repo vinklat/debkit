@@ -678,16 +678,36 @@ def test_sync_single_surviving_failure_raises() -> None:
         src.sync(tgt, copy_list=list(results.keys()), delete_list=[])
 
 
-def test_sync_transient_failure_is_retried_and_succeeds() -> None:
-    """A blip on one object still recovers, so a flaky link does not fail the run."""
-    src, tgt = _two_repos(
+def _empty_repos() -> tuple[RepoSync, RepoRW]:
+    return _two_repos(
         src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
     )
-    results: dict[str, bool | list[bool]] = {f"f{i}.deb": True for i in range(20)}
-    results["f7.deb"] = [False, True]
-    _patch_transfer(src, results)
 
-    src.sync(tgt, copy_list=list(results.keys()), delete_list=[])
+
+def test_sync_transient_storage_error_is_retried_and_deletes_run() -> None:
+    """A blip on one object recovers on the next pass, faulted at the storage boundary."""
+    src, tgt = _empty_repos()
+    src.verify_checksum = MagicMock(return_value=True)  # type: ignore[method-assign]
+    storage = _mock_storage(src)
+    digests = {"SHA256": "x", "Size": "1"}
+    storage.transfer.side_effect = [digests, StorageException("blip"), digests]
+
+    src.sync(tgt, copy_list=["a.deb", "b.deb"], delete_list=["old.deb"])
+
+    assert [call.args[0] for call in storage.transfer.call_args_list] == ["a.deb", "b.deb", "b.deb"]
+    _mock_storage(tgt).delete.assert_called_once_with("old.deb")
+
+
+def test_sync_checksum_mismatch_is_not_retried_and_skips_the_deletes() -> None:
+    """A mismatch is distrust, not a blip: the object is deleted and the run stops."""
+    src, tgt = _empty_repos()
+    src.verify_checksum = MagicMock(return_value=False)  # type: ignore[method-assign]
+
+    with pytest.raises(ChecksumException):
+        src.sync(tgt, copy_list=["a.deb"], delete_list=["old.deb"])
+
+    assert _mock_storage(src).transfer.call_count == 1
+    assert [call.args[0] for call in _mock_storage(tgt).delete.call_args_list] == ["a.deb"]
 
 
 def test_sync_empty_copy_list_with_deletes_only() -> None:
@@ -782,6 +802,19 @@ def test_check_orphans_are_deleted_and_counted_only_with_fix(
     assert src.check(missing_list=[], orphan_list=["junk.deb", "old.deb"], fix=fix) == expected
     deleted = sorted(call.args[0] for call in _mock_storage(src).delete.call_args_list)
     assert deleted == (["junk.deb", "old.deb"] if fix else [])
+
+
+def test_check_orphan_delete_failure_is_logged_and_not_counted_fixed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    src = _src_with_pkgs(["p1.deb"])
+    _patch_verify(src, {})
+    _mock_storage(src).delete.side_effect = [StorageException("denied"), None]
+
+    with caplog.at_level(logging.ERROR):
+        assert src.check(missing_list=[], orphan_list=["junk.deb", "old.deb"], fix=True) == (0, 1)
+
+    assert "Error deleting file: junk.deb" in caplog.text
 
 
 # =========================================================================

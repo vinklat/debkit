@@ -14,7 +14,7 @@ from typing import IO, Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-from helpers.storage import TxnStorageStub
+from helpers.storage import TxnStorageStub, iso_timestamp, seed_history
 from txstore import (
     HistoryRetention,
     Storage,
@@ -404,6 +404,55 @@ def test_sync_then_check_finds_the_mirror_consistent(tmp_path: Path) -> None:
     assert action.check() is True
     payload.unlink()
     assert action.check() is False
+
+
+def test_sync_over_an_older_mirror_replaces_its_stale_payload(tmp_path: Path) -> None:
+    """A real fs→fs v2→v3 sync deletes the payload v3 no longer lists, in one transaction."""
+    _write_tree(tmp_path / "src", "Wed, 01 Oct 2025 00:00:00 UTC", "2")
+    _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    (tmp_path / "src" / "pool/main/f/foo/foo_2_amd64.deb").unlink()
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.fix = False
+
+    action.sync()
+
+    pool = tmp_path / "tgt" / "pool/main/f/foo"
+    # dot-files are txstore footmarks of the history, not payloads
+    payloads = sorted(path.name for path in pool.iterdir() if not path.name.startswith("."))
+    assert payloads == ["foo_3_amd64.deb"]
+    assert action.check() is True
+    assert len(TransactionHistory(StorageFS(str(tmp_path / "tgt"))).load()) == 2
+
+
+def test_sync_built_by_its_constructor_hands_the_retention_to_the_transaction(
+    tmp_path: Path,
+) -> None:
+    """The real `parse_cli` → `ActionSync.__init__` → `maybe_transaction` → prune chain."""
+    from debkit.action import action_sync
+    from debkit.argparser import parse_cli
+
+    target = tmp_path / "tgt"
+    target.mkdir()
+    seed_history(
+        StorageFS(str(target)),
+        [{"id": 1, "timestamp": iso_timestamp(400)}, {"id": 2, "timestamp": iso_timestamp(390)}],
+    )
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    pars = parse_cli(
+        [
+            *("--target-url", f"fs://{target} bookworm main", "--skip-verify-gpg"),
+            *("--history-keep", "1", "--history-max-age", "90"),
+            *("sync", "--source-url", f"{tmp_path / 'src'} bookworm main"),
+            *("--architectures", "amd64"),
+        ]
+    )
+
+    with patch.object(action_sync, "maybe_transaction", wraps=maybe_transaction) as wiring:
+        ActionSync(pars).sync()
+
+    assert wiring.call_args.args[1] == HistoryRetention(keep=1, max_age_days=90)
+    assert [record.id for record in TransactionHistory(StorageFS(str(target))).load()] == [3]
 
 
 def test_sync_to_s3_writes_objects_with_the_default_public_read_acl(
