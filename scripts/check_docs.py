@@ -15,6 +15,9 @@ Checks (SETUP.md quality gates; AGENTS.md contract writing rules):
 - the ``EXCEPTIONS.md`` exit-group table equals the ``except`` handlers of ``cli.py`` and their
   ``err_exit`` messages, and every ``Class (Group)`` notation names the group ``cli.py`` exits
   through, following base classes;
+- every exception class defined in the source resolves to a ``cli.py`` exit group, is raised
+  somewhere in the source, and is named by a ``pytest.raises`` outside ``tests/test_cli_main.py``,
+  whose stubbed exceptions prove only the message mapping (TESTING.md required coverage);
 - no document leaves a code fence open, which would hide every later line from every check above;
 - no document opens a ``plantuml`` or ``puml`` fence, which GitHub does not render, and every
   ``docs/**/diagrams/*.svg`` is embedded as a Markdown image in a document (SETUP.md diagrams);
@@ -48,6 +51,9 @@ from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE = Path("src") / "debkit"
+TESTS = Path("tests")
+# Raises stubbed exceptions to prove the exit-group messages, so it proves no real raise.
+STUB_RAISE_TESTS = frozenset({"test_cli_main.py"})
 LINE_LIMIT = 100
 PYPI_REGISTRY = "https://pypi.org/simple"
 OPTION_CALLS = frozenset({"add_argument", "add_env_argument"})
@@ -490,17 +496,22 @@ def _resolve_group(
     return None
 
 
+def _exit_groups(docs: dict[str, str]) -> dict[str, str]:
+    """Caught class name → exit group, from the ``EXCEPTIONS.md`` exit-group table."""
+    table = _first_table(docs["EXCEPTIONS.md"], "Group")
+    return {
+        name: cells[0]
+        for _, cells in (table[2] if table else [])
+        for name in IDENT_RE.findall(cells[1])
+    }
+
+
 def check_group_notation(docs: dict[str, str], bases: dict[str, tuple[str, ...]]) -> list[str]:
     """Every ``Class (Group)`` notation names the group ``cli.py`` exits through.
 
     A parenthesised word that is not a known group is ordinary prose and left alone.
     """
-    table = _first_table(docs["EXCEPTIONS.md"], "Group")
-    groups = {
-        name: cells[0]
-        for _, cells in (table[2] if table else [])
-        for name in IDENT_RE.findall(cells[1])
-    }
+    groups = _exit_groups(docs)
     known = set(groups.values()) | set(EXTERNAL_GROUPS.values())
     all_bases = {**EXTERNAL_EXCEPTIONS, **bases}
     errors: list[str] = []
@@ -530,6 +541,75 @@ def check_tables(docs: dict[str, str]) -> list[str]:
         for lineno, cells in rows
         if len(cells) != len(header)
     ]
+
+
+def check_exit_coverage(docs: dict[str, str], bases: dict[str, tuple[str, ...]]) -> list[str]:
+    """Every exception class defined in the source reaches a ``cli.py`` exit group.
+
+    A class the handlers miss, directly or through a base, exits with a traceback.
+    """
+    groups = _exit_groups(docs)
+    all_bases = {**EXTERNAL_EXCEPTIONS, **bases}
+    return [
+        f"{PACKAGE.as_posix()}: {name} resolves to no cli.py exit group"
+        for name in sorted(bases)
+        if _resolve_group(name, groups, all_bases) is None
+    ]
+
+
+def _raised_names(sources: list[Path]) -> set[str]:
+    """Class names in every ``raise Name(...)`` / ``raise Name`` of the source."""
+    names: set[str] = set()
+    for path in sources:
+        for node in ast.walk(_parse(path)):
+            if not isinstance(node, ast.Raise) or node.exc is None:
+                continue
+            target = node.exc.func if isinstance(node.exc, ast.Call) else node.exc
+            if isinstance(target, ast.Name | ast.Attribute):
+                names.add(target.id if isinstance(target, ast.Name) else target.attr)
+    return names
+
+
+def _pytest_raises_names(tests: list[Path]) -> set[str]:
+    """Class names passed to ``pytest.raises``, a tuple of them included."""
+    names: set[str] = set()
+    for path in tests:
+        for node in ast.walk(_parse(path)):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "raises"
+                and node.args
+            ):
+                continue
+            arg = node.args[0]
+            for item in arg.elts if isinstance(arg, ast.Tuple) else [arg]:
+                if isinstance(item, ast.Name | ast.Attribute):
+                    names.add(item.id if isinstance(item, ast.Name) else item.attr)
+    return names
+
+
+def check_exception_tests(bases: dict[str, tuple[str, ...]]) -> list[str]:
+    """Every exception class defined in the source is raised there and proven by a test.
+
+    txstore classes are exempt: txstore owns their raising conditions → EXCEPTIONS.md.
+    """
+    raised = _raised_names(_sources())
+    tests = sorted(
+        path for path in (REPO_ROOT / TESTS).rglob("test_*.py") if path.name not in STUB_RAISE_TESTS
+    )
+    tested = _pytest_raises_names(tests)
+    errors = [
+        f"{PACKAGE.as_posix()}: {name} is defined but never raised"
+        for name in sorted(bases)
+        if name not in raised
+    ]
+    errors += [
+        f"{TESTS.as_posix()}: no pytest.raises names {name} outside test_cli_main.py"
+        for name in sorted(bases)
+        if name not in tested
+    ]
+    return errors
 
 
 def check_line_length(docs: dict[str, str]) -> list[str]:
@@ -645,6 +725,8 @@ def main() -> int:
         *check_exceptions(all_docs, set(bases)),
         *check_exit_groups(docs, parse_cli_handlers(REPO_ROOT / PACKAGE / "cli.py")),
         *check_group_notation(all_docs, bases),
+        *check_exit_coverage(docs, bases),
+        *check_exception_tests(bases),
         *check_line_length(all_docs),
         *check_tables(all_docs),
         *check_todos(docs),

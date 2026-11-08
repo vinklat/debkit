@@ -307,6 +307,31 @@ def test_group_notation_follows_bases() -> None:
     ]
 
 
+def test_exit_coverage_reports_a_class_no_handler_catches() -> None:
+    """Regression: a documented class missing from cli.py exited with a traceback."""
+    bases = {"AException": ("Exception",), "SubException": ("AException",), "NewException": ()}
+    assert check_docs.check_exit_coverage({"EXCEPTIONS.md": _EXCEPTIONS}, bases) == [
+        "src/debkit: NewException resolves to no cli.py exit group",
+    ]
+
+
+def test_exception_tests_need_a_real_raise_and_a_test_outside_the_cli_stubs(repo: Path) -> None:
+    _write(
+        repo,
+        "src/debkit/e.py",
+        "class AException(Exception): ...\n"
+        "class BException(Exception): ...\n"
+        "def f():\n    raise AException('x')\n",
+    )
+    _write(repo, "tests/test_e.py", "def test_a():\n    with pytest.raises((AException, X)): f()\n")
+    _write(repo, "tests/test_cli_main.py", "def t():\n    with pytest.raises(BException): ...\n")
+    bases = {"AException": ("Exception",), "BException": ("Exception",)}
+    assert check_docs.check_exception_tests(bases) == [
+        "src/debkit: BException is defined but never raised",
+        "tests: no pytest.raises names BException outside test_cli_main.py",
+    ]
+
+
 # Writing rules
 
 

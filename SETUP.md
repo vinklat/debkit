@@ -54,10 +54,10 @@ on pull requests, weekly, and before each release; it checks the lockfile throug
 
 `check_docs.py` verifies links and anchors in root contracts and `docs/`, contract anchors cited in
 code, `CONFIG.md` flag and variable parity with the option registrations, `EXCEPTIONS.md` parity
-with the exception classes and the `cli.py` exit groups, every `Exception (group)` notation, 100-
-column prose, table rows with as many cells as their header, no `TODO` markers in contracts, the
-`docs/*/README.md` indexes, the README version, PyPI-only package sources, and the
-[diagram](#diagrams) fence and embed rules.
+with the exception classes and the `cli.py` exit groups, an exit group, a raise, and a test for
+every exception class, every `Exception (group)` notation, 100-column prose, table rows with as
+many cells as their header, no `TODO` markers in contracts, the `docs/*/README.md` indexes, the
+README version, PyPI-only package sources, and the [diagram](#diagrams) fence and embed rules.
 
 ## Diagrams
 

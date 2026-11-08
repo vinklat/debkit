@@ -73,4 +73,4 @@ Exits outside the groups:
 Add the class in the owning module and its row here, and adjust the catch tuple in `cli.py` when
 exit behavior changes; `tests/test_cli_main.py` asserts every group message →
 [TESTING.md](TESTING.md#required-coverage). `scripts/check_docs.py` verifies both tables against the
-code.
+code, that every class resolves to an exit group, and that each is raised and tested.

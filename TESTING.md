@@ -24,7 +24,7 @@ not copied here.
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Validation        | Every rule in `VALIDATION.md` has a success and a failure case.                                                                     |
 | Configuration     | Every `CONFIG.md` flag resolves in the [resolution order](CONFIG.md#resolution); `tests/test_argparser.py` holds the cases.         |
-| Exceptions        | Every class in `EXCEPTIONS.md` is raised by at least one test; every exit group is asserted by message in `tests/test_cli_main.py`. |
+| Exceptions        | Every class debkit defines is raised in `src/` and named by a `pytest.raises` outside `tests/test_cli_main.py`, enforced by `check_docs.py`; txstore classes are exempt, since txstore owns their raising. Every exit group is asserted by message in `tests/test_cli_main.py`. |
 | Public methods    | Every validator and public method has at least one success and one failure case.                                                    |
 | Coverage          | `uv run pytest --cov` measures `debkit` and fails below the branch-coverage `fail_under` in `pyproject.toml`.                       |
 | Scripts           | `scripts/` is outside the coverage source; the Contract docs and Diagrams rows hold its tests.                                      |
