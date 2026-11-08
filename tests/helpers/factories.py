@@ -2,7 +2,8 @@
 
 These do NOT build a real Debian repository on disk. They construct
 in-memory domain objects (Package, Packages, Component, RepoParams,
-RepoSync, RepoRW) with the minimum state needed by the unit under test.
+RepoSync, RepoRW) and upload bytes (.deb, clearsigned files) with the
+minimum state needed by the unit under test.
 """
 
 from __future__ import annotations
@@ -71,6 +72,18 @@ def make_deb(
             (control_name, control_tar),
             ("data.tar.gz", make_tar_gz({})),
         )
+    )
+
+
+def make_clearsigned(body: bytes) -> bytes:
+    """Wrap *body* in clearsign armor with a placeholder signature, as `debsign` lays it out.
+
+    Nothing verifies the signature; tests that need a real one use ``helpers.gpg``.
+    """
+    return (
+        b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
+        + body
+        + b"-----BEGIN PGP SIGNATURE-----\n\nsig\n-----END PGP SIGNATURE-----\n"
     )
 
 

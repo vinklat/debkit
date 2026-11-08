@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from helpers.factories import make_clearsigned
 from txstore import StorageFS, calc_digests
 
 from debkit.repo import release as release_module
@@ -304,7 +305,7 @@ def test_save_signed_names_the_signatures_by_layout_not_by_dist(source: str, roo
 
 def _inrelease_only_root(tmp_path: Path, params: RepoParams, gpg: MagicMock | None) -> Release:
     storage = StorageFS(str(tmp_path))
-    storage.put(f"{_ROOT}/InRelease", _clearsigned(b"Origin: inline\nSuite: bookworm\n"))
+    storage.put(f"{_ROOT}/InRelease", make_clearsigned(b"Origin: inline\nSuite: bookworm\n"))
     r = Release(storage, params, gpg=gpg, root=True)
     r.load()
     r.fields["Origin"] = "new"
@@ -583,18 +584,10 @@ def test_load_component_release_verifies_against_its_flat_release_key() -> None:
 _RELEASE_BODY = b"Origin: detached\nDate: Sat, 07 Sep 2024 10:00:00 UTC\n"
 
 
-def _clearsigned(body: bytes) -> bytes:
-    return (
-        b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
-        + body
-        + b"-----BEGIN PGP SIGNATURE-----\n\nsig\n-----END PGP SIGNATURE-----\n"
-    )
-
-
 _ROOT_FILES = {
     "dists/bookworm/Release": _RELEASE_BODY,
     "dists/bookworm/Release.gpg": b"detached signature",
-    "dists/bookworm/InRelease": _clearsigned(_RELEASE_BODY),
+    "dists/bookworm/InRelease": make_clearsigned(_RELEASE_BODY),
 }
 
 
@@ -663,7 +656,7 @@ def test_load_root_skips_a_detached_signature_without_its_release(
     junk = b"JUNK not a signature"
     files = {
         "dists/bookworm/Release.gpg": junk,
-        "dists/bookworm/InRelease": _clearsigned(_RELEASE_BODY),
+        "dists/bookworm/InRelease": make_clearsigned(_RELEASE_BODY),
     }
     r = Release(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
 
@@ -695,11 +688,13 @@ def test_load_root_verifies_every_signed_form_it_mirrors() -> None:
     [
         {
             **_ROOT_FILES,
-            "dists/bookworm/InRelease": _clearsigned(_RELEASE_BODY.replace(b"07 Sep", b"10 Jun")),
+            "dists/bookworm/InRelease": make_clearsigned(
+                _RELEASE_BODY.replace(b"07 Sep", b"10 Jun")
+            ),
         },
         {
             "dists/bookworm/Release": _RELEASE_BODY.replace(b"07 Sep", b"10 Jun"),
-            "dists/bookworm/InRelease": _clearsigned(_RELEASE_BODY),
+            "dists/bookworm/InRelease": make_clearsigned(_RELEASE_BODY),
         },
     ],
     ids=["stale-inrelease-beside-detached", "unsigned-release-beside-inrelease"],
@@ -732,7 +727,7 @@ def test_load_root_accepts_signed_forms_that_differ_only_where_gpg_does_not_sign
 
 def test_load_root_without_a_keyring_does_not_compare_the_signed_forms() -> None:
     """The sync target is not verified; refusing it would drop the Date it floors on."""
-    files = {**_ROOT_FILES, "dists/bookworm/InRelease": _clearsigned(b"Origin: other\n")}
+    files = {**_ROOT_FILES, "dists/bookworm/InRelease": make_clearsigned(b"Origin: other\n")}
     r = Release(_root_storage(files), _params(verify_gpg=True))
 
     r.load()
@@ -758,11 +753,7 @@ def test_load_root_refuses_an_inrelease_next_to_a_detached_release_that_fails_ve
 
 
 _INRELEASE_BODY = b"Origin: inline\nDate: Sat, 07 Sep 2024 10:00:00 UTC\n"
-_INRELEASE = (
-    b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
-    + _INRELEASE_BODY
-    + b"-----BEGIN PGP SIGNATURE-----\n\nsig\n-----END PGP SIGNATURE-----\n"
-)
+_INRELEASE = make_clearsigned(_INRELEASE_BODY)
 
 
 @pytest.mark.parametrize(

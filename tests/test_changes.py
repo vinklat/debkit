@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from helpers.factories import make_clearsigned
 from txstore import StorageFS
 
 from debkit.repo.changes import Changes, ChangesException
@@ -131,17 +132,9 @@ def test_parse_refuses_a_listed_file_that_is_not_a_bare_name(name: str) -> None:
         Changes(_storage_with(blob)).parse(blob)
 
 
-def _clearsigned(body: bytes) -> bytes:
-    return (
-        b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
-        + body
-        + b"-----BEGIN PGP SIGNATURE-----\n\nsig\n-----END PGP SIGNATURE-----\n"
-    )
-
-
 def test_parse_reads_a_clearsigned_file_through_its_signed_body() -> None:
     """Regression: `debsign` output failed with "No SHA256 checksums found"."""
-    blob = _clearsigned(_CHANGES_BLOB)
+    blob = make_clearsigned(_CHANGES_BLOB)
     changes = Changes(_storage_with(blob))
     changes.parse(blob)
 
@@ -158,7 +151,7 @@ def test_parse_malformed_clearsigned_file_raises() -> None:
     "blob",
     [
         _CHANGES_BLOB + b"Maintainer: Jos\xe9\n",
-        _clearsigned(_CHANGES_BLOB + b"Maintainer: Jos\xe9\n"),
+        make_clearsigned(_CHANGES_BLOB + b"Maintainer: Jos\xe9\n"),
     ],
     ids=["plain", "clearsigned"],
 )
