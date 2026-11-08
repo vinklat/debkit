@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import lzma
+import tarfile
+import zlib
 from io import BytesIO, UnsupportedOperation
 from pathlib import Path
 from typing import IO
@@ -120,6 +123,61 @@ def test_init_refuses_a_broken_deb_and_closes_the_stream(tmp_path: Path, data: b
 def test_init_refuses_a_broken_control_tar(tmp_path: Path, control_tar: bytes) -> None:
     """A broken control member fails while the control file is read, inside the constructor."""
     storage = _storage(tmp_path, make_deb(control_tar=control_tar))
+
+    with pytest.raises(DebFileException, match="Invalid .deb"):
+        DebFile(storage, _PATH)
+
+    assert storage.all_closed()
+
+
+def _half_of_a_large_control_tar() -> bytes:
+    """First half of an uncompressed tar holding a control file well past the 8 KiB that the
+    decompressing reader buffers, so its first tar header decodes before the damage is reached."""
+    control = _CONTROL + b"".join(b" line %d\n" % n for n in range(4000))
+    buf = BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        info = tarfile.TarInfo("./control")
+        info.size = len(control)
+        tar.addfile(info, BytesIO(control))
+    data = buf.getvalue()
+    return data[: len(data) // 2]
+
+
+def _gz_with_a_reserved_block() -> bytes:
+    """A gzip member whose deflate data ends in block type 3, which every inflater rejects."""
+    deflate = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
+    body = deflate.compress(_half_of_a_large_control_tar()) + deflate.flush(zlib.Z_SYNC_FLUSH)
+    return b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff" + body + b"\x07"
+
+
+def _xz_with_a_reserved_chunk() -> bytes:
+    """An xz stream whose LZMA2 data ends in the reserved chunk control byte 0x03."""
+    stream_header = b"\xfd7zXZ\x00\x00\x00" + zlib.crc32(b"\x00\x00").to_bytes(4, "little")
+    # one LZMA2 filter with an 8 MiB dictionary, padded to 12 bytes with its CRC32
+    block_header = b"\x02\x00\x21\x01\x16\x00\x00\x00"
+    block_header += zlib.crc32(block_header).to_bytes(4, "little")
+    lzma2 = lzma.compress(
+        _half_of_a_large_control_tar(),
+        format=lzma.FORMAT_RAW,
+        filters=[{"id": lzma.FILTER_LZMA2}],
+    )
+    # LZMA2 data ends in the end marker 0x00, replaced here
+    return stream_header + block_header + lzma2[:-1] + b"\x03"
+
+
+@pytest.mark.parametrize(
+    ("control_name", "control_tar"),
+    [
+        ("control.tar.xz", _xz_with_a_reserved_chunk()),
+        ("control.tar.gz", _gz_with_a_reserved_block()),
+    ],
+    ids=["xz", "gz"],
+)
+def test_init_refuses_a_control_tar_that_does_not_decode(
+    tmp_path: Path, control_name: str, control_tar: bytes
+) -> None:
+    """Damage past the first tar header surfaces as the codec's own error, not as a `TarError`."""
+    storage = _storage(tmp_path, make_deb(control_tar=control_tar, control_name=control_name))
 
     with pytest.raises(DebFileException, match="Invalid .deb"):
         DebFile(storage, _PATH)

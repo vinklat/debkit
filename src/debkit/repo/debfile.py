@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import lzma
 import re
 import tarfile
+import zlib
 from io import BytesIO, UnsupportedOperation
 from typing import IO, TYPE_CHECKING
 
@@ -73,9 +75,10 @@ class DebFile:
             self.control = self._read_control()
         except StorageException as exc:
             raise DebFileException(f"Cannot read .deb file {path}: {exc}") from exc
-        # `ArError` is the base of `DebError`; a truncated ar header raises a bare `OSError`,
-        # and a truncated `control.tar` member an `EOFError` or a `TarError`
-        except (ArError, tarfile.TarError, EOFError, OSError) as exc:
+        # `ArError` is the base of `DebError`; a truncated ar header raises a bare `OSError`, a
+        # truncated `control.tar` member an `EOFError` or a `TarError`, and one whose compressed
+        # data does not decode past its first tar header an `LZMAError` or a `zlib.error`
+        except (ArError, tarfile.TarError, EOFError, OSError, lzma.LZMAError, zlib.error) as exc:
             raise DebFileException(f"Invalid .deb file {path}: {exc}") from exc
 
     def _read_control(self) -> bytes | str | None:
