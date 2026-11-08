@@ -1,0 +1,354 @@
+"""Unit tests for ActionPkg transaction lifecycle (insert / remove)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import cast
+from unittest.mock import MagicMock, patch
+
+import pytest
+from helpers.storage import NonTxnStorageStub, TxnStorageStub, iso_timestamp, seed_history
+from txstore import HistoryRetention, StorageFS, TransactionHistory, is_transactional
+
+from debkit.action import OutputType
+from debkit.action.action_pkg import ActionPkg
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_pkg_action(*, storage: object = None) -> ActionPkg:
+    """Build a minimally-patched ActionPkg instance (bypasses __init__).
+
+    Args:
+        storage: The storage object attached to the target repo.  Pass a
+            ``TxnStorageStub`` for transactional tests, a ``NonTxnStorageStub``
+            for regression tests, or ``None`` to get a plain ``MagicMock``.
+    """
+    action = ActionPkg.__new__(ActionPkg)
+    action.output = OutputType.brief
+    action.pkg_pattern = None
+    action.changes_filename = None
+    action.changes_sha256 = None
+    action.deb_filename = "hello_1.0_amd64.deb"
+    action.component = "main"
+    action.incoming_storage = MagicMock()
+    action.history_retention = HistoryRetention(max_age_days=0)
+
+    target = MagicMock()
+    target.storage = storage if storage is not None else MagicMock()
+    target.get_archs.return_value = ["amd64"]
+    target.transfer_from.return_value = {"SHA256": "abc", "Size": "100"}
+    target.diff.return_value = MagicMock(
+        is_empty=MagicMock(return_value=False),
+        count_pkgs_to_copy=MagicMock(return_value=1),
+        count_pkgs_to_remove=MagicMock(return_value=0),
+    )
+    action.target_repo = target
+
+    return action
+
+
+def _target(action: ActionPkg) -> MagicMock:
+    """Return the mocked target repo that `_make_pkg_action` attached."""
+    return cast(MagicMock, action.target_repo)
+
+
+def _debfile_mock(mock_debfile_cls: MagicMock, *, arch: str = "amd64") -> MagicMock:
+    """Wire up a DebFile mock and return it."""
+    instance = MagicMock()
+    instance.filename_field = "pool/main/h/hello/hello_1.0_amd64.deb"
+    pkg = MagicMock()
+    pkg.get_arch.return_value = arch
+    instance.get_package.return_value = pkg
+    mock_debfile_cls.return_value = instance
+    return instance
+
+
+# ---------------------------------------------------------------------------
+# Protocol conformance
+# ---------------------------------------------------------------------------
+
+
+def test_txn_stub_is_transactional() -> None:
+    assert is_transactional(TxnStorageStub())
+    assert not is_transactional(NonTxnStorageStub())
+
+
+# ---------------------------------------------------------------------------
+# insert() — transactional storage
+# ---------------------------------------------------------------------------
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_begins_and_commits_on_success(mock_debfile_cls: MagicMock) -> None:
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+    _debfile_mock(mock_debfile_cls)
+
+    action.insert()
+
+    assert txn.began
+    assert txn.committed
+    assert not txn.discarded
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_discards_on_exception(mock_debfile_cls: MagicMock) -> None:
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+
+    instance = MagicMock()
+    instance.filename_field = "pool/main/h/hello/hello_1.0_amd64.deb"
+    instance.get_package.side_effect = RuntimeError("corrupt deb")
+    mock_debfile_cls.return_value = instance
+
+    with pytest.raises(RuntimeError, match="corrupt deb"):
+        action.insert()
+
+    assert txn.began
+    assert not txn.committed
+    assert txn.discarded
+
+
+# ---------------------------------------------------------------------------
+# insert() — non-transactional storage (regression for FootmarkMixin fix)
+# ---------------------------------------------------------------------------
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_no_txn_on_non_txn_storage(mock_debfile_cls: MagicMock) -> None:
+    """TransactionNotSupportedMixin backend must not trigger NotImplementedError.
+
+    Before the FootmarkMixin discriminator fix, isinstance(storage,
+    is_transactional) returned True for NonTxnStorageStub, and the
+    subsequent transaction_begin() call raised NotImplementedError.
+    """
+    non_txn = NonTxnStorageStub()
+    action = _make_pkg_action(storage=non_txn)
+    _debfile_mock(mock_debfile_cls)
+
+    action.insert()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# remove() — transactional storage
+# ---------------------------------------------------------------------------
+
+
+def test_remove_begins_and_commits_on_success() -> None:
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+    action.deb_filename = None
+    action.pkg_pattern = '{"Package": "hello"}'
+
+    action.remove()
+
+    assert txn.began
+    assert txn.committed
+    assert not txn.discarded
+
+
+def test_remove_discards_on_exception() -> None:
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+    action.deb_filename = None
+    action.pkg_pattern = '{"Package": "hello"}'
+    _target(action).remove_pkg.side_effect = RuntimeError("fail")
+
+    with pytest.raises(RuntimeError, match="fail"):
+        action.remove()
+
+    assert txn.began
+    assert not txn.committed
+    assert txn.discarded
+
+
+# ---------------------------------------------------------------------------
+# remove() — non-transactional storage (regression for FootmarkMixin fix)
+# ---------------------------------------------------------------------------
+
+
+def test_remove_no_txn_on_non_txn_storage() -> None:
+    """TransactionNotSupportedMixin backend must not trigger NotImplementedError."""
+    non_txn = NonTxnStorageStub()
+    action = _make_pkg_action(storage=non_txn)
+    action.deb_filename = None
+    action.pkg_pattern = '{"Package": "hello"}'
+
+    action.remove()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Retention hand-off to maybe_transaction
+# ---------------------------------------------------------------------------
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_hands_retention_to_maybe_transaction(mock_debfile_cls: MagicMock) -> None:
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+    _debfile_mock(mock_debfile_cls)
+    action.history_retention = HistoryRetention(keep=1, max_age_days=5)
+
+    with patch("debkit.action.action_pkg.maybe_transaction") as wiring:
+        action.insert()
+
+    wiring.assert_called_once_with(txn, action.history_retention)
+
+
+def test_remove_hands_retention_to_maybe_transaction() -> None:
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+    action.deb_filename = None
+    action.pkg_pattern = '{"Package": "hello"}'
+    action.history_retention = HistoryRetention(keep=1, max_age_days=5)
+
+    with patch("debkit.action.action_pkg.maybe_transaction") as wiring:
+        action.remove()
+
+    wiring.assert_called_once_with(txn, action.history_retention)
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_prunes_expired_history_on_a_real_storage(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """End to end through the action: a recorded insert expires aged history."""
+    storage = StorageFS(str(tmp_path / "repo"))
+    seed_history(
+        storage,
+        [{"id": 1, "timestamp": iso_timestamp(400)}, {"id": 2, "timestamp": iso_timestamp(390)}],
+    )
+    action = _make_pkg_action(storage=storage)
+    _debfile_mock(mock_debfile_cls)
+    action.history_retention = HistoryRetention(keep=1, max_age_days=90)
+
+    def transfer(*_args: object, **_kwargs: object) -> dict[str, str]:
+        storage.put("pool/main/h/hello/hello_1.0_amd64.deb", b"deb")
+        return {"SHA256": "abc", "Size": "100"}
+
+    _target(action).transfer_from.side_effect = transfer
+
+    action.insert()
+
+    assert [rec.id for rec in TransactionHistory(storage).load()] == [3]
+
+
+# ---------------------------------------------------------------------------
+# insert() — read-only Sources index
+# ---------------------------------------------------------------------------
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_of_an_arch_all_deb_skips_the_source_arch(mock_debfile_cls: MagicMock) -> None:
+    """An `Architecture: all` deb fans out over the binary arches only.
+
+    A mirrored `Sources` index is read-only, so inserting into it would raise
+    `PackagesException` and surface through the Read exit group on a write path.
+    """
+    action = _make_pkg_action(storage=TxnStorageStub())
+    _target(action).get_archs.return_value = ["amd64", "source"]
+    _debfile_mock(mock_debfile_cls, arch="all")
+
+    action.insert()
+
+    inserted = [call.args[1] for call in _target(action).insert_pkg.call_args_list]
+    assert inserted == ["amd64"]
+
+
+# ---------------------------------------------------------------------------
+# insert() — a control field naming the source architecture
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("architecture", ["source amd64", "amd64 source"])
+@patch("debkit.action.action_pkg.Changes")
+def test_insert_refuses_a_changes_naming_the_source_arch_in_any_position(
+    mock_changes_cls: MagicMock, architecture: str
+) -> None:
+    """`dpkg-genchanges` writes every built arch into one field, so reading the first
+    token alone let the field order decide whether the upload was refused.
+    """
+    from debkit.action import ActionException
+
+    action = _make_pkg_action(storage=TxnStorageStub())
+    action.deb_filename = None
+    action.changes_filename = "hello_1.0_amd64.changes"
+
+    changes = mock_changes_cls.return_value
+    tokens = architecture.split()
+    changes.get_archs.return_value = tokens
+    changes.get_arch.return_value = tokens[0]
+    changes.names_source_arch.return_value = "source" in tokens
+    changes.get_deb_files.return_value = ["hello_1.0_amd64.deb"]
+
+    with pytest.raises(ActionException, match="Source packages are not supported"):
+        action.insert()
+
+    assert _target(action).insert_pkg.call_args_list == []
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_refuses_a_deb_whose_control_names_the_source_arch(
+    mock_debfile_cls: MagicMock,
+) -> None:
+    """The control field is read straight out of the uploaded .deb, so it can overwrite
+    the binary set `_binary_archs` picked and reach the read-only source index.
+    """
+    from debkit.action import ActionException
+
+    txn = TxnStorageStub()
+    action = _make_pkg_action(storage=txn)
+    _debfile_mock(mock_debfile_cls, arch="source")
+
+    with pytest.raises(ActionException, match="Source packages are not supported"):
+        action.insert()
+
+    assert txn.discarded
+    # VALIDATION.md#sources-stanzas refuses it before the transfer, not after
+    _target(action).transfer_from.assert_not_called()
+    _target(action).insert_pkg.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# insert() — an architecture token that is not an architecture name
+# ---------------------------------------------------------------------------
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_refuses_a_deb_whose_control_arch_is_not_an_architecture(
+    mock_debfile_cls: MagicMock,
+) -> None:
+    """The control arch names the `binary-<arch>/` directory, so `../x` would steer the write."""
+    from debkit.action import ActionException
+
+    action = _make_pkg_action(storage=TxnStorageStub())
+    _debfile_mock(mock_debfile_cls, arch="../x")
+
+    with pytest.raises(ActionException, match="Invalid architecture"):
+        action.insert()
+
+    _target(action).transfer_from.assert_not_called()
+
+
+@patch("debkit.action.action_pkg.Changes")
+def test_insert_refuses_a_changes_whose_arch_is_not_an_architecture(
+    mock_changes_cls: MagicMock,
+) -> None:
+    """Every `.changes` token is checked, not only the first."""
+    from debkit.action import ActionException
+
+    action = _make_pkg_action(storage=TxnStorageStub())
+    action.deb_filename = None
+    action.changes_filename = "hello_1.0_amd64.changes"
+    changes = mock_changes_cls.return_value
+    changes.get_archs.return_value = ["amd64", "x/../.."]
+    changes.get_arch.return_value = "amd64"
+    changes.names_source_arch.return_value = False
+
+    with pytest.raises(ActionException, match="Invalid architecture"):
+        action.insert()
+
+    _target(action).insert_pkg.assert_not_called()

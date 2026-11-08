@@ -1,0 +1,88 @@
+@startuml
+start
+if (source_repo and target_repo initialized?) then (no)
+  :log error;
+  stop
+endif
+
+if (verify_existing?) then (yes)
+  partition "verify existing, before the lock" {
+    :target.update();
+    :dup_repo = RepoSync(target.storage, target.params);
+    :dup_repo.copy_from(target);
+    :missing = dup_repo.build_sync_lists(target);
+    :dup_repo.check(missing, [], fix=True);
+  }
+endif
+
+if (allow_release_rollback?) then (yes)
+  :log warning "Release freshness checks skipped";
+endif
+:pass_cnt = MAX_UPDATED_REPO_RETRIES
+prev_hash = "nohash";
+
+partition "with maybe_transaction(target.storage)" {
+  :target.update();
+  note right
+    under history_lock, so a peer commit
+    that landed while waiting is seen;
+    ReleaseReadException -> log warn, continue
+    ChecksumException    -> log warn, target.reset()
+  end note
+  :target_before = copy(target);
+  repeat
+    :source.update(strict_arch=True);
+    if (prev_hash == source.release.hash?) then (yes)
+      break
+    endif
+    if (a later pass?) then (yes)
+      :load target again;
+      note right: reads the bytes the previous\npass staged
+    endif
+    if (source.params.verify_gpg and not allow_release_rollback?) then (yes)
+      :source.release.check_fresh_against(target.release, now);
+      if (a later pass?) then (yes)
+        :source.release.check_fresh_against(target_before.release, now);
+      endif
+      note right
+        ReleaseFreshnessException -> raise;
+        propagates out of the loop and
+        out of the maybe_transaction CM
+      end note
+    endif
+    :copy_list, delete_list = source.build_sync_lists(target, indices_only);
+    if (copy_list and delete_list both empty?) then (yes)
+      :log "Nothing to sync";
+      break
+    endif
+    :try: source.sync(target, copy_list, delete_list);
+    note right
+      ChecksumException -> log error + raise
+      propagates out of the loop and
+      out of the maybe_transaction CM.
+      An object still failing after the
+      retries raises RepoSyncException,
+      so no partial target is committed
+    end note
+    :pass_cnt -= 1
+    prev_hash = source.release.hash;
+  repeat while (pass_cnt > 0) is (yes)
+}
+
+if (any exception escaped the partition?) then (yes)
+  :transaction_discard()
+  (errors during discard are logged,
+   original exception is re-raised);
+  stop
+else (no)
+  :transaction_commit();
+endif
+
+:ret_diff = source.diff(target_before);
+if (output == json?) then (yes)
+  :print_sync_json(ret_diff);
+else (no)
+  :print_sync_brief(ret_diff);
+endif
+stop
+@enduml

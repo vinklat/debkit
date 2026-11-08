@@ -1,0 +1,51 @@
+@startuml
+participant ActionSync
+participant "RepoSync\n(source)" as Src
+participant "Release\n(source root)" as Rel
+participant "Storage\n(source)" as SStor
+participant "Storage\n(target)" as TStor
+
+ActionSync -> Src: build_sync_lists(target, indices_only)
+Src -> TStor: list()
+TStor --> Src: existing objects\n[NotImplementedError on http]
+
+Src -> Src: _get_indices()
+Src -> Rel: get_indices_paths()
+Rel --> Src: Release, Release.gpg, InRelease
+note right: known_published=True, digests None
+Src -> Src: component.get_indices_paths()
+note right: Packages files a parse proved,\nkept if selected, known_published=True
+Src -> Rel: listed_indices()
+Rel --> Src: IndexEntry(key, path, digests) per record
+
+note over Src: every other entry select_index_entry keeps\nand _index_path_is_safe accepts is kept, not known published
+
+Src -> Src: purge and repair passes use the index set
+
+Src -> Src: _indices_to_copy(forced, can_list)
+alt a package or Release change, or a known published index the target lacks, forces the pass
+  Src -> Src: _reduce_indices(every index)
+else nothing forces it and the target can be listed
+  Src -> Src: _reduce_indices(indices not known published the target lacks)
+  note right: an empty subset copies nothing\nand opens no transaction
+end
+
+group _reduce_indices
+  loop each index it is given
+    alt the target holds it, its Release loaded, digests are verified,\nand both root Releases record the same digests
+      note right: skipped with no round trip
+    else the target holds it, its Release loaded, and agreement does not settle it
+      Src -> TStor: get_metadata(path)
+      TStor --> Src: stored digests
+      note right: compare_digests match\nmeans the index is skipped
+    end
+    opt unsettled, unproven by a parse, and absent from the target
+      Src -> SStor: exists(path)
+      SStor --> Src: True / False
+      note right: False drops the entry\ninstead of failing the sync
+    end
+  end
+end
+
+Src --> ActionSync: copy_list, delete_list
+@enduml

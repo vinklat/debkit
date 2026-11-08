@@ -1,0 +1,44 @@
+@startuml
+start
+if (target_repo set?) then (no)
+  stop
+endif
+if (pkg_pattern provided?) then (no)
+  :raise ValueError("No package pattern provided.");
+  stop
+endif
+
+:target.update();
+:prev_repo = copy(target);
+
+if (json.loads(pkg_pattern) succeeds?) then (no)
+  :raise ValueError(f"Invalid JSON format: ...")
+   chained from JSONDecodeError;
+  stop
+endif
+:fields = parsed dict;
+
+partition "with maybe_transaction(target.storage)" {
+  :target.remove_pkg(fields);
+  :ret_diff = target.diff(prev_repo);
+  if (ret_diff is non-empty?) then (yes)
+    :target.save();
+  endif
+}
+
+if (any exception escaped the partition?) then (yes)
+  :transaction_discard()
+   (errors during discard are logged,
+    original exception is re-raised);
+  stop
+else (no)
+  :transaction_commit();
+endif
+
+if (output == brief?) then (yes)
+  :print_pkg_brief(ret_diff);
+else (json)
+  :print_pkg_json(ret_diff);
+endif
+stop
+@enduml

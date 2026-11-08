@@ -1,0 +1,34 @@
+# debkit roadmap
+
+## Phases
+
+| Phase | Status | Feature                     | Notes                                                                                                                                                                                |
+| ----- | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0.1.0 | ✅     | Initial public release      | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history; options by flag or `DEBKIT_*` variable              |
+| 0.2.0 | ⏳     | `insert` of source packages | `ActionPkg.insert` refuses a `.changes` naming `source` among its `Architecture` tokens, and skips the source architecture when a binary package fans out over the repository arches |
+| 0.3.0 | ⏳     | `remove` of source packages | `Component.remove_pkg` skips the read-only `Sources` index, so a pattern never removes a source payload                                                                              |
+
+## Ideas
+
+Unscheduled improvements, each waiting on a trigger. Promote a row to a phase when its trigger fires
+or the work is planned; drop it when it no longer applies.
+
+| Idea                                                                        | Revisit when                                        | Area                                                  |
+| --------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------- |
+| Typed settings object passed to actions instead of the argparse `Namespace` | An action is called from Python rather than the CLI | [STRUCTURE.md](STRUCTURE.md#dependencies)             |
+| Debian package `debkit`                                                     | txstore is packaged for Debian (txstore 0.2.0)      | [SETUP.md](SETUP.md#dependency-policy)                |
+| Mirror `by-hash/` indices                                                   | A mirror's clients rely on `Acquire-By-Hash`        | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
+
+## Known deviations
+
+Implementation that does not yet meet a root contract. Contracts link here instead of carrying
+TODOs; remove a row when the code meets the rule.
+
+| Contract                                              | Deviation                                                                                                                                                                                                                                                                                                                                                  | Source                                           |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [VALIDATION.md](VALIDATION.md#sources-stanzas)        | Read-only-ness on the insert path is inferred per call site, not owned by the container: `_binary_archs` filters on the source architecture, and the `.changes` and control-field checks refuse it before the transfer. They hold only while `container_for()` maps that one arch; a read-only base shared by `Packages` and `Sources` would own the rule. | `action/action_pkg.py` `_binary_archs`, `insert` |
+| [EXCEPTIONS.md](EXCEPTIONS.md#rules)                  | `ActionSync.sync` and `ActionSync.check` log and return when a source or target repository is uninitialized instead of raising a typed exception.                                                                                                                                                                                                          | `action/action_sync.py`                          |
+| [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups)        | `NotImplementedError` from a read-only, write-only, or non-transactional txstore backend is in no exit group and surfaces as a traceback.                                                                                                                                                                                                                  | `cli.py`                                         |
+| [VALIDATION.md](VALIDATION.md#repository-index-paths) | `by-hash/` objects are not mirrored because the root `Release` does not list them; an apt client of a mirror whose `Release` advertises `Acquire-By-Hash: yes` falls back to the canonical index path after a 404.                                                                                                                                         | `repo/repo_sync.py` `_get_indices`               |
+| [STORAGE.md](STORAGE.md#construction)                 | `RepoSync._verify_file` instantiates txstore's `StorageNull` directly as a digest sink instead of obtaining it through `open_storage()`, so `open_storage()` is not the only place debkit builds a storage.                                                                                                                                                | `repo/repo_sync.py` `_verify_file`               |
+| [SETUP.md](SETUP.md#dependency-policy)                | The `debian-testing` CI job installs txstore from PyPI, since Debian does not package it yet; every other dependency comes from apt.                                                                                                                                                                                                                       | `.github/debian-test.sh`                         |

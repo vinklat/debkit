@@ -1,0 +1,98 @@
+@startuml
+start
+if (XOR of changes_filename / deb_filename?) then (no)
+  :raise ActionException
+   ("provide either --changes-filename or --deb-filename, not both");
+  stop
+endif
+
+if (incoming_storage and target_repo set?) then (no)
+  stop
+endif
+
+partition "load or setup target" {
+  :target.update();
+  note right
+    ReleaseReadException -> target.setup(fields=DEFAULT_REPO_FIELDS)
+    (creates an empty repo if none exists)
+  end note
+  :prev_repo = copy(target);
+}
+
+if (changes_filename provided?) then (yes)
+  :changes = Changes(incoming_storage)
+   changes.load(changes_filename, digest_expected=changes_sha256);
+  :ch_arch = changes.get_arch();
+  if (changes.names_source_arch()?) then (yes)
+    :raise ActionException
+     ("Source packages are not supported yet");
+    stop
+  endif
+  :archs = self._binary_archs() if ch_arch == ARCH_ANY else [ch_arch]
+   filenames = changes.get_deb_files();
+  note right: get_archs() minus "source":\nthe mirrored Sources index is read-only
+else (no)
+  if (deb_filename ends with ".deb"?) then (no)
+    :raise ActionException
+     (f"Invalid .deb filename: {deb_filename}");
+    stop
+  endif
+  :archs = self._binary_archs()
+   filenames = [deb_filename];
+endif
+
+if (archs is non-empty list?) then (no)
+  :raise ActionException
+   ("Internal error - no architectures set");
+  stop
+endif
+
+partition "with maybe_transaction(target.storage)" {
+  while (more filenames?) is (yes)
+    :debfile = DebFile(incoming_storage, filename, comp);
+    :package = debfile.get_package();
+    :pkg_arch = package.get_arch();
+    if (pkg_arch == "source"?) then (yes)
+      :raise ActionException
+       ("Source packages are not supported yet");
+      note right: refused before any transfer
+      stop
+    endif
+    :digests = target.transfer_from(
+        incoming_storage, filename,
+        path_dst=debfile.filename_field);
+    :package.set_digests(digests);
+    if (pkg_arch not None and != ARCH_ANY?) then (yes)
+      :archs = [pkg_arch];
+    endif
+    if (archs is None?) then (yes)
+      :raise ActionException
+       ("Architecture not found in package");
+      stop
+    endif
+    while (more archs?) is (yes)
+      :target.insert_pkg(component, arch, package);
+    endwhile (no)
+  endwhile (no)
+  :ret_diff = target.diff(prev_repo);
+  if (ret_diff is non-empty?) then (yes)
+    :target.save();
+  endif
+}
+
+if (any exception escaped the partition?) then (yes)
+  :transaction_discard()
+   (errors during discard are logged,
+    original exception is re-raised);
+  stop
+else (no)
+  :transaction_commit();
+endif
+
+if (output == brief?) then (yes)
+  :print_pkg_brief(ret_diff);
+else (json)
+  :print_pkg_json(ret_diff);
+endif
+stop
+@enduml
