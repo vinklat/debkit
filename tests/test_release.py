@@ -153,6 +153,33 @@ def test_save_no_op_when_not_modified() -> None:
     storage.put.assert_not_called()
 
 
+def test_load_of_a_root_with_a_digest_block_is_not_modified(tmp_path: Path) -> None:
+    """Regression: parsing the digest block marked a fresh load modified, so save rewrote it."""
+    storage = StorageFS(str(tmp_path))
+    storage.put("dists/bookworm/Release", _release_blob())
+    r = Release(storage, _params())
+
+    r.load()
+
+    assert r.digests
+    assert r.modified is False
+    assert r.save() is None
+
+
+def test_reset_restores_a_fresh_release() -> None:
+    """Regression: a reset root kept `is_root`, so its next save went to the root paths."""
+    fresh = Release(MagicMock(), _params())
+    r = Release(fresh.storage, fresh.params)
+    r.setup(fields={"Origin": "test"})
+
+    r.reset()
+
+    shared = {"storage", "params", "gpg"}
+    assert {k: v for k, v in vars(r).items() if k not in shared} == {
+        k: v for k, v in vars(fresh).items() if k not in shared
+    }
+
+
 _ROOT = "dists/bookworm"
 
 

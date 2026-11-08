@@ -165,6 +165,7 @@ class Release(HexDigests):
         self.hashfuns = []
         self.hash = ""
         self.root_digests = {}
+        self.is_root = False
 
     def __copy__(self) -> "Release":
         """Create a copy of this Release whose digest records are its own.
@@ -453,6 +454,9 @@ class Release(HexDigests):
         if data:
             self.parse(data)
             self.hash = hashlib.sha256(data).hexdigest()
+        # parsing records the digest block through `update_digests`, yet a freshly loaded
+        # Release matches its storage until something changes it
+        self.modified = False
         if self.hashfuns:
             logger.debug("Available hexdigests: %s", self.hashfuns)
 
