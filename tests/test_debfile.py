@@ -154,11 +154,57 @@ def test_get_package_without_component_uses_flat_pool_path() -> None:
         (b"Version: 1.0\n", "foo_1.0_amd64.deb"),
         (b"Package: ../../../contrib/h/hello\n", "hello_1.0_amd64.deb"),
         (b"Package: Foo\n", "foo_1.0_amd64.deb"),
-        (b"Package: foo\n", "../foo_1.0_amd64.deb"),
+        (b"Package: foo\n", "incoming/.."),
+        (b"Package: foo\nSource: ../../../contrib/h/hello\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nSource: Foo (1.0)\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nSource: foo (1.0\n", "foo_1.0_amd64.deb"),
+        (b"Package: foo\nSource:\n", "foo_1.0_amd64.deb"),
     ],
-    ids=["missing-package", "traversing-package", "non-policy-name", "traversing-upload-path"],
+    ids=[
+        "missing-package",
+        "traversing-package",
+        "non-policy-name",
+        "traversing-upload-name",
+        "traversing-source",
+        "non-policy-source",
+        "unclosed-source-version",
+        "empty-source",
+    ],
 )
 def test_get_package_refuses_a_name_that_steers_the_pool_key(control: bytes, path: str) -> None:
     deb = DebFile(_streaming(control), path, comp="main")
     with pytest.raises(DebFileException):
         deb.get_package()
+
+
+@pytest.mark.parametrize(
+    ("control", "path", "expected"),
+    [
+        (b"Package: foo\n", "incoming/foo_1.0_amd64.deb", "pool/main/f/foo/foo_1.0_amd64.deb"),
+        (
+            b"Package: libfoo1\nSource: foo\n",
+            "libfoo1_1.0_amd64.deb",
+            "pool/main/f/foo/libfoo1_1.0_amd64.deb",
+        ),
+        (
+            b"Package: libbar1\nSource: libbar\n",
+            "libbar1_1.0_amd64.deb",
+            "pool/main/libb/libbar/libbar1_1.0_amd64.deb",
+        ),
+        (
+            b"Package: libfoo1\nSource: foo (1.2-1)\n",
+            "libfoo1_1.0_amd64.deb",
+            "pool/main/f/foo/libfoo1_1.0_amd64.deb",
+        ),
+    ],
+    ids=["package-as-source", "source-field", "lib-prefix", "source-version-stripped"],
+)
+def test_get_package_files_a_real_deb_under_its_source_package(
+    tmp_path: Path, control: bytes, path: str, expected: str
+) -> None:
+    storage = StorageFS(str(tmp_path))
+    storage.put(path, make_deb(control + b"Version: 1.0\nArchitecture: amd64\n"))
+
+    pkg = DebFile(storage, path, comp="main").get_package()
+
+    assert pkg.fields["Filename"] == expected

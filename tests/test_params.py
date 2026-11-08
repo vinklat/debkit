@@ -9,7 +9,13 @@ import logging
 
 import pytest
 
-from debkit.repo.params import SOURCE_ARCH, RepoParams, RepoParamsException, is_valid_arch
+from debkit.repo.params import (
+    SOURCE_ARCH,
+    RepoParams,
+    RepoParamsException,
+    is_valid_arch,
+    pool_path,
+)
 
 
 def test_componented_source_parses() -> None:
@@ -240,3 +246,21 @@ def test_flat_source_with_a_path_like_dist_parses() -> None:
     params = RepoParams()
     params.from_deb_source("fs:///r ./")
     assert params.is_flat is True
+
+
+@pytest.mark.parametrize(
+    ("comp", "source", "filename", "expected"),
+    [
+        ("main", "foo", "foo_1.0_amd64.deb", "pool/main/f/foo/foo_1.0_amd64.deb"),
+        ("main", "foo", "libfoo1_1.0_amd64.deb", "pool/main/f/foo/libfoo1_1.0_amd64.deb"),
+        ("main", "libbar", "libbar1_1.0_amd64.deb", "pool/main/libb/libbar/libbar1_1.0_amd64.deb"),
+        ("main", "lib", "lib_1.0_all.deb", "pool/main/l/lib/lib_1.0_all.deb"),
+        (None, "foo", "foo_1.0_amd64.deb", "pool/f/foo/foo_1.0_amd64.deb"),
+        ("main", "foo", "incoming/foo_1.0_amd64.deb", "pool/main/f/foo/foo_1.0_amd64.deb"),
+    ],
+    ids=["source", "binary-of-other-source", "lib-prefix", "bare-lib", "no-component", "nested"],
+)
+def test_pool_path_follows_the_debian_source_pool_layout(
+    comp: str | None, source: str, filename: str, expected: str
+) -> None:
+    assert pool_path(comp, source, filename) == expected

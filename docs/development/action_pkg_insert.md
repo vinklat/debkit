@@ -30,9 +30,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
-- An unsafe `.changes` entry, `Package` name, or pool path is refused before any transfer →
-  [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred digests differ
-  from its `.changes` entry is refused after it →
+- An unsafe `.changes` entry, `Package` or `Source` name, or pool path is refused before any
+  transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred
+  digests differ from its `.changes` entry is refused after it →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - `transfer_from` is the only path that writes package content; index files (`Packages`, `Release`,
   and its signatures) are emitted by `target.save()` only when the diff is non-empty →

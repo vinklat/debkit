@@ -19,9 +19,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# Debian Policy 5.6.1: the `Package` field becomes a pool directory, so it is held to the
-# policy name -> [VALIDATION.md](VALIDATION.md#filename-safety)
+# Debian Policy 5.6.1 and 5.6.7: the `Source` field, or `Package` without one, becomes a pool
+# directory, so both are held to the policy name -> [VALIDATION.md](VALIDATION.md#filename-safety)
 _PACKAGE_NAME = re.compile(r"[a-z0-9][a-z0-9+.-]+")
+
+# A binary package built from a source of another version names it as `Source: <name> (<version>)`
+_SOURCE_VERSION = re.compile(r"\s+\([^()]*\)$")
 
 
 class DebFileException(Exception):
@@ -92,12 +95,13 @@ class DebFile:
     def get_package(self) -> "Package":
         """Get control data from the Debian package.
 
-        The control file comes from the upload, so its `Package` field and the upload path
-        are checked before they name a pool key; nothing has been transferred yet.
+        The control file comes from the upload, so its `Package` and `Source` fields and the
+        upload path are checked before they name a pool key; nothing has been transferred yet.
 
         Raises:
             DebFileException: If the control file is not a bytes object.
             DebFileException: If the `Package` field is missing or not a policy name.
+            DebFileException: If the `Source` field, without its version, is not a policy name.
             DebFileException: If the pool key would be an unsafe storage path.
 
         Returns:
@@ -112,8 +116,11 @@ class DebFile:
         pkg_name = package.fields.get("Package")
         if not isinstance(pkg_name, str) or not _PACKAGE_NAME.fullmatch(pkg_name):
             raise DebFileException(f"{self.path} names no valid Package: {pkg_name!r}")
+        source = _SOURCE_VERSION.sub("", str(package.fields.get("Source", pkg_name)))
+        if not _PACKAGE_NAME.fullmatch(source):
+            raise DebFileException(f"{self.path} names no valid Source: {source!r}")
 
-        filename_field = pool_path(self.comp, pkg_name, self.path)
+        filename_field = pool_path(self.comp, source, self.path)
         if is_unsafe_path(filename_field):
             raise DebFileException(f"unsafe pool path for {self.path}: {filename_field!r}")
         self.filename_field = filename_field

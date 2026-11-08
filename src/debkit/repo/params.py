@@ -1,6 +1,7 @@
 """Class containing Debian repository parameters."""
 
 import logging
+import posixpath
 import re
 
 from txstore import is_unsafe_path, redact_url
@@ -50,22 +51,26 @@ def is_safe_name(name: str) -> bool:
     return name not in ("", ".") and not is_unsafe_path(name)
 
 
-def pool_path(comp: str | None, package: str, filename: str) -> str:
+def pool_path(comp: str | None, source: str, filename: str) -> str:
     """Build the pool key an inserted `.deb` lands on.
 
-    The key nests the upload under its first letter and package name, below the component
-    when one is given -> [VALIDATION.md](VALIDATION.md#filename-safety).
+    The key follows Debian's source pool layout: the upload's file name nests under its
+    source package and that name's prefix, `lib` plus the next letter for a `lib*` name and
+    the first letter otherwise, below the component when one is given
+    -> [VALIDATION.md](VALIDATION.md#filename-safety).
 
     Args:
         comp (str | None): Component name, or None for a pool without one.
-        package (str): The `Package` control field.
-        filename (str): The upload path inside the incoming storage.
+        source (str): The source package name, a Debian Policy name.
+        filename (str): The upload path inside the incoming storage; only its file name is
+            kept.
 
     Returns:
-        str: The pool key, e.g. `pool/main/f/foo/foo_1.0_amd64.deb`.
+        str: The pool key, e.g. `pool/main/libf/libfoo/libfoo1_1.0_amd64.deb`.
     """
     head = f"pool/{comp}" if comp is not None else "pool"
-    return f"{head}/{filename[0].lower()}/{package}/{filename}"
+    prefix = source[:4] if source.startswith("lib") and len(source) > 3 else source[0]
+    return f"{head}/{prefix}/{source}/{posixpath.basename(filename)}"
 
 
 def remove_prefix_from_path(path: str, prefix: str) -> str:

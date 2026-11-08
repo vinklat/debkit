@@ -164,7 +164,9 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | `Packages` index parse | Stanza `Filename`, POSIX-normalized, is not `.` and passes the unsafe-key rule. | Stanza dropped from the container and logged |
 | `Sources` payload | Stanza `Directory` and the joined payload key pass the unsafe-key rule. | → `PackagesException` (Read) |
 | Insert `Package` name | The `.deb` control `Package` field is present and a Debian Policy name, `^[a-z0-9][a-z0-9+.-]+$`, checked before the transfer. | → `DebFileException` (Read) |
-| Insert pool path | The pool key `pool/[<component>/]<first letter>/<package>/<upload path>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
+| Insert source name | The control `Source` field, a trailing ` (<version>)` stripped, else the `Package` field, is a Debian Policy name as above, checked before the transfer. | → `DebFileException` (Read) |
+| Insert pool path | The Debian source pool key `pool/[<component>/]<prefix>/<source>/<upload file name>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
+| Insert pool prefix | `lib` and the next letter for a source name longer than 3 starting with `lib`, else its first letter. | — |
 | `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Write) |
 | Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
 

@@ -22,6 +22,7 @@ from txstore import (
 from debkit.action import OutputType
 from debkit.action.action_pkg import ActionPkg
 from debkit.repo.debfile import DebFileException
+from debkit.repo.params import pool_path
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 from debkit.repo.repo_rw import RepoRW
 
@@ -223,7 +224,7 @@ def _insert_into_real_repo(
         StorageFS(str(tmp_path / "repo")), make_params(verify_gpg=gpg is not None), gpg=gpg
     )
     instance = MagicMock()
-    instance.filename_field = f"pool/main/{name[0]}/{name}/{deb}"
+    instance.filename_field = pool_path("main", name, deb)
     instance.get_package.return_value = make_package(
         instance.filename_field, Package=name, Version="1.0", Architecture="amd64"
     )
