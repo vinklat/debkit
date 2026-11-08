@@ -5,8 +5,9 @@ from __future__ import annotations
 import bz2
 import gzip
 import lzma
+import re
 import zlib
-from collections.abc import Callable
+from collections.abc import Buffer, Callable
 from functools import partial
 from typing import NamedTuple, Protocol
 
@@ -40,8 +41,15 @@ class _Decoder(Protocol):
     def unused_data(self) -> bytes:
         """Input found after the end of the stream."""
 
-    def decompress(self, data: bytes, max_length: int, /) -> bytes:
+    def decompress(self, data: Buffer, max_length: int, /) -> bytes:
         """Decode `data`, returning at most `max_length` bytes."""
+
+
+# a fresh decoder first reads a small chunk, doubling up to the largest, so a stream's end
+# copies at most one chunk of what follows into `unused_data`
+_FIRST_CHUNK = 256
+_LARGEST_CHUNK = 1 << 20
+_NON_NUL = re.compile(rb"[^\0]")
 
 
 def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) -> bytes:
@@ -49,7 +57,9 @@ def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) ->
 
     Each decoder call is capped one byte past what is left, so a bomb stops as soon as it
     overflows instead of after it is fully inflated. NUL padding between streams is
-    skipped, as xz stream padding and the one-shot `gzip.decompress` allow.
+    skipped, as xz stream padding and the one-shot `gzip.decompress` allow. The input is
+    walked by offset in growing chunks, so many concatenated streams decode in linear time
+    instead of copying the rest of the input at every stream end.
 
     Args:
         new_decoder: Factory of a fresh decoder per stream.
@@ -63,16 +73,27 @@ def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) ->
     Returns:
         The decoded data of every stream, concatenated.
     """
+    view = memoryview(data)
     out = bytearray()
-    while data:
+    offset = 0
+    while offset < len(view):
         decoder = new_decoder()
-        out += decoder.decompress(data, max_size + 1 - len(out))
-        if len(out) > max_size:
-            raise SizeLimitError(f"decoded data exceeds {max_size} bytes")
-        # below the cap the decoder consumed all its input, so no eof means truncation
-        if not decoder.eof:
-            raise EOFError("Compressed data ended before the end-of-stream marker was reached")
-        data = decoder.unused_data.lstrip(b"\0")
+        step = _FIRST_CHUNK
+        while True:
+            chunk = view[offset : offset + step]
+            out += decoder.decompress(chunk, max_size + 1 - len(out))
+            if len(out) > max_size:
+                raise SizeLimitError(f"decoded data exceeds {max_size} bytes")
+            # below the cap the decoder consumed the whole chunk unless the stream ended in it
+            if decoder.eof:
+                offset += len(chunk) - len(decoder.unused_data)
+                break
+            offset += len(chunk)
+            if offset >= len(view):
+                raise EOFError("Compressed data ended before the end-of-stream marker was reached")
+            step = min(step * 2, _LARGEST_CHUNK)
+        match = _NON_NUL.search(data, offset)
+        offset = match.start() if match else len(view)
     return bytes(out)
 
 

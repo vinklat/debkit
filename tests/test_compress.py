@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import gzip
 import lzma
 import tracemalloc
+import zlib
+from collections.abc import Buffer
 
 import pytest
 
-from debkit.repo.compress import CODECS, Codec, SizeLimitError, codec_for
+from debkit.repo.compress import CODECS, Codec, SizeLimitError, _bounded, codec_for
 
 _DATA = b"Package: foo\nVersion: 1.0\n" * 32
 _COMPRESSED = [codec for codec in CODECS if codec.suffix]
@@ -50,6 +53,38 @@ def test_decompress_reads_concatenated_streams(codec: Codec) -> None:
     """Multi-stream xz/bz2 and multi-member gzip decode in full, as the one-shot decoders do."""
     encoded = codec.compress(_DATA) + codec.compress(b"tail")
     assert codec.decompress(encoded, len(_DATA) + 4) == _DATA + b"tail"
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_skips_nul_padding_between_many_streams(codec: Codec) -> None:
+    encoded = (codec.compress(b"x") + bytes(3)) * 50
+    assert codec.decompress(encoded, 50) == b"x" * 50
+
+
+def test_many_streams_are_fed_to_the_decoders_in_linear_total() -> None:
+    """Many tiny gzip members are not each handed the whole remaining input."""
+    fed: list[int] = []
+
+    class _Counting:
+        def __init__(self) -> None:
+            self._inner = zlib.decompressobj(wbits=31)
+
+        @property
+        def eof(self) -> bool:
+            return self._inner.eof
+
+        @property
+        def unused_data(self) -> bytes:
+            return self._inner.unused_data
+
+        def decompress(self, data: Buffer, max_length: int, /) -> bytes:
+            fed.append(len(memoryview(data)))
+            return self._inner.decompress(data, max_length)
+
+    encoded = gzip.compress(b"x", mtime=0) * 2000
+    assert _bounded(_Counting, encoded, 2000) == b"x" * 2000
+    # handing each member the rest of the input totals about 1000x the input
+    assert sum(fed) <= 16 * len(encoded)
 
 
 @pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
