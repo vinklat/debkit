@@ -66,7 +66,7 @@ def _install_pars(monkeypatch: pytest.MonkeyPatch, pars: Namespace) -> None:
 @pytest.mark.parametrize(
     ("command", "cls", "method", "expects_create_path"),
     [
-        ("list", "pkg", "list", False),
+        ("list", "pkg", "list_packages", False),
         ("dump", "pkg", "dump", False),
         ("stats", "pkg", "stats", False),
         ("insert", "pkg", "insert", True),
@@ -219,7 +219,7 @@ def test_main_exception_group_maps_to_exit(
 ) -> None:
     _install_prelude(monkeypatch)
     mock_pkg, _, _ = _install_actions(monkeypatch)
-    mock_pkg.return_value.list.side_effect = exc
+    mock_pkg.return_value.list_packages.side_effect = exc
     fake_pars.command = "list"
     _install_pars(monkeypatch, fake_pars)
 
@@ -253,7 +253,7 @@ def test_main_generic_group_exits_with_original_message(
 ) -> None:
     _install_prelude(monkeypatch)
     mock_pkg, _, _ = _install_actions(monkeypatch)
-    mock_pkg.return_value.list.side_effect = exc
+    mock_pkg.return_value.list_packages.side_effect = exc
     fake_pars.command = "list"
     _install_pars(monkeypatch, fake_pars)
 
@@ -300,7 +300,7 @@ def test_main_generic_group_logs_original_payload(
 ) -> None:
     _install_prelude(monkeypatch)
     mock_pkg, _, _ = _install_actions(monkeypatch)
-    mock_pkg.return_value.list.side_effect = exc
+    mock_pkg.return_value.list_packages.side_effect = exc
     fake_pars.command = "list"
     _install_pars(monkeypatch, fake_pars)
 

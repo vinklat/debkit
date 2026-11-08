@@ -1,6 +1,7 @@
 """Debian repo operations commands."""
 
-import builtins
+from __future__ import annotations
+
 import logging
 import re
 from copy import copy
@@ -43,7 +44,7 @@ DEFAULT_REPO_FIELDS = {"Architectures": "amd64 arm64 all", "Components": "main"}
 class ActionPkg(Action):
     """Actions with debian packages in repository."""
 
-    def __init__(self, pars: "Namespace", create_path: bool = False):
+    def __init__(self, pars: Namespace, create_path: bool = False):
         """Initialize ActionPkg.
 
         Args:
@@ -151,7 +152,7 @@ class ActionPkg(Action):
         json_formatted_str = dump_json(ret)
         print(json_formatted_str)
 
-    def list(self) -> None:
+    def list_packages(self) -> None:
         """List packages in repository to stdout."""
         self.target_repo.update()
 
@@ -161,7 +162,7 @@ class ActionPkg(Action):
             json_formatted_str = dump_json(list(self.target_repo.get_packages()))
             print(json_formatted_str)
 
-    def _binary_archs(self) -> builtins.list[str]:
+    def _binary_archs(self) -> list[str]:
         """Get the repository architectures a binary package can be inserted into.
 
         A mirrored `Sources` index is read-only, so `source` never receives a `.deb`
@@ -179,7 +180,7 @@ class ActionPkg(Action):
             if arch != SOURCE_ARCH and (arch or is_flat)
         ]
 
-    def _load_changes(self, incoming_storage: "Storage", changes_filename: str) -> Changes:
+    def _load_changes(self, incoming_storage: Storage, changes_filename: str) -> Changes:
         """Load and check a `.changes` upload, whose digests each listed `.deb` must match.
 
         Args:
@@ -283,9 +284,7 @@ class ActionPkg(Action):
         self._print_pkg(ret_diff)
 
     @staticmethod
-    def _target_archs(
-        filename: str, package: "Package", binary_archs: builtins.list[str]
-    ) -> builtins.list[str]:
+    def _target_archs(filename: str, package: Package, binary_archs: list[str]) -> list[str]:
         """Get the repository architectures one uploaded package is inserted into.
 
         Each package goes by its own control field, so neither the upload's field order
@@ -322,7 +321,7 @@ class ActionPkg(Action):
             )
         return archs
 
-    def _save_if_changed(self, prev_repo: "Repo") -> "RepoDiff":
+    def _save_if_changed(self, prev_repo: Repo) -> RepoDiff:
         """Diff the target against its state before the command and save it if it changed.
 
         Called inside the command's transaction, so the save is staged with the payloads.
@@ -338,7 +337,7 @@ class ActionPkg(Action):
             self.target_repo.save()
         return ret_diff
 
-    def _print_pkg(self, diff: "RepoDiff") -> None:
+    def _print_pkg(self, diff: RepoDiff) -> None:
         """Print an insert or remove diff in the selected output format.
 
         Args:
@@ -369,7 +368,7 @@ class ActionPkg(Action):
 
         self._print_pkg(ret_diff)
 
-    def _print_pkg_brief(self, diff: "RepoDiff") -> None:
+    def _print_pkg_brief(self, diff: RepoDiff) -> None:
         """Print package operation brief output.
 
         Args:
@@ -385,7 +384,7 @@ class ActionPkg(Action):
                 f"({naturalsize(self.target_repo.storage.metrics.write_bytes)}) transferred."
             )
 
-    def _print_pkg_json(self, diff: "RepoDiff") -> None:
+    def _print_pkg_json(self, diff: RepoDiff) -> None:
         """Print package operation json output.
 
         Args:
@@ -400,7 +399,7 @@ class ActionPkg(Action):
         print(dump_json(json_dict))
 
     @staticmethod
-    def add_insert_cli_args(parser: "EnvArgumentParser") -> None:
+    def add_insert_cli_args(parser: EnvArgumentParser) -> None:
         """Add arguments for insert.
 
         Args:
@@ -442,7 +441,7 @@ class ActionPkg(Action):
         )
 
     @staticmethod
-    def add_remove_cli_args(parser: "EnvArgumentParser") -> None:
+    def add_remove_cli_args(parser: EnvArgumentParser) -> None:
         """Add arguments for delete.
 
         Args:

@@ -1,5 +1,7 @@
 """Repository diff class."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,7 +33,7 @@ class RepoDiff:
         self.updated_pkgs: dict[str, dict[str, list[Package]]] = {}
         self.old_versions_pkgs: dict[str, dict[str, list[Package]]] = {}
 
-    def dump(self) -> dict[str, dict[str, dict[str, list["Package"]]]]:
+    def dump(self) -> dict[str, dict[str, dict[str, list[Package]]]]:
         """Dump RepoDiff to dict.
 
         Returns:
@@ -48,10 +50,10 @@ class RepoDiff:
         self,
         component: str,
         arch: str,
-        added: dict[str, "Package"],
-        removed: dict[str, "Package"],
-        updated: dict[str, "Package"],
-        old_versions: dict[str, "Package"],
+        added: dict[str, Package],
+        removed: dict[str, Package],
+        updated: dict[str, Package],
+        old_versions: dict[str, Package],
     ) -> None:
         """Update RepoDiff with new data.
 
@@ -68,7 +70,7 @@ class RepoDiff:
         self.updated_pkgs.setdefault(component, {})[arch] = list(updated.values())
         self.old_versions_pkgs.setdefault(component, {})[arch] = list(old_versions.values())
 
-    def get_pkgs_to_copy(self) -> list["Package"]:
+    def get_pkgs_to_copy(self) -> list[Package]:
         """Get list of packages to copy.
 
         Returns:
@@ -99,7 +101,7 @@ class RepoDiff:
         """
         return {str(pkg) for pkg in self.get_pkgs_to_copy()}
 
-    def get_pkgs_to_remove(self) -> list["Package"]:
+    def get_pkgs_to_remove(self) -> list[Package]:
         """Get list of packages to remove.
 
         Returns:

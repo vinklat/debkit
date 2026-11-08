@@ -563,7 +563,7 @@ def test_stats_json_reports_package_and_index_totals(
 def test_list_brief_prints_one_filename_per_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _view_action(tmp_path, OutputType.brief).list()
+    _view_action(tmp_path, OutputType.brief).list_packages()
 
     assert sorted(capsys.readouterr().out.split()) == [_HELLO, _WORLD]
 
@@ -571,7 +571,7 @@ def test_list_brief_prints_one_filename_per_line(
 def test_list_json_prints_the_fields_of_every_package(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _view_action(tmp_path, OutputType.json).list()
+    _view_action(tmp_path, OutputType.json).list_packages()
 
     packages = json.loads(capsys.readouterr().out)
     assert sorted(pkg["Filename"] for pkg in packages) == [_HELLO, _WORLD]
@@ -583,7 +583,7 @@ def test_list_json_prints_the_fields_of_every_package(
 def test_list_of_a_repository_without_packages_prints_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], output: OutputType, expected: str
 ) -> None:
-    _view_action(tmp_path, output, empty=True).list()
+    _view_action(tmp_path, output, empty=True).list_packages()
 
     assert capsys.readouterr().out == expected
 

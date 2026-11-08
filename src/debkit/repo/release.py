@@ -1,5 +1,7 @@
 """Class containing Debian Release file data."""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import re
@@ -8,7 +10,7 @@ from email import policy
 from email.message import EmailMessage
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from txstore import StorageNotFoundException, calc_digests, compare_digests
 
@@ -133,9 +135,7 @@ class Release(HexDigests):
             save writes and signs the layout's root paths, not the file it was read from.
     """
 
-    def __init__(
-        self, storage: "Storage", params: "RepoParams", gpg: "GnuPG | None" = None
-    ) -> None:
+    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Initialize Release object.
 
         Args:
@@ -167,7 +167,7 @@ class Release(HexDigests):
         self.root_digests = {}
         self.is_root = False
 
-    def __copy__(self) -> "Release":
+    def __copy__(self) -> Release:
         """Create a copy of this Release whose digest records are its own.
 
         `update_digests` mutates a record in place, so a record shared with the copy
@@ -474,9 +474,7 @@ class Release(HexDigests):
         self._parse_loaded(self._load_root_files(use_inrelease))
         logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
 
-    def load_component(
-        self, comp: str, arch: str, root_release: Optional["Release"] = None
-    ) -> bool:
+    def load_component(self, comp: str, arch: str, root_release: Release | None = None) -> bool:
         """Load the per-component Release of one architecture.
 
         Args:
@@ -683,7 +681,7 @@ class Release(HexDigests):
         except ValueError as exc:
             raise ReleaseFreshnessException(f"source {field} is {exc}") from None
 
-    def check_fresh_against(self, target: "Release", now: datetime) -> None:
+    def check_fresh_against(self, target: Release, now: datetime) -> None:
         """Refuse this source Release when it is expired or older than the target.
 
         A signature proves who signed a Release, not that it is current: a replayed

@@ -1,5 +1,7 @@
 """Class containing Debian Changes file data."""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import re
@@ -38,7 +40,7 @@ class Changes(HexDigests):
         fields (dict[str, str]): Parsed header fields from the changes file.
     """
 
-    def __init__(self, storage: "Storage") -> None:
+    def __init__(self, storage: Storage) -> None:
         """Initialize Changes object.
 
         Args:

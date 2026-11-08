@@ -3,6 +3,8 @@
 Method update() loads the repository.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from collections.abc import Generator
@@ -56,9 +58,7 @@ class Repo:
         modified (bool): True if the repo has been modified, False otherwise.
     """
 
-    def __init__(
-        self, storage: "Storage", params: "RepoParams", gpg: "GnuPG | None" = None
-    ) -> None:
+    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Init repo object.
 
         Args:
@@ -80,7 +80,7 @@ class Repo:
             params.components,
         )
 
-    def __copy__(self) -> "Repo":
+    def __copy__(self) -> Repo:
         """Create a shallow copy of this Repo.
 
         Returns:
@@ -276,7 +276,7 @@ class Repo:
                         ret[comp_name][arch]["packages_bytes"] += int(package.fields["Size"])
         return ret
 
-    def get_packages(self) -> Generator["Package"]:
+    def get_packages(self) -> Generator[Package]:
         """Get all filenames of packeges in repository.
 
         Yields:
@@ -287,7 +287,7 @@ class Repo:
                 for _, package in packages.packages.items():
                     yield package
 
-    def diff(self, other_repo: "Repo") -> RepoDiff:
+    def diff(self, other_repo: Repo) -> RepoDiff:
         """Get the difference between this repo and another repo.
 
         Args:

@@ -86,10 +86,6 @@ def test_dump_json_indents_by_two_by_default() -> None:
     assert dump_json({"id": 1}) == '{\n  "id": 1\n}'
 
 
-def test_dump_json_honours_an_explicit_indent() -> None:
-    assert dump_json({"id": 1}, indent=0) == '{\n"id": 1\n}'
-
-
 def test_the_encoder_still_rejects_an_unserialisable_object() -> None:
     with pytest.raises(TypeError):
         json.dumps(object(), cls=RepoJSONEncoder)

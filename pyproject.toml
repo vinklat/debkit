@@ -85,6 +85,7 @@ convention = "google"
 
 [tool.ruff.lint.isort]
 known-first-party = ["debkit"]
+required-imports = ["from __future__ import annotations"]
 
 [tool.mypy]
 python_version = "3.13"

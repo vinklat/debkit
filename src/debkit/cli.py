@@ -7,6 +7,8 @@ r"""Command-line entry point: parse options, configure logging, dispatch, map er
  \__,_|\___|_.__/|_|\_\_|\__|
 """
 
+from __future__ import annotations
+
 import logging
 import sys
 
@@ -71,7 +73,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         match pars.command:
             case "list":
-                ActionPkg(pars).list()
+                ActionPkg(pars).list_packages()
             case "dump":
                 ActionPkg(pars).dump()
             case "stats":

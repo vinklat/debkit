@@ -3,6 +3,8 @@
 Inherits from Repo.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from email.utils import formatdate
@@ -30,9 +32,7 @@ class RepoRW(Repo):
         modified (bool): Whether the repo has been modified.
     """
 
-    def __init__(
-        self, storage: "Storage", params: "RepoParams", gpg: "GnuPG | None" = None
-    ) -> None:
+    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Initialize RepoRW.
 
         Args:
@@ -114,7 +114,7 @@ class RepoRW(Repo):
             self.modified = True
         return bool(removed)
 
-    def insert_pkg(self, component_name: str, arch: str, package: "Package") -> None:
+    def insert_pkg(self, component_name: str, arch: str, package: Package) -> None:
         """Add deb package object to the repo.
 
         A flat layout has one component slot, so ``component_name`` is ignored there and the
@@ -140,7 +140,7 @@ class RepoRW(Repo):
         self.modified = True
 
     def transfer_from(
-        self, source_storage: "Storage", path_src: str, path_dst: str | None = None
+        self, source_storage: Storage, path_src: str, path_dst: str | None = None
     ) -> dict[str, str]:
         """Transfer a file from an external storage into this repo's storage.
 

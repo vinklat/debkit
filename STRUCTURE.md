@@ -16,7 +16,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/_env.py` | The only reader of `os.environ` → [VALIDATION.md](VALIDATION.md#environment-values). |
 | `src/debkit/_logging.py` | `configure_logging()`: root handler, plain or JSON lines → [CONFIG.md](CONFIG.md#global-flags). |
 | `src/debkit/action/__init__.py` | `ActionException`, `open_storage()`, `storage_url()`, `history_retention()`, `verify_policy()`, the `attach_storage_*` helpers, `Action` base → [STORAGE.md](STORAGE.md#construction). |
-| `src/debkit/action/action_pkg.py` | `ActionPkg`: list, dump, stats, insert, remove. |
+| `src/debkit/action/action_pkg.py` | `ActionPkg`: list (`list_packages()`), dump, stats, insert, remove. |
 | `src/debkit/action/action_sync.py` | `ActionSync`: sync, check. |
 | `src/debkit/action/action_history.py` | `ActionHistory`: log, revert, prune → [STORAGE.md](STORAGE.md#history-commands). |
 | `src/debkit/repo/__init__.py` | `Repo` base: index loading and checksum verification → [CRYPTO.md](CRYPTO.md#verification-order). |

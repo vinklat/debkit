@@ -1,5 +1,7 @@
 """Class containing ``.deb`` file data."""
 
+from __future__ import annotations
+
 import logging
 import re
 import tarfile
@@ -53,7 +55,7 @@ class DebFile:
         control (bytes | str | None): Content of the ``control`` file in ``control.tar``.
     """
 
-    def __init__(self, storage: "Storage", path: str, comp: str | None = None) -> None:
+    def __init__(self, storage: Storage, path: str, comp: str | None = None) -> None:
         """Initialize DebFile object.
 
         Args:
@@ -90,7 +92,7 @@ class DebFile:
         with BytesIO(self.storage.get(self.path)) as fp:
             return _control_of(fp)
 
-    def get_package(self) -> "Package":
+    def get_package(self) -> Package:
         """Get control data from the Debian package.
 
         The control file comes from the upload, so its `Package` and `Source` fields and the

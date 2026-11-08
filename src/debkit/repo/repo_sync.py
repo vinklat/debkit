@@ -4,6 +4,8 @@
 which Release-listed indices it carries is decided in `index_selection`.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
@@ -86,9 +88,7 @@ class RepoSyncException(Exception):
 class RepoSync(Repo):
     """Class that extends Repo with sync functionality."""
 
-    def __init__(
-        self, storage: "Storage", params: "RepoParams", gpg: "GnuPG | None" = None
-    ) -> None:
+    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Initialize RepoSync.
 
         Args:
@@ -102,7 +102,7 @@ class RepoSync(Repo):
         self._owned_payloads_warned: set[str] = set()
 
     @classmethod
-    def over(cls, repo: Repo) -> "RepoSync":
+    def over(cls, repo: Repo) -> RepoSync:
         """Wrap a loaded `repo` in a `RepoSync` that checks the repo's own storage.
 
         The result aliases the repo's state: it shares `storage`, `params`, `release`,
@@ -225,7 +225,7 @@ class RepoSync(Repo):
 
         return ret
 
-    def build_sync_lists(self, target_repo: "RepoRW", indices_only: bool = False) -> SyncPlan:
+    def build_sync_lists(self, target_repo: RepoRW, indices_only: bool = False) -> SyncPlan:
         """Build filelists for sync.
 
         Process some optimizations for reduce copy and remove lists.
@@ -277,9 +277,9 @@ class RepoSync(Repo):
 
     def _plan_payloads(
         self,
-        diff: "RepoDiff",
+        diff: RepoDiff,
         indices: Collection[str],
-        target_repo: "RepoRW",
+        target_repo: RepoRW,
         existing_files: set[str],
         *,
         can_list: bool,
@@ -329,9 +329,9 @@ class RepoSync(Repo):
 
     def _reduce_copies(
         self,
-        packages: list["Package"],
+        packages: list[Package],
         copy_files: set[str],
-        target_repo: "RepoRW",
+        target_repo: RepoRW,
         existing_files: set[str],
     ) -> set[str]:
         """Drop the payloads the target already holds unchanged, as a terminated sync leaves them.
@@ -424,7 +424,7 @@ class RepoSync(Repo):
     def _indices_to_copy(
         self,
         indices: dict[str, IndexTarget],
-        target_repo: "RepoRW",
+        target_repo: RepoRW,
         existing_files: set[str],
         *,
         forced: bool,
@@ -457,12 +457,12 @@ class RepoSync(Repo):
         self,
         file: str,
         digests: dict[str, str],
-        target_repo: "RepoRW",
+        target_repo: RepoRW,
     ) -> bool:
         """Report whether the target already holds `file` with the expected digests.
 
         The digest-skip decision shared by packages and indices; normalization and
-        comparison stay in `hexdigest.py` -> [CRYPTO.md](CRYPTO.md#implementation-rules).
+        comparison stay in txstore's digest helpers -> [CRYPTO.md](CRYPTO.md#implementation-rules).
         The caller has already established that `file` exists in the target and that
         digest verification is on.
 
@@ -476,7 +476,7 @@ class RepoSync(Repo):
         """
         return compare_digests(digests, normalize_digests(target_repo.storage.get_metadata(file)))
 
-    def _index_path_is_safe(self, entry: "IndexEntry") -> bool:
+    def _index_path_is_safe(self, entry: IndexEntry) -> bool:
         """Report whether a Release-listed index path stays inside the repository.
 
         The digest block is remote metadata, so a hostile or malformed Release can
@@ -499,7 +499,7 @@ class RepoSync(Repo):
         self,
         file: str,
         digests: dict[str, str],
-        target_repo: "RepoRW",
+        target_repo: RepoRW,
     ) -> bool:
         """Report whether both root Releases record the same digests for an index.
 
@@ -525,7 +525,7 @@ class RepoSync(Repo):
     def _reduce_indices(
         self,
         indices: dict[str, IndexTarget],
-        target_repo: "RepoRW",
+        target_repo: RepoRW,
         existing_files: set[str],
     ) -> list[str]:
         """Drop indices the target already holds unchanged.
@@ -565,7 +565,7 @@ class RepoSync(Repo):
     def _transfer_file(
         self,
         file: str,
-        target_repo: "Repo",
+        target_repo: Repo,
         progress: tuple[int, int] | None = None,
         *,
         missing_ok: bool = False,
@@ -620,12 +620,12 @@ class RepoSync(Repo):
 
         return True
 
-    def _delete_file(self, file: str, target_repo: "Repo") -> None:
-        """Delete a file from this repo.
+    def _delete_file(self, file: str, target_repo: Repo) -> None:
+        """Delete `file` from `target_repo`.
 
         Args:
-            file (str): The file to delete.
-            target_repo (Repo): The target repo to delete from.
+            file (str): Object path to delete.
+            target_repo (Repo): Repository whose storage holds the file.
         """
         logger.info("Delete: %s", file)
         target_repo.storage.delete(file)
@@ -665,7 +665,7 @@ class RepoSync(Repo):
 
     def sync(
         self,
-        target_repo: "Repo",
+        target_repo: Repo,
         copy_list: list[str],
         delete_list: list[str],
         *,

@@ -1,5 +1,7 @@
 """Base class for Debian repo actions."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -54,7 +56,7 @@ def storage_url(url: str) -> str:
     return f"fs://{os.path.abspath(url)}"
 
 
-def open_storage(pars: "Namespace", url: str, create_path: bool = False) -> "Storage":
+def open_storage(pars: Namespace, url: str, create_path: bool = False) -> Storage:
     """Build the `Storage` for `url` from the resolved CLI options.
 
     The only `make_storage` call → [STORAGE.md](STORAGE.md#construction).
@@ -78,7 +80,7 @@ def open_storage(pars: "Namespace", url: str, create_path: bool = False) -> "Sto
     )
 
 
-def history_retention(pars: "Namespace") -> HistoryRetention:
+def history_retention(pars: Namespace) -> HistoryRetention:
     """Build the retention policy from the resolved ``--history-*`` options.
 
     Args:
@@ -101,7 +103,7 @@ class VerifyPolicy(NamedTuple):
     verify_digests: bool
 
 
-def verify_policy(pars: "Namespace") -> VerifyPolicy:
+def verify_policy(pars: Namespace) -> VerifyPolicy:
     """Resolve ``--skip-verify``, ``--skip-verify-ssl``, and ``--skip-verify-gpg``.
 
     Args:
@@ -118,13 +120,13 @@ def verify_policy(pars: "Namespace") -> VerifyPolicy:
 
 
 def attach_storage_repo(
-    pars: "Namespace",
+    pars: Namespace,
     url: str,
     create_path: bool = False,
     *,
     archs: list[str] | None = None,
     indices_exclude: list[str] | None = None,
-) -> tuple["Storage", RepoParams]:
+) -> tuple[Storage, RepoParams]:
     """Build a `Storage` and `RepoParams` pair from a deb-source URL.
 
     Args:
@@ -159,7 +161,7 @@ def attach_storage_repo(
     return storage, repo_params
 
 
-def attach_storage_plain(pars: "Namespace", url: str, create_path: bool = False) -> "Storage":
+def attach_storage_plain(pars: Namespace, url: str, create_path: bool = False) -> Storage:
     """Build a `Storage` from a plain (non-deb-source) URL.
 
     Args:
@@ -173,7 +175,7 @@ def attach_storage_plain(pars: "Namespace", url: str, create_path: bool = False)
     return open_storage(pars, url, create_path=create_path)
 
 
-def attach_storage_root(pars: "Namespace", url: str, create_path: bool = False) -> "Storage":
+def attach_storage_root(pars: Namespace, url: str, create_path: bool = False) -> Storage:
     """Build a `Storage` from the URL field of a deb source, ignoring dist/components.
 
     Root-scoped commands (`log`, `revert`) address the storage root only, so
@@ -217,12 +219,12 @@ class RepoJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def dump_json(obj: object, indent: int = 2) -> str:
-    """Serialize *obj* using RepoJSONEncoder so dump()-bearing objects work."""
-    return json.dumps(obj, cls=RepoJSONEncoder, indent=indent)
+def dump_json(obj: object) -> str:
+    """Serialize *obj* via RepoJSONEncoder, two-space indented, so dump()-bearing objects work."""
+    return json.dumps(obj, cls=RepoJSONEncoder, indent=2)
 
 
-def add_output_cli_args(parser: "EnvArgumentParser") -> None:
+def add_output_cli_args(parser: EnvArgumentParser) -> None:
     """Register ``--output`` on a subcommand parser.
 
     Args:
@@ -253,7 +255,7 @@ class Action:
 
     target_repo: RepoRW
 
-    def __init__(self, pars: "Namespace", create_path: bool = False):
+    def __init__(self, pars: Namespace, create_path: bool = False):
         """Initialize repo objects and storages.
 
         Args:
@@ -282,7 +284,7 @@ class Action:
 
         self._attach_repos(pars, create_path)
 
-    def _attach_repos(self, pars: "Namespace", create_path: bool) -> None:
+    def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
         """Open the target repository, verified and signed with `gpg`.
 
         A subclass that opens more repositories or narrows their selection overrides it.

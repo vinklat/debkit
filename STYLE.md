@@ -9,6 +9,8 @@ style conflicts. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
   where Ruff is silent, strict type hints, and Google-style docstrings for public symbols.
 - Ruff owns formatting, lint, and import order at line length 100: standard library, third-party
   (`txstore` among them), then `debkit`. Commands → [SETUP.md](SETUP.md#quality-gates).
+- Every module starts with `from __future__ import annotations` (Ruff `I002`); annotations use the
+  PEP 604 and PEP 585 forms, e.g. `str | None` and `list[str]` (Ruff `UP`).
 - mypy runs in strict mode with `warn_unreachable` over `src/debkit`, `tests`, and `scripts`;
   `# type: ignore` names its error code.
 - No commented-out code (Ruff `ERA`) and no `TODO`-style markers in code (Ruff `FIX`); record

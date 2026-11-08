@@ -3,6 +3,8 @@
 Pure functions over Release keys -> [VALIDATION.md](VALIDATION.md#index-selection).
 """
 
+from __future__ import annotations
+
 import fnmatch
 import logging
 import re

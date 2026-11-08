@@ -1,5 +1,7 @@
 """Class containing fields data from Debian package."""
 
+from __future__ import annotations
+
 import posixpath
 from typing import Any
 

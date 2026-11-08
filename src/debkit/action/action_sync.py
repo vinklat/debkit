@@ -1,6 +1,6 @@
 """Sync (mirror) debian repo from source to target storage."""
 
-# pylint: disable=duplicate-code
+from __future__ import annotations
 
 import logging
 from argparse import BooleanOptionalAction
@@ -59,7 +59,7 @@ class ActionSync(Action):
         fix (bool): Fix inconsistencies if True.
     """
 
-    def __init__(self, pars: "Namespace", create_path: bool = False):
+    def __init__(self, pars: Namespace, create_path: bool = False):
         """Initialize ActionSync.
 
         Args:
@@ -89,7 +89,7 @@ class ActionSync(Action):
         self.indices_only: bool = getattr(pars, "indices_only", False)
         self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
 
-    def _attach_repos(self, pars: "Namespace", create_path: bool) -> None:
+    def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
         """Open the `sync` source, then the target, each with the selection applied.
 
         `check` has no `--source-url`. A `sync` overwrites the target, so the target
@@ -119,7 +119,7 @@ class ActionSync(Action):
             storage, params, gpg=self.gpg if self.source_repo is None else None
         )
 
-    def _print_sync_brief(self, diff: "RepoDiff") -> None:
+    def _print_sync_brief(self, diff: RepoDiff) -> None:
         """Print sync brief output.
 
         Args:
@@ -132,7 +132,7 @@ class ActionSync(Action):
             f"({naturalsize(self.target_repo.storage.metrics.write_bytes)}) transferred."
         )
 
-    def _print_sync_json(self, diff: "RepoDiff", source: RepoSync) -> None:
+    def _print_sync_json(self, diff: RepoDiff, source: RepoSync) -> None:
         """Print sync json output.
 
         Args:
@@ -224,7 +224,7 @@ class ActionSync(Action):
         else:
             self._print_sync_brief(ret_diff)
 
-    def _load_target(self) -> "Release":
+    def _load_target(self) -> Release:
         """Load the target repo, treating a missing or corrupt one as empty.
 
         A target that fails a checksum is reset, so nothing it recorded settles an
@@ -247,7 +247,7 @@ class ActionSync(Action):
         return copy(self.target_repo.release)
 
     @staticmethod
-    def _verify_existing(target: "RepoRW") -> None:
+    def _verify_existing(target: RepoRW) -> None:
         """Verify the loaded target's payloads, deleting each that fails.
 
         Runs inside the sync transaction, so the deletions are staged and recorded
@@ -313,7 +313,7 @@ class ActionSync(Action):
 
         return status["errors_total"] == status["errors_fixed_total"]
 
-    def _check_target(self, target: "RepoRW") -> dict[str, int]:
+    def _check_target(self, target: RepoRW) -> dict[str, int]:
         """Check the loaded target against its own indices, fixing it with `--fix`.
 
         Args:
@@ -348,7 +348,7 @@ class ActionSync(Action):
         }
 
     @staticmethod
-    def add_selection_cli_args(parser: "EnvArgumentParser") -> None:
+    def add_selection_cli_args(parser: EnvArgumentParser) -> None:
         """Register the selection flags shared by the sync and check subcommands.
 
         A check builds its index and package sets the way a sync does, so both
@@ -378,7 +378,7 @@ class ActionSync(Action):
         )
 
     @staticmethod
-    def add_sync_cli_args(parser: "EnvArgumentParser") -> None:
+    def add_sync_cli_args(parser: EnvArgumentParser) -> None:
         """Add argparser arguments for sync.
 
         Args:
@@ -419,7 +419,7 @@ class ActionSync(Action):
         )
 
     @staticmethod
-    def add_check_cli_args(parser: "EnvArgumentParser") -> None:
+    def add_check_cli_args(parser: EnvArgumentParser) -> None:
         """Add argparser arguments for check.
 
         The selection flags come from `add_selection_cli_args`, which sync registers

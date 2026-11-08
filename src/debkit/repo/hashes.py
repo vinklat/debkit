@@ -4,6 +4,8 @@ The digest helpers and the algorithm-name lists come from `txstore`; this module
 is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 """
 
+from __future__ import annotations
+
 import re
 from typing import Any
 

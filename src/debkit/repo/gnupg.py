@@ -1,5 +1,7 @@
 """GnuPG signatures verify / create."""
 
+from __future__ import annotations
+
 import logging
 import re
 import tempfile
