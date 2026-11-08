@@ -21,7 +21,7 @@ from txstore import (
     TransactionModel,
 )
 
-from debkit.action import ActionException, OutputType
+from debkit.action import Action, ActionException, OutputType
 from debkit.action.action_history import ActionHistory
 
 # History file at the storage root, fixed by txstore's storage contract.
@@ -52,6 +52,11 @@ def storage(repo_dir: Path) -> StorageFS:
 @pytest.fixture
 def pars(repo_dir: Path) -> Namespace:
     return make_action_namespace(repo_dir, output=OutputType.brief, dry_run=False)
+
+
+def test_action_history_builds_no_repository() -> None:
+    """History commands address the storage root only, so they skip the repo setup of `Action`."""
+    assert not issubclass(ActionHistory, Action)
 
 
 # --------------------------------------------------------------------------- #

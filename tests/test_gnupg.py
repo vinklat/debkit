@@ -6,7 +6,6 @@ Tests mock the underlying ``gnupg.GPG`` to keep the matrix hermetic, per
 
 from __future__ import annotations
 
-from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,8 +14,8 @@ import pytest
 from debkit.repo.gnupg import GnuPG, GPGVerifyException, cleartext_body
 
 
-def _pars() -> Namespace:
-    return Namespace(gnupg_home=".gnupg", gnupg_keyring="trustedkeys.gpg", gnupg_passphrase="pw")
+def _gnupg(passphrase: str | None = "pw") -> GnuPG:
+    return GnuPG(".gnupg", "trustedkeys.gpg", passphrase)
 
 
 def _gpg_mock(verify_ok: bool = True, sign_out: str = "signed-bytes") -> MagicMock:
@@ -33,7 +32,20 @@ def _gpg_mock(verify_ok: bool = True, sign_out: str = "signed-bytes") -> MagicMo
 def test_init_keyring_failure_raises() -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG", side_effect=ValueError("bad keyring")):
         with pytest.raises(GPGVerifyException):
-            GnuPG(_pars())
+            _gnupg()
+
+
+def test_init_opens_the_given_home_and_keyring() -> None:
+    with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
+        _gnupg()
+    gpg_cls.assert_called_once_with(gnupghome=".gnupg", keyring="trustedkeys.gpg")
+
+
+def test_init_missing_gpg_binary_raises() -> None:
+    """python-gnupg raises OSError when it cannot run the gpg binary."""
+    with patch("debkit.repo.gnupg.gnupg.GPG", side_effect=OSError("Unable to run gpg (gpg)")):
+        with pytest.raises(GPGVerifyException, match="Cannot run gpg"):
+            _gnupg()
 
 
 def test_verify_inrelease_returns_the_signed_body() -> None:
@@ -43,14 +55,14 @@ def test_verify_inrelease_returns_the_signed_body() -> None:
         b"-----BEGIN PGP SIGNATURE-----\n...\n-----END PGP SIGNATURE-----\n"
     )
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=True)):
-        gpg = GnuPG(_pars())
+        gpg = _gnupg()
         out = gpg.verify(inrelease)
     assert out == b"Origin: example\nCodename: bookworm\n\n"
 
 
 def test_verify_invalid_signature_raises() -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=False)):
-        gpg = GnuPG(_pars())
+        gpg = _gnupg()
         with pytest.raises(GPGVerifyException):
             gpg.verify(b"not a signed message")
 
@@ -58,7 +70,7 @@ def test_verify_invalid_signature_raises() -> None:
 def test_verify_detached_cleans_tempfile_on_failure() -> None:
     mock_gpg = _gpg_mock(verify_ok=False)
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=mock_gpg):
-        gpg = GnuPG(_pars())
+        gpg = _gnupg()
         with pytest.raises(GPGVerifyException):
             gpg.verify(b"data", detach_sign=b"sig")
     args, _ = mock_gpg.verify_data.call_args
@@ -70,7 +82,7 @@ def test_verify_detached_cleans_tempfile_when_verify_data_raises() -> None:
     mock_gpg = _gpg_mock()
     mock_gpg.verify_data.side_effect = AttributeError("broken gnupg")
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=mock_gpg):
-        gpg = GnuPG(_pars())
+        gpg = _gnupg()
         with pytest.raises(GPGVerifyException):
             gpg.verify(b"data", detach_sign=b"sig")
     args, _ = mock_gpg.verify_data.call_args
@@ -80,18 +92,16 @@ def test_verify_detached_cleans_tempfile_when_verify_data_raises() -> None:
 
 def test_sign_returns_str() -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock()):
-        gpg = GnuPG(_pars())
+        gpg = _gnupg()
         assert gpg.sign(b"payload") == "signed-bytes"
 
 
-@pytest.mark.parametrize(("passphrase", "sent"), [("", None), ("pw", "pw")])
-def test_sign_sends_no_passphrase_when_empty(passphrase: str, sent: str | None) -> None:
+@pytest.mark.parametrize(("passphrase", "sent"), [("", None), (None, None), ("pw", "pw")])
+def test_sign_sends_no_passphrase_when_empty(passphrase: str | None, sent: str | None) -> None:
     """An empty passphrase must not reach gpg, which would read the data's first line as one."""
     mock_gpg = _gpg_mock()
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=mock_gpg):
-        pars = _pars()
-        pars.gnupg_passphrase = passphrase
-        GnuPG(pars).sign(b"Architectures: amd64\n", detach=True)
+        _gnupg(passphrase).sign(b"Architectures: amd64\n", detach=True)
     assert mock_gpg.sign.call_args.kwargs["passphrase"] == sent
 
 
@@ -170,6 +180,6 @@ def test_cleartext_body_rejects_malformed_framework(data: bytes) -> None:
 )
 def test_verify_rejects_data_after_signature(trailer: bytes) -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=True)):
-        gpg = GnuPG(_pars())
+        gpg = _gnupg()
         with pytest.raises(GPGVerifyException, match="after the signature"):
             gpg.verify(_SIGNED + trailer)

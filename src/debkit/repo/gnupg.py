@@ -4,12 +4,8 @@ import logging
 import re
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import gnupg
-
-if TYPE_CHECKING:
-    from argparse import Namespace
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -107,24 +103,27 @@ class GnuPG:
         passphrase (str | None): The passphrase for the signing key; None when empty.
     """
 
-    def __init__(self, pars: "Namespace") -> None:
-        """Initialize GnuPG object.
+    def __init__(self, home: str, keyring: str, passphrase: str | None) -> None:
+        """Open the keyring `keyring` in the GnuPG home `home`.
 
         Args:
-            pars (Namespace): Parsed CLI arguments providing gnupg_home, gnupg_keyring,
-                and gnupg_passphrase.
+            home (str): GnuPG home directory.
+            keyring (str): Keyring file, relative to `home`.
+            passphrase (str | None): Passphrase of the signing key; empty or None sends none.
 
         Raises:
-            GPGVerifyException: If the keyring cannot be opened.
+            GPGVerifyException: If the keyring cannot be opened or the gpg binary cannot be run.
         """
         try:
-            self.gnupg = gnupg.GPG(gnupghome=pars.gnupg_home, keyring=pars.gnupg_keyring)
+            self.gnupg = gnupg.GPG(gnupghome=home, keyring=keyring)
         except ValueError as exc:
             raise GPGVerifyException(f"Keyring error. {exc}") from exc
+        except OSError as exc:
+            raise GPGVerifyException(f"Cannot run gpg; is GnuPG installed? {exc}") from exc
 
         # An empty string would make python-gnupg pass `--passphrase-fd 0` without writing a
         # passphrase, so gpg reads the first line of the signed data as one and drops it.
-        self.passphrase: str | None = pars.gnupg_passphrase or None
+        self.passphrase: str | None = passphrase or None
         # logging.debug("GPG public key: %s", self.gnupg.list_keys())
 
     def verify(self, data: bytes, detach_sign: bytes | None = None) -> bytes:

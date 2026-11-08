@@ -212,6 +212,24 @@ def dump_json(obj: object, indent: int = 2) -> str:
     return json.dumps(obj, cls=RepoJSONEncoder, indent=indent)
 
 
+def add_output_cli_args(parser: "EnvArgumentParser") -> None:
+    """Register ``--output`` on a subcommand parser.
+
+    Args:
+        parser (EnvArgumentParser): The subcommand parser.
+    """
+    parser.add_env_argument(
+        "-o",
+        "--output",
+        env="DEBKIT_OUTPUT",
+        dest="output",
+        help="output format",
+        choices=list(OutputType),
+        default=OUTPUT_DEFAULT,
+        type=OutputType,
+    )
+
+
 class Action:
     """Base class for repo actions.
 
@@ -249,7 +267,7 @@ class Action:
                 "Release files are neither verified nor signed"
             )
         else:
-            self.gpg = GnuPG(pars)
+            self.gpg = GnuPG(pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase)
 
         if hasattr(pars, "source_url"):
             logging.debug("Prepare source URL: %s", pars.source_url)
@@ -266,23 +284,4 @@ class Action:
             target_storage,
             target_repo_params,
             gpg=self.gpg if self.source_repo is None else None,
-        )
-
-    @staticmethod
-    def add_output_cli_args(parser: "EnvArgumentParser") -> None:
-        """Add argparser arguments for options that affect output.
-
-        Args:
-            parser (ArgumentParser): The argument parser to which the arguments should
-                be added.
-        """
-        parser.add_env_argument(
-            "-o",
-            "--output",
-            env="DEBKIT_OUTPUT",
-            dest="output",
-            help="output format",
-            choices=list(OutputType),
-            default=OUTPUT_DEFAULT,
-            type=OutputType,
         )

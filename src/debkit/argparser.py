@@ -14,7 +14,7 @@ from txstore import HISTORY_KEEP_DEFAULT, HISTORY_MAX_AGE_DAYS_DEFAULT, get_supp
 from debkit import __version__
 from debkit._logging import LOG_LEVELS, LogFormat
 from debkit._options import EnvArgumentParser
-from debkit.action import Action
+from debkit.action import add_output_cli_args
 from debkit.action.action_history import ActionHistory
 from debkit.action.action_pkg import ActionPkg
 from debkit.action.action_sync import ActionSync
@@ -189,34 +189,34 @@ def build_parser() -> EnvArgumentParser:
     )
 
     dump_parser = subparsers.add_parser("dump", help="dump repository indices structure and data")
-    Action.add_output_cli_args(dump_parser)
+    add_output_cli_args(dump_parser)
 
     list_parser = subparsers.add_parser("list", help="list all packages from repository")
-    Action.add_output_cli_args(list_parser)
+    add_output_cli_args(list_parser)
 
     stats_parser = subparsers.add_parser("stats", help="show repository data statistics")
-    Action.add_output_cli_args(stats_parser)
+    add_output_cli_args(stats_parser)
 
     insert_parser = subparsers.add_parser("insert", help="insert packages to repository")
     ActionPkg.add_insert_cli_args(insert_parser)
-    Action.add_output_cli_args(insert_parser)
+    add_output_cli_args(insert_parser)
 
     remove_parser = subparsers.add_parser("remove", help="remove packages from repository")
     ActionPkg.add_remove_cli_args(remove_parser)
-    Action.add_output_cli_args(remove_parser)
+    add_output_cli_args(remove_parser)
 
     sync_parser = subparsers.add_parser("sync", help="sync data from other repository")
     ActionSync.add_sync_cli_args(sync_parser)
     ActionSync.add_selection_cli_args(sync_parser)
-    Action.add_output_cli_args(sync_parser)
+    add_output_cli_args(sync_parser)
 
     check_parser = subparsers.add_parser("check", help="check data consistency in repository")
     ActionSync.add_check_cli_args(check_parser)
     ActionSync.add_selection_cli_args(check_parser)
-    Action.add_output_cli_args(check_parser)
+    add_output_cli_args(check_parser)
 
     log_parser = subparsers.add_parser("log", help="show transaction history")
-    Action.add_output_cli_args(log_parser)
+    add_output_cli_args(log_parser)
 
     revert_parser = subparsers.add_parser("revert", help="revert latest committed transaction")
     ActionHistory.add_dry_run_cli_arg(revert_parser)
@@ -224,7 +224,7 @@ def build_parser() -> EnvArgumentParser:
     prune_parser = subparsers.add_parser("prune", help="prune old transactions from the history")
     ActionHistory.add_dry_run_cli_arg(prune_parser)
     ActionHistory.add_prune_cli_args(prune_parser)
-    Action.add_output_cli_args(prune_parser)
+    add_output_cli_args(prune_parser)
 
     return root_parser
 

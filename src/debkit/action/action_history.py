@@ -17,7 +17,6 @@ from txstore import (
 )
 
 from debkit.action import (
-    Action,
     ActionException,
     OutputType,
     attach_storage_root,
@@ -37,7 +36,7 @@ def _record(model: TransactionModel) -> dict[str, object]:
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
-class ActionHistory(Action):
+class ActionHistory:
     """Actions for transaction history: log, revert, and prune.
 
     Attributes:

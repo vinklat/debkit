@@ -24,6 +24,7 @@ from debkit.action import (
     ActionException,
     OutputType,
     RepoJSONEncoder,
+    add_output_cli_args,
     attach_storage_plain,
     attach_storage_repo,
     attach_storage_root,
@@ -97,21 +98,21 @@ def test_the_encoder_still_rejects_an_unserialisable_object() -> None:
 
 def test_add_output_cli_args_defaults_to_brief() -> None:
     parser = EnvArgumentParser()
-    Action.add_output_cli_args(parser)
+    add_output_cli_args(parser)
 
     assert parser.parse_args([]).output is OutputType.brief
 
 
 def test_add_output_cli_args_converts_the_value_to_the_enum() -> None:
     parser = EnvArgumentParser()
-    Action.add_output_cli_args(parser)
+    add_output_cli_args(parser)
 
     assert parser.parse_args(["--output", "json"]).output is OutputType.json
 
 
 def test_add_output_cli_args_rejects_an_unknown_format() -> None:
     parser = EnvArgumentParser()
-    Action.add_output_cli_args(parser)
+    add_output_cli_args(parser)
 
     with pytest.raises(SystemExit):
         parser.parse_args(["--output", "yaml"])
@@ -120,7 +121,7 @@ def test_add_output_cli_args_rejects_an_unknown_format() -> None:
 def test_add_output_cli_args_falls_back_to_its_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEBKIT_OUTPUT", "json")
     parser = EnvArgumentParser()
-    Action.add_output_cli_args(parser)
+    add_output_cli_args(parser)
 
     assert parser.parse_args([]).output is OutputType.json
     assert parser.parse_args(["--output", "brief"]).output is OutputType.brief
@@ -175,8 +176,18 @@ def test_action_init_does_not_warn_with_verification_on(
         patch("debkit.action.GnuPG") as gnupg,
         caplog.at_level(logging.WARNING),
     ):
-        action = Action(_pars(tmp_path, skip_verify=False, skip_verify_gpg=False))
+        action = Action(
+            _pars(
+                tmp_path,
+                skip_verify=False,
+                skip_verify_gpg=False,
+                gnupg_home="home",
+                gnupg_keyring="ring.gpg",
+                gnupg_passphrase="pw",
+            )
+        )
 
+    gnupg.assert_called_once_with("home", "ring.gpg", "pw")
     assert action.gpg is gnupg.return_value
     assert "verification skipped" not in caplog.text
 
