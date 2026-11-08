@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import logging
+from argparse import Namespace
 from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Any, cast
@@ -846,3 +847,16 @@ def test_init_refuses_an_architecture_token_that_is_not_an_architecture() -> Non
 
     with pytest.raises(ActionException, match="Invalid architecture"):
         _init_action(architectures="amd64,../x")
+
+
+def test_init_refuses_an_architecture_before_opening_any_storage() -> None:
+    """Regression: the refusal came after `create_path` had made the target path or bucket."""
+    from debkit.action import ActionException
+
+    with (
+        patch("debkit.action.action_sync.Action.__init__") as base_init,
+        pytest.raises(ActionException, match="Invalid architecture"),
+    ):
+        ActionSync(Namespace(architectures="../x", indices_exclude=""), create_path=True)
+
+    base_init.assert_not_called()

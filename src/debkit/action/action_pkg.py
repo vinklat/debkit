@@ -234,6 +234,7 @@ class ActionPkg(Action):
         """Insert packages into repository.
 
         Raises:
+            ActionException: If no incoming storage is set.
             ActionException: If both --changes-filename and --deb-filename are provided.
             ActionException: If neither --changes-filename nor --deb-filename are provided.
             ActionException: If the .deb filename does not end with '.deb'.
@@ -249,7 +250,7 @@ class ActionPkg(Action):
             )
 
         if self.incoming_storage is None:
-            return
+            raise ActionException("insert needs --incoming-url or DEBKIT_INCOMING_URL")
 
         # load or setup target repository
         try:

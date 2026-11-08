@@ -79,7 +79,18 @@ class ActionSync(Action):
         Args:
             pars (Namespace): Command line arguments from argparser.
             create_path (bool): Create path or bucket if True.
+
+        Raises:
+            ActionException: An `--architectures` token is not an architecture name; refused
+                before any storage is opened, so no target path or bucket is created.
         """
+        archs: list[str] | None = None
+        if getattr(pars, "architectures", "") != "":
+            archs = _split_csv(pars.architectures)
+            for arch in archs:
+                if not is_valid_arch(arch):
+                    raise ActionException(f"Invalid architecture: {arch!r}")
+
         super().__init__(pars, create_path=create_path)
         self.output: OutputType = pars.output if hasattr(pars, "output") else OutputType.brief
         self.fix: bool = pars.fix if hasattr(pars, "fix") else False
@@ -90,11 +101,7 @@ class ActionSync(Action):
         self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
 
         # force selected architectures from argparser
-        if getattr(pars, "architectures", "") != "":
-            archs = _split_csv(pars.architectures)
-            for arch in archs:
-                if not is_valid_arch(arch):
-                    raise ActionException(f"Invalid architecture: {arch!r}")
+        if archs is not None:
             if self.source_repo is not None:
                 self.source_repo.params.archs = archs
             self.target_repo.params.archs = archs

@@ -552,3 +552,15 @@ def test_list_of_a_repository_without_packages_prints_nothing(
     _view_action(tmp_path, output, empty=True).list()
 
     assert capsys.readouterr().out == expected
+
+
+def test_insert_without_incoming_storage_raises() -> None:
+    """Regression: a namespace without `incoming_url` returned silently with exit 0."""
+    from debkit.action import ActionException
+
+    action = _make_pkg_action()
+    action.deb_filename = "foo_1.0_amd64.deb"
+    action.incoming_storage = None
+
+    with pytest.raises(ActionException, match="incoming-url"):
+        action.insert()
