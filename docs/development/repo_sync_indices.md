@@ -21,7 +21,7 @@ Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 | Path safety | txstore | `is_unsafe_path()` rejects an unsafe index key → [VALIDATION.md](../../VALIDATION.md#filename-safety) |
 | Source payloads | `repo/sources.py` | `Sources` expands each stanza so payload files join the package set, unless a Release lists them |
 | Manifest | `repo/release.py` | `IndexEntry`, `Release.listed_indices()` over the digest block |
-| Selection | `repo/repo_sync.py` | `select_index_entry()` applies exclude, component, source, unparsed-index, and architecture rules; the last three read the key below its component |
+| Selection | `repo/index_selection.py` | `select_index_entry()` applies exclude, component, source, unparsed-index, and architecture rules; the last three read the key below its component |
 | Index set | `repo/repo_sync.py` | `RepoSync._get_indices()` builds path → `IndexTarget` (expected digests, and whether a parse proved the path) |
 | Copy reduction | `repo/repo_sync.py` | `RepoSync._reduce_indices()` drops indices the target already holds unchanged |
 | Transfer skip | `repo/repo_sync.py` | `RepoSync.sync()` skips an unproven index whose transfer finds it missing at the source |
@@ -123,11 +123,11 @@ filtered by selection rules and by what the source actually publishes.
 
 `tests/test_release.py` covers `listed_indices` across the three layouts; `tests/test_params.py`
 covers the `indices_path` / `release_key` round trip; `tests/test_storage_url.py` covers
-`is_unsafe_path`; `tests/test_sources.py` covers the `Sources` expansion; `tests/test_repo_sync.py`
-covers `select_index_entry`, the index set, skip, purge, and flat-layout behavior in
-`build_sync_lists`, and the transfer skip in `sync`; `tests/test_argparser.py` and
-`tests/test_action_sync.py` cover the flag and its hand-off to both repo params →
-[TESTING.md](../../TESTING.md#required-coverage).
+`is_unsafe_path`; `tests/test_sources.py` covers the `Sources` expansion;
+`tests/test_index_selection.py` covers `select_index_entry`; `tests/test_repo_sync.py` covers the
+index set, skip, purge, and flat-layout behavior in `build_sync_lists`, and the transfer skip in
+`sync`; `tests/test_argparser.py` and `tests/test_action_sync.py` cover the flag and its hand-off to
+both repo params → [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 

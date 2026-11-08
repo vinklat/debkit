@@ -71,7 +71,7 @@ its Release-listed path rather than a built one.
 
 ## Index selection
 
-Implemented by `select_index_entry()` in `repo/repo_sync.py`. The sync index set is the
+Implemented by `select_index_entry()` in `repo/index_selection.py`. The sync index set is the
 Release-listed paths, filtered by these rules and by the exclude globs below. Publication is settled
 per entry by its transfer; the source is never probed.
 
