@@ -16,7 +16,7 @@ from debkit.action import (
     attach_storage_plain,
     dump_json,
 )
-from debkit.argtypes import pkg_pattern_type
+from debkit.argtypes import component_type, pkg_pattern_type
 from debkit.repo.changes import Changes
 from debkit.repo.debfile import DebFile
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
@@ -411,6 +411,7 @@ class ActionPkg(Action):
             dest="component",
             help="component of Debian repo for incoming packages",
             default="main",
+            type=component_type,
         )
 
     @staticmethod

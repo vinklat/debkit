@@ -38,6 +38,9 @@ stripped before parsing.
 | Flat repository        | Two fields: `url`, `dist`; no components; `is_flat=True`; `indices_prefix=""`.    | —                                            |
 | Componented repository | Three or more fields: `url`, `dist`, components; `indices_prefix="dists/<dist>"`. | —                                            |
 | Input type             | A string.                                                                         | Non-string → `RepoParamsException` (Generic) |
+| Names | A componented source's dist and every component pass `is_safe_name()`: non-empty, not `.`, and the [unsafe-key rule](#filename-safety); `/` is allowed, as in `updates/main`. A flat dist names a directory only when it is a real dist. | → `RepoParamsException` (Generic) |
+| `--component` | `component_type()` in `argtypes.py` applies the same rule. | → `ArgumentTypeError` (Usage) |
+| Release `Components` token | A root Release token follows the same rule. | Dropped and logged |
 
 ## Distribution names
 

@@ -18,6 +18,7 @@ from txstore import (
     NO_ACL,
     BucketCannedACL,
     ObjectCannedACL,
+    is_unsafe_path,
     parse_bucket_acl,
     parse_object_acl,
 )
@@ -68,6 +69,17 @@ def positive_int_type(value: str) -> int:
 def history_max_age_type(value: str) -> int:
     """Parse a history age in days: ``0..HISTORY_MAX_AGE_LIMIT``, ``0`` disables pruning."""
     return _int_type(value, 0, HISTORY_MAX_AGE_LIMIT)
+
+
+def component_type(value: str) -> str:
+    """Parse a component name: non-empty, not ``.``, and no path-steering segment.
+
+    The same rule as `is_safe_name()` in `repo/params.py`, which `argtypes` may not import
+    → [VALIDATION.md](VALIDATION.md#debian-source-strings).
+    """
+    if value in ("", ".") or is_unsafe_path(value):
+        raise ArgumentTypeError(f"unsafe component name: {value!r}")
+    return value
 
 
 def object_acl_type(value: str) -> ObjectCannedACL | Literal["none"]:

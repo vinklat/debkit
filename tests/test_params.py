@@ -213,3 +213,30 @@ def test_is_valid_arch_accepts_debian_architectures(token: str) -> None:
 )
 def test_is_valid_arch_refuses_a_token_that_could_steer_a_path(token: str) -> None:
     assert not is_valid_arch(token)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "fs:///r ../../evil main",
+        "fs:///r bookworm ../x",
+        "fs:///r bookworm main /abs",
+        "fs:///r . main",
+    ],
+)
+def test_componented_source_with_an_unsafe_name_raises(source: str) -> None:
+    with pytest.raises(RepoParamsException, match="unsafe dist or component name"):
+        RepoParams().from_deb_source(source)
+
+
+@pytest.mark.parametrize("source", ["fs:///r bookworm/updates main", "fs:///r stable updates/main"])
+def test_componented_source_with_a_slashed_name_parses(source: str) -> None:
+    params = RepoParams()
+    params.from_deb_source(source)
+    assert params.is_flat is False
+
+
+def test_flat_source_with_a_path_like_dist_parses() -> None:
+    params = RepoParams()
+    params.from_deb_source("fs:///r ./")
+    assert params.is_flat is True

@@ -196,6 +196,14 @@ def test_get_components_falls_back_to_the_release_field() -> None:
     assert list(repo.get_components()) == ["main", "contrib"]
 
 
+def test_get_components_drops_an_unsafe_release_token(caplog: pytest.LogCaptureFixture) -> None:
+    repo = _repo(RepoParams(dist="bookworm"))
+    repo.release.fields = {"Components": "main .. ../../x contrib"}
+
+    assert list(repo.get_components()) == ["main", "contrib"]
+    assert "'../../x' is not a safe name" in caplog.text
+
+
 def test_get_components_defaults_to_the_flat_marker() -> None:
     repo = _repo(RepoParams(dist="bookworm"))
     repo.release.fields = {}

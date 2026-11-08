@@ -3,7 +3,7 @@
 import logging
 import re
 
-from txstore import redact_url
+from txstore import is_unsafe_path, redact_url
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -33,6 +33,21 @@ FLAT_COMPONENT = "/"
 # storage path, so anything else could steer that path
 # -> [VALIDATION.md](VALIDATION.md#architectures).
 _ARCH_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*")
+
+
+def is_safe_name(name: str) -> bool:
+    """Report whether a dist or component name is safe to build a storage path from.
+
+    A name may hold `/` (`updates/main`), but never a segment that steers the path out of
+    its directory -> [VALIDATION.md](VALIDATION.md#debian-source-strings).
+
+    Args:
+        name (str): A dist or component name.
+
+    Returns:
+        bool: True when the name is non-empty, not `.`, and passes the unsafe-key rule.
+    """
+    return name not in ("", ".") and not is_unsafe_path(name)
 
 
 def pool_path(comp: str | None, package: str, filename: str) -> str:
@@ -130,6 +145,7 @@ class RepoParams:
 
         Raises:
             RepoParamsException: If the deb source string is invalid.
+            RepoParamsException: If a componented source names an unsafe dist or component.
         """
         if not isinstance(deb_source, str):
             raise RepoParamsException("no debian source provided")
@@ -149,6 +165,10 @@ class RepoParams:
 
         url, self.dist, *components = parts
         self.url = url
+        # a flat dist names a directory only when it is a real dist, which is alphanumeric
+        for name in (self.dist, *components) if components else ():
+            if not is_safe_name(name):
+                raise RepoParamsException(f"unsafe dist or component name: {name!r}")
         if components:
             self.indices_prefix = f"dists/{self.dist}"
             self.components = components

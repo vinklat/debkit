@@ -13,7 +13,13 @@ from txstore import StorageException
 
 from debkit.repo.component import Component
 from debkit.repo.packages import Packages
-from debkit.repo.params import ARCH_ANY, FLAT_COMPONENT, RepoParams, is_valid_arch
+from debkit.repo.params import (
+    ARCH_ANY,
+    FLAT_COMPONENT,
+    RepoParams,
+    is_safe_name,
+    is_valid_arch,
+)
 from debkit.repo.release import Release
 from debkit.repo.repo_diff import RepoDiff
 
@@ -110,9 +116,15 @@ class Repo:
         if isinstance(self.params.components, list):
             yield from self.params.components
 
-        # try get from Release file
+        # try get from Release file; its tokens name storage directories, so an unsafe one
+        # is dropped like a bad architecture token
+        # -> [VALIDATION.md](VALIDATION.md#debian-source-strings)
         elif "Components" in self.release.fields:
-            yield from self.release.fields.get("Components", "").split()
+            for name in self.release.fields.get("Components", "").split():
+                if is_safe_name(name):
+                    yield name
+                else:
+                    logger.warning("Release component %r is not a safe name. Skipped.", name)
 
         else:
             yield FLAT_COMPONENT

@@ -12,6 +12,7 @@ from debkit.argtypes import (
     HISTORY_MAX_AGE_LIMIT,
     PKG_PATTERN_MAX_LENGTH,
     bucket_acl_type,
+    component_type,
     history_max_age_type,
     object_acl_type,
     pkg_pattern_type,
@@ -164,3 +165,14 @@ def test_pkg_pattern_type_rejects_repeated_overlapping_alternatives(pattern: str
 )
 def test_pkg_pattern_type_accepts_safe_patterns(pattern: str) -> None:
     assert pkg_pattern_type(json.dumps({"Package": pattern})) == {"Package": re.compile(pattern)}
+
+
+@pytest.mark.parametrize("value", ["main", "updates/main", "non-free-firmware"])
+def test_component_type_accepts_a_safe_name(value: str) -> None:
+    assert component_type(value) == value
+
+
+@pytest.mark.parametrize("value", ["", ".", "..", "../x", "/abs", "main?x"])
+def test_component_type_rejects_an_unsafe_name(value: str) -> None:
+    with pytest.raises(ArgumentTypeError, match="unsafe component name"):
+        component_type(value)
