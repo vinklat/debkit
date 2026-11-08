@@ -259,8 +259,10 @@ class RepoSync(Repo):
         """
         all_pkg_files = self._payload_files()
         copy_pkg_files = diff.get_filenames_to_copy() & all_pkg_files
-        # a vanished stanza naming an index must not delete what the index set keeps
-        remove_pkg_files = self._drop_release_owned(diff.get_filenames_to_remove())
+        # a vanished stanza naming an index must not delete what the index set keeps, and a
+        # payload dropped from one arch index stays while another source index lists it
+        # -> [VALIDATION.md](VALIDATION.md#index-selection)
+        remove_pkg_files = self._drop_release_owned(diff.get_filenames_to_remove()) - all_pkg_files
 
         # missing packages a previous failed sync left, and orphans; an unlisted target
         # proves neither

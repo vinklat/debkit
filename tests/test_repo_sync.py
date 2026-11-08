@@ -362,6 +362,22 @@ def test_build_sync_lists_duplicate_all_deb_across_archs() -> None:
     assert delete_list == []
 
 
+def test_build_sync_lists_keeps_a_payload_another_source_arch_still_lists() -> None:
+    """Regression: dropping a shared `all` .deb from one arch index deleted the payload."""
+    all_pkg = make_package("pool/main/c/ca-certs/ca-certs_1.0_all.deb", SHA256="aaa")
+    new_pkg = make_package("pool/main/f/foo/foo_2.0_amd64.deb", SHA256="bbb")
+    src, tgt = _two_repos(
+        src_components={"main": {"amd64": [new_pkg], "arm64": [all_pkg]}},
+        tgt_components={"main": {"amd64": [all_pkg], "arm64": [all_pkg]}},
+        tgt_list=["pool/main/c/ca-certs/ca-certs_1.0_all.deb", *INDICES],
+        tgt_metadata={"SHA256": "aaa"},
+    )
+
+    _, delete_list, _ = src.build_sync_lists(tgt)
+
+    assert "pool/main/c/ca-certs/ca-certs_1.0_all.deb" not in delete_list
+
+
 def test_build_sync_lists_duplicate_all_deb_inconsistent_digests_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
