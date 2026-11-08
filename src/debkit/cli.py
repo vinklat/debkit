@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import NoReturn
 
 import urllib3
 from txstore import StorageException
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def err_exit(message: object) -> None:
+def err_exit(message: object) -> NoReturn:
     """Log a critical message and exit with status 1.
 
     Args:
