@@ -1,7 +1,7 @@
 """Tests for action/__init__.py: the output enum, JSON encoder, shared CLI args, and the
 `attach_storage_*` helpers that turn the target URL into a storage.
 
-`make_storage()` URL dispatch itself is covered by `test_storage_factory.py`.
+`make_storage()` URL dispatch itself is txstore's; its tests cover it.
 """
 
 from __future__ import annotations

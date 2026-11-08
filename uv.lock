@@ -492,7 +492,6 @@ dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "responses" },
     { name = "ruff" },
 ]
 
@@ -511,7 +510,6 @@ dev = [
     { name = "mypy", specifier = ">=1.20.1,<2" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
-    { name = "responses", specifier = ">=0.25,<1" },
     { name = "ruff", specifier = ">=0.15.11,<1" },
 ]
 

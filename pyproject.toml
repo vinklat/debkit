@@ -47,7 +47,6 @@ dev = [
     "ruff>=0.15.11,<1",
     "mypy>=1.20.1,<2",
     "moto[s3,server]>=5.1,<6",
-    "responses>=0.25,<1",
 ]
 
 [tool.ruff]

@@ -11,7 +11,7 @@ apt-get install -y -qq --no-install-recommends \
     python3 python3-venv python3-pip python3-hatchling gnupg \
     python3-debian python3-gnupg python3-humanize python3-urllib3 \
     python3-boto3 python3-botocore python3-requests python3-pyxattr \
-    python3-moto python3-flask python3-flask-cors python3-responses \
+    python3-moto python3-flask python3-flask-cors \
     python3-pytest >/dev/null
 
 python3 --version

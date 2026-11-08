@@ -8,7 +8,7 @@ import io
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from typing import IO, cast
+from typing import IO, Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -321,6 +321,85 @@ def test_sync_refuses_a_root_release_copy_that_differs_from_the_verified_one(
 
     assert (tmp_path / "tgt" / _PREFIX / "Release").read_bytes() == target_before
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
+
+
+def test_sync_then_check_finds_the_mirror_consistent(tmp_path: Path) -> None:
+    """A real fs→fs sync leaves nothing missing or orphaned for `check` to report."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.fix = False
+
+    action.sync()
+
+    payload = tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb"
+    assert payload.read_bytes() == b"deb 3"
+    assert action.check() is True
+    payload.unlink()
+    assert action.check() is False
+
+
+def test_sync_to_s3_writes_objects_with_the_default_public_read_acl(
+    tmp_path: Path, moto_server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S3 smoke test: an fs → `s3://` sync on moto, every option at its CLI default.
+
+    `s3://` always means HTTPS, so the S3 storage `open_storage` asks for is built against the
+    plain-HTTP moto endpoint from the settings debkit resolved → STORAGE.md#construction.
+    """
+    boto3 = pytest.importorskip("boto3")
+    from txstore import StorageS3
+    from txstore import make_storage as real_make_storage
+
+    from debkit.argparser import parse_cli
+
+    def moto_make_storage(url: str, **settings: object) -> Storage:
+        if not url.startswith("s3://"):
+            return real_make_storage(url, **settings)  # type: ignore[arg-type]
+        bucket, _, prefix = url.removeprefix("s3://").split("/", 1)[1].partition("/")
+        return StorageS3(
+            moto_server,
+            bucket,
+            cast(str, settings["s3_access"]),
+            cast(str, settings["s3_secret"]),
+            prefix=prefix or None,
+            create_bucket=cast(bool, settings["create_path"]),
+            default_acl=cast(Any, settings["s3_default_acl"]),
+        )
+
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    monkeypatch.setenv("DEBKIT_S3_SECRET", "testing")
+    monkeypatch.setattr("debkit.action.make_storage", moto_make_storage)
+    pars = parse_cli(
+        [
+            "--target-url",
+            "s3://s3.example.com/debkit-smoke/mirror bookworm main",
+            "-u",
+            "testing",
+            "--skip-verify-gpg",
+            "sync",
+            "--source-url",
+            f"{tmp_path / 'src'} bookworm main",
+            "--architectures",
+            "amd64",
+        ]
+    )
+
+    ActionSync(pars, create_path=True).sync()
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=moto_server,
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        region_name="us-east-1",
+    )
+    deb = "mirror/pool/main/f/foo/foo_3_amd64.deb"
+    assert client.get_object(Bucket="debkit-smoke", Key=deb)["Body"].read() == b"deb 3"
+    grants = client.get_object_acl(Bucket="debkit-smoke", Key=deb)["Grants"]
+    assert {
+        "Type": "Group",
+        "URI": "http://acs.amazonaws.com/groups/global/AllUsers",
+    } in [grant["Grantee"] for grant in grants if grant["Permission"] == "READ"]
 
 
 def test_sync_floors_against_a_peer_commit_that_lands_before_the_lock(tmp_path: Path) -> None:
