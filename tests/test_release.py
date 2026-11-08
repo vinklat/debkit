@@ -414,7 +414,7 @@ def test_find_file_flat_real_dist_reads_the_root_release_setup_wrote() -> None:
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _flat_params())
-    assert r.load() is True
+    r.load()
     assert r.filename == "bookworm/Release"
 
 
@@ -605,7 +605,7 @@ def test_load_root_accepts_signed_forms_that_differ_only_where_gpg_does_not_sign
     files = {**_ROOT_FILES, "dists/bookworm/Release": release}
     r = Release(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
 
-    assert r.load() is True
+    r.load()
 
 
 def test_load_root_without_a_keyring_does_not_compare_the_signed_forms() -> None:
@@ -613,7 +613,7 @@ def test_load_root_without_a_keyring_does_not_compare_the_signed_forms() -> None
     files = {**_ROOT_FILES, "dists/bookworm/InRelease": _clearsigned(b"Origin: other\n")}
     r = Release(_root_storage(files), _params(verify_gpg=True))
 
-    assert r.load() is True
+    r.load()
     assert r.fields["Origin"] == "detached"
 
 
@@ -704,7 +704,7 @@ def test_load_root_reads_an_unsigned_release_when_signatures_are_not_checked(
     storage = _root_storage({"dists/bookworm/Release": _RELEASE_BODY})
     r = Release(storage, _params(verify_gpg=verify_gpg), gpg=gpg)
 
-    assert r.load() is True
+    r.load()
     assert r.fields["Origin"] == "detached"
     if gpg is not None:
         gpg.verify.assert_not_called()
@@ -715,7 +715,7 @@ def test_load_root_reads_an_inrelease_body_unverified_with_verification_disabled
     gpg = MagicMock()
     r = Release(_root_storage({"dists/bookworm/InRelease": _INRELEASE}), _params(), gpg=gpg)
 
-    assert r.load() is True
+    r.load()
     assert r.filename == "dists/bookworm/InRelease"
     assert r.fields["Origin"] == "inline"
     gpg.verify.assert_not_called()

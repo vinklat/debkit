@@ -28,7 +28,6 @@ class Package:
 
     Attributes:
         fields (Dict[str, Any]): The package fields.
-        modified (bool): True if the package fields have been modified, False otherwise.
     """
 
     def __init__(self, fields: dict[str, Any] | None = None) -> None:
@@ -38,15 +37,6 @@ class Package:
             fields (dict[str, Any] | None): Initial field values. Defaults to None.
         """
         self.fields: dict[str, Any] = fields if fields else {}
-        self.modified: bool = False
-
-    def __copy__(self) -> "Package":
-        """Create a shallow copy of this Package.
-
-        Returns:
-            Package: A shallow copy of this Package.
-        """
-        return Package(fields=self.fields.copy())
 
     def __repr__(self) -> str:
         """Return a string representation of the Package.
@@ -89,11 +79,7 @@ class Package:
                 raise PackageException(f"mandatory field '{test_field}' is missing: {self.fields}")
 
         # when relative path is used in Filename, it not work in some storages like S3
-        orig_filename = self.fields[FILENAME_FIELD_KEY]
-        norm_filename = os.path.normpath(orig_filename)
-        if norm_filename != orig_filename:
-            self.fields[FILENAME_FIELD_KEY] = norm_filename
-            self.modified = True
+        self.fields[FILENAME_FIELD_KEY] = os.path.normpath(self.fields[FILENAME_FIELD_KEY])
 
         for key in SINGLE_LINE_FIELDS:
             value = str(self.fields.get(key, ""))
@@ -116,7 +102,6 @@ class Package:
         if not filename:
             raise PackageException("filename is empty")
         self.fields[FILENAME_FIELD_KEY] = filename
-        self.modified = True
 
     def get_arch(self) -> str | None:
         """Get the architecture of the package.
@@ -161,7 +146,6 @@ class Package:
         """
         for alg, value in digests.items():
             self.fields[alg] = value
-        self.modified = True
 
     def compare(self, other: object) -> bool:
         """Compare this Package with another Package.

@@ -157,6 +157,7 @@ class Release(HexDigests):
 
     def reset(self) -> None:
         """Reset Release object to defaults."""
+        self.modified = False
         self.fields = {}
         self.digests = {}
         self.filename = None
@@ -455,7 +456,7 @@ class Release(HexDigests):
         if self.hashfuns:
             logger.debug("Available hexdigests: %s", self.hashfuns)
 
-    def load(self) -> bool:
+    def load(self) -> None:
         """Load the root Release file, verifying its signatures when they are checked.
 
         Raises:
@@ -463,15 +464,11 @@ class Release(HexDigests):
             ReleaseReadException: Signatures are checked and the root Release has none.
             GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
             ChecksumException: `Release` and `InRelease` carry different content.
-
-        Returns:
-            bool: Always True; a missing root Release raises.
         """
         use_inrelease, self.filename = self._find_root_files()
         self.is_root = True
         self._parse_loaded(self._load_root_files(use_inrelease))
         logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
-        return True
 
     def load_component(
         self, comp: str, arch: str, root_release: Optional["Release"] = None
@@ -526,14 +523,13 @@ class Release(HexDigests):
 
         if self.hashfuns:
             for hashfun in self.hashfuns:
-                hlist: list[str] = []
-                for filename, filesums in self.digests.items():
-                    try:
-                        hlist.append(
-                            " ".join([filesums[hashfun], f"{filesums['Size']:>16}", filename])
-                        )
-                    except KeyError as exc:
-                        logger.debug("key error: %s", exc)
+                # a record sits in the blocks its digests cover: a parsed upstream Release
+                # may list a file in one block only, and is written back the same way
+                hlist = [
+                    f"{filesums[hashfun]} {filesums['Size']:>16} {filename}"
+                    for filename, filesums in self.digests.items()
+                    if hashfun in filesums
+                ]
                 if hlist:
                     ret += f"\n{hashfun}:\n " + "\n ".join(hlist)
 

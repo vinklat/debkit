@@ -17,18 +17,11 @@ def test_package_parse_missing_mandatory_raises() -> None:
         pkg.parse("Package: foo\nSize: 1\n")
 
 
-def test_package_parse_normalises_relative_filename_sets_modified() -> None:
+@pytest.mark.parametrize("filename", ["pool/main/./foo.deb", "pool/main/foo.deb"])
+def test_package_parse_normalises_the_filename(filename: str) -> None:
     pkg = Package()
-    pkg.parse("Package: foo\nFilename: pool/main/./foo.deb\nSize: 1\n")
+    pkg.parse(f"Package: foo\nFilename: {filename}\nSize: 1\n")
     assert pkg.fields["Filename"] == "pool/main/foo.deb"
-    assert pkg.modified is True
-
-
-def test_package_parse_already_normalised_filename_does_not_set_modified() -> None:
-    pkg = Package()
-    pkg.parse("Package: foo\nFilename: pool/main/foo.deb\nSize: 1\n")
-    assert pkg.fields["Filename"] == "pool/main/foo.deb"
-    assert pkg.modified is False
 
 
 def test_package_exception_message_no_self_leak() -> None:

@@ -199,13 +199,8 @@ class ActionSync(Action):
                     logger.info("Nothing to sync.")
                     break
 
-                try:
-                    self.source_repo.sync(
-                        self.target_repo, copy_list, delete_list, unproven=unproven
-                    )
-                except ChecksumException as exc:
-                    logger.error("Checksum error: %s", exc)
-                    raise
+                # a ChecksumException propagates to discard the transaction; cli.py logs it
+                self.source_repo.sync(self.target_repo, copy_list, delete_list, unproven=unproven)
 
                 prev_hash = self.source_repo.release.hash
             else:

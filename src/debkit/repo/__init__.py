@@ -335,13 +335,11 @@ class Repo:
         Yields:
             Generator[Release]: The root Release, then every component Release.
         """
-        if isinstance(self.release, Release):
-            yield self.release
+        yield self.release
 
         for component in self.components.values():
             for packages in component.packages.values():
-                if isinstance(packages.release, Release):
-                    yield packages.release
+                yield packages.release
 
     def _release_owns(self, release_key: str) -> bool:
         """Report whether a signed Release digest block covers this key.
@@ -390,24 +388,20 @@ class Repo:
 
         # a package index is remote metadata, so a stanza naming a path the signed Release
         # also covers would define that path's content instead of the GPG-rooted Release.
-        # The Release owns every key inside its digest block; only paths outside it fall to
-        # the container lookup -> [CRYPTO.md](CRYPTO.md#verification-order)
-        if not self._release_owns(release_key):
-            # every container keys by the `Filename` field it parsed, so this is one dict
-            # lookup and a path no index names simply misses. A suffix gate here would have
-            # to track every compression `dpkg-source` emits
-            for component in self.components.values():
-                for packages in component.packages.values():
-                    if isinstance(packages, Packages):
-                        if packages.verify_checksum(filename, digests_incoming):
-                            return True
+        # The Release owns every key inside its digest block, keyed by the path it lists, and
+        # is checked against exactly the blocks that granted it that ownership
+        # -> [CRYPTO.md](CRYPTO.md#verification-order)
+        if self._release_owns(release_key):
+            return any(
+                release.verify_digests(release_key, digests_incoming)
+                for release in self._release_blocks()
+            )
 
-        # the `Packages` lookup above already ran on the raw path; every Release
-        # lookup below keys by the path the Release lists, whatever the suffix
-        filename = release_key
-
-        # the same blocks the ownership gate consults, so a key that skipped the stanza
-        # lookup is verified against exactly what granted it that skip
+        # only paths outside every block fall to the containers, each keyed by the `Filename`
+        # field it parsed, so this is one dict lookup and a path no index names simply misses.
+        # A suffix gate here would have to track every compression `dpkg-source` emits
         return any(
-            release.verify_digests(filename, digests_incoming) for release in self._release_blocks()
+            packages.verify_checksum(filename, digests_incoming)
+            for component in self.components.values()
+            for packages in component.packages.values()
         )

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import re
-from copy import copy
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -162,13 +161,6 @@ def test_component_load_source_arch_accepts_an_architecture_source_release() -> 
 # ---------------------------------------------------------------------------
 
 
-def test_component_copy_preserves_modified() -> None:
-    comp = _component()
-    comp.modified = True
-    other = copy(comp)
-    assert other.modified is True
-
-
 def test_component_is_flat_delegates_to_params() -> None:
     p = make_params(flat=True)
     comp = _component(params=p)
@@ -234,7 +226,6 @@ def test_component_remove_pkg_iterates_all_arches() -> None:
     }
     a.remove.assert_called_once()
     b.remove.assert_called_once()
-    assert comp.modified is True
 
 
 def test_component_remove_pkg_no_match_returns_false() -> None:
@@ -243,7 +234,6 @@ def test_component_remove_pkg_no_match_returns_false() -> None:
     a.remove.return_value = set()
     comp.packages = {"amd64": a}
     assert comp.remove_pkg({"Package": re.compile("x")}) == set()
-    assert comp.modified is False
 
 
 def test_component_remove_pkg_skips_the_read_only_source_container() -> None:
@@ -263,7 +253,6 @@ def test_component_remove_pkg_skips_the_read_only_source_container() -> None:
     assert comp.remove_pkg({"Package": re.compile("foo")}) == {"pool/foo.deb"}
 
     binary.remove.assert_called_once()
-    assert comp.modified is True
 
 
 def test_component_remove_pkg_returns_false_when_only_the_source_container_is_loaded() -> None:
@@ -271,7 +260,6 @@ def test_component_remove_pkg_returns_false_when_only_the_source_container_is_lo
     comp = _component()
     comp.packages = {"source": Sources(make_storage_mock(), make_params())}
     assert comp.remove_pkg({"Package": re.compile("foo")}) == set()
-    assert comp.modified is False
 
 
 # ---------------------------------------------------------------------------
@@ -279,14 +267,12 @@ def test_component_remove_pkg_returns_false_when_only_the_source_container_is_lo
 # ---------------------------------------------------------------------------
 
 
-def test_component_setup_creates_packages_per_arch_and_resets_modified() -> None:
+def test_component_setup_creates_packages_per_arch() -> None:
     comp = _component()
-    comp.modified = True
     with patch("debkit.repo.component.Packages") as PackagesCls:
         PackagesCls.side_effect = lambda *a, **kw: MagicMock()
         comp.setup(["amd64", "arm64"])
     assert set(comp.packages) == {"amd64", "arm64"}
-    assert comp.modified is False
 
 
 def test_component_insert_pkg_on_unknown_arch_creates_packages() -> None:
@@ -298,7 +284,6 @@ def test_component_insert_pkg_on_unknown_arch_creates_packages() -> None:
         comp.insert_pkg("amd64", pkg)
     pkgs_mock.setup.assert_called_once_with("main", "amd64")
     pkgs_mock.insert.assert_called_once_with(pkg)
-    assert comp.modified is True
 
 
 # ---------------------------------------------------------------------------

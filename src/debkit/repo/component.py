@@ -60,7 +60,6 @@ class Component:
         params (RepoParams): The parameters for the Component object.
         packages (Dict[str, Packages]): 'Packages' objects by architecture.
         root_release (Release): The release object.
-        modified (bool): True if the component has been modified, False otherwise.
         is_flat (bool): Read-only; delegates to ``params.is_flat``.
     """
 
@@ -78,7 +77,6 @@ class Component:
         self.packages: dict[str, Packages] = {}
         self.root_release = release
         self.name = name
-        self.modified = False
 
     @property
     def is_flat(self) -> bool:
@@ -107,7 +105,6 @@ class Component:
         """
         ret = Component(self.storage, self.params, root_release, self.name)
         ret.packages = {arch: copy(packages) for arch, packages in self.packages.items()}
-        ret.modified = self.modified
         return ret
 
     def load(self, archs: list[str], strict_arch: bool = False) -> int:
@@ -220,7 +217,6 @@ class Component:
             packages = container_for(arch)(self.storage, self.params)
             packages.setup(self.name, arch)
             self.packages[arch] = packages
-        self.modified = False
 
     def insert_pkg(self, arch: str, package: Package) -> None:
         """Add deb package object to the component.
@@ -244,7 +240,6 @@ class Component:
         logger.info("Insert package: %s %s", package, arch)
 
         self.packages[arch].insert(package)
-        self.modified = True
 
     def remove_pkg(self, fields_patterns: dict[str, re.Pattern[str]]) -> set[str]:
         """Drop matching packages from every arch index of the component; storage is untouched.
@@ -261,6 +256,4 @@ class Component:
         removed: set[str] = set()
         for packages in self.packages.values():
             removed |= packages.remove(fields_patterns)
-        if removed:
-            self.modified = True
         return removed

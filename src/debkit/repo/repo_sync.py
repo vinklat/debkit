@@ -628,7 +628,6 @@ class RepoSync(Repo):
         delete_list: list[str],
         *,
         unproven: Collection[str] = frozenset(),
-        depth: int = 0,
     ) -> None:
         """Sync this repo with another repo.
 
@@ -646,33 +645,29 @@ class RepoSync(Repo):
             delete_list (List[str]): The list of files to delete.
             unproven (Collection[str]): Paths in `copy_list` skipped when the source
                 lacks them, from `build_sync_lists`.
-            depth (int): The depth of the sync. Defaults to 0.
 
         Raises:
             RepoSyncException: If any object still fails after the retries.
             ChecksumException: If a transferred object does not match its expected
                 digests; it is never retried → [CRYPTO.md](CRYPTO.md#verification-failures).
         """
-        # break recursion if max retries reached
-        if depth >= TRANSFER_MAX_ERR_RETRIES:
-            logger.debug("failed packages: %s", copy_list)
+        # each pass retries only what the previous one failed; a transient error should not
+        # fail the whole run
+        pending = copy_list
+        for _ in range(TRANSFER_MAX_ERR_RETRIES):
+            total = len(pending)
+            pending = [
+                name
+                for cnt, name in enumerate(pending, start=1)
+                if not self._transfer_file(
+                    name, target_repo, progress=(cnt, total), missing_ok=name in unproven
+                )
+            ]
+            if not pending:
+                break
+        else:
+            logger.debug("failed packages: %s", pending)
             raise RepoSyncException("Max retries reached.")
-
-        failed_list: list[str] = []
-        total: int = len(copy_list)
-        cnt: int = 0
-        for name in copy_list:
-            cnt += 1
-            if not self._transfer_file(
-                name, target_repo, progress=(cnt, total), missing_ok=name in unproven
-            ):
-                failed_list.append(name)
-
-        # retry whatever failed; a transient error should not fail the whole run
-        if len(failed_list) > 0:
-            return self.sync(
-                target_repo, failed_list, delete_list, unproven=unproven, depth=depth + 1
-            )
 
         # delete objects
         for name in delete_list:
