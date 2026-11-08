@@ -32,6 +32,10 @@ logger.addHandler(logging.NullHandler())
 # -> [VALIDATION.md](VALIDATION.md#index-decoding)
 MAX_INDICES_BYTES = 256 * 1024 * 1024
 
+# Debian Policy 5.1: a stanza ends at a blank line, which may hold spaces or tabs
+# -> [VALIDATION.md](VALIDATION.md#index-decoding)
+_STANZA_SEPARATOR = re.compile(r"\n[ \t]*\n\s*")
+
 
 class PackagesException(Exception):
     """Exception raised for errors in the Packages class."""
@@ -122,6 +126,19 @@ class Packages:
         if not self.params.is_flat:
             self.release.setup_component(comp, arch)
 
+    @staticmethod
+    def _stanzas(data: str) -> list[str]:
+        """Split a decoded index into its stanzas, CRLF line ends read as LF.
+
+        Args:
+            data (str): The decoded index.
+
+        Returns:
+            List[str]: Every stanza holding more than whitespace, in index order.
+        """
+        blocks = _STANZA_SEPARATOR.split(data.replace("\r\n", "\n"))
+        return [block for block in blocks if block.strip()]
+
     def _parse_indices(self, data: str) -> int:
         """Read list of packages from data from Packages file.
 
@@ -133,11 +150,7 @@ class Packages:
         Returns:
             int: The number of packages parsed.
         """
-        blocks = re.split(r"\n{2,}", data)
-        for block in blocks:
-            if not block.strip():
-                continue
-
+        for block in self._stanzas(data):
             package = Package()
             pkg_name = package.parse(block)
 
@@ -145,9 +158,10 @@ class Packages:
                 continue
 
             # a Filename is remote metadata, so a hostile index can name a key outside the
-            # storage root; a rejected stanza is dropped rather than failing the load, so one
-            # bad record cannot stop a mirror -> [VALIDATION.md](VALIDATION.md#filename-safety)
-            if is_unsafe_path(pkg_name):
+            # storage root, or the root itself once an empty value is normalized to `.`; a
+            # rejected stanza is dropped rather than failing the load, so one bad record
+            # cannot stop a mirror -> [VALIDATION.md](VALIDATION.md#filename-safety)
+            if pkg_name == "." or is_unsafe_path(pkg_name):
                 logger.warning("%s named in an index is an unsafe package path. Skipped.", pkg_name)
                 continue
 

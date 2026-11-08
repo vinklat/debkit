@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import os
+import posixpath
 import re
 from email.parser import Parser
 from typing import Any
@@ -54,10 +54,7 @@ class Sources(Packages):
         Returns:
             int: The number of payload files known after parsing.
         """
-        for block in re.split(r"\n{2,}", data):
-            if not block.strip():
-                continue
-
+        for block in self._stanzas(data):
             for package in self._expand_stanza(block):
                 name = str(package)
                 previous = self.packages.get(name)
@@ -86,7 +83,7 @@ class Sources(Packages):
         """
         fields = dict(Parser().parsestr(block).items())
 
-        directory = os.path.normpath(fields.get("Directory", "").strip())
+        directory = posixpath.normpath(fields.get("Directory", "").strip())
         if not directory or directory == "." or is_unsafe_path(directory):
             raise PackagesException(
                 f"no usable Directory in Sources stanza: {fields.get('Package')}"

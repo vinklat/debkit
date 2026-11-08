@@ -115,12 +115,13 @@ per entry by its transfer; the source is never probed.
 
 ## Index decoding
 
-Implemented by `Packages.load()` in `repo/packages.py`, which `Sources` inherits, through the
-decoders in `repo/compress.py`.
+Implemented by `Packages.load()` and `Packages._stanzas()` in `repo/packages.py`, which `Sources`
+inherits, through the decoders in `repo/compress.py`.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Decompressed size | Decoding stops as soon as the output passes `MAX_INDICES_BYTES` (256 MiB), so a compression bomb is never inflated in full. | → `PackagesException` (Read) |
+| Stanza separation | A blank or whitespace-only line ends a stanza, as Debian Policy 5.1 allows; CRLF line ends are read as LF. | — |
 
 ## Package stanzas
 
@@ -160,7 +161,7 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | — |
 | `Packages.remove()` | Matched package filename passes the unsafe-key rule. | → `PackagesException` (Read) |
 | `RepoSync` index set | Release-listed index key and path pass the unsafe-key rule. | Entry dropped from the index set and logged |
-| `Packages` index parse | Stanza `Filename` passes the unsafe-key rule. | Stanza dropped from the container and logged |
+| `Packages` index parse | Stanza `Filename`, POSIX-normalized, is not `.` and passes the unsafe-key rule. | Stanza dropped from the container and logged |
 | `Sources` payload | Stanza `Directory` and the joined payload key pass the unsafe-key rule. | → `PackagesException` (Read) |
 | Insert `Package` name | The `.deb` control `Package` field is present and a Debian Policy name, `^[a-z0-9][a-z0-9+.-]+$`, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool path | The pool key `pool/[<component>/]<first letter>/<package>/<upload path>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |

@@ -64,6 +64,7 @@ def test_packages_parse_indices_trailing_blank_block_does_not_stop() -> None:
         "../outside/evil.deb",  # plain traversal
         "/etc/passwd",  # rooted key
         "http://evil/x.deb",  # scheme-form key
+        "./",  # normalizes to the storage root
     ],
 )
 def test_packages_parse_indices_drops_an_unsafe_filename(
@@ -81,6 +82,34 @@ def test_packages_parse_indices_drops_an_unsafe_filename(
     assert n == 0
     assert pkgs.packages == {}
     assert "unsafe package path" in caplog.text
+
+
+def test_packages_parse_indices_drops_an_empty_filename(caplog: pytest.LogCaptureFixture) -> None:
+    """An empty Filename normalizes to `.`, the storage root, and is dropped like an unsafe one."""
+    pkgs = _new_packages()
+    data = "Package: evil\nFilename:\nSize: 1\n\n" + make_packages_block("good")
+    with caplog.at_level(logging.WARNING):
+        n = pkgs._parse_indices(data)
+
+    assert n == 1
+    assert "." not in pkgs.packages
+    assert "unsafe package path" in caplog.text
+
+
+_FOO, _BAR = make_packages_block("foo"), make_packages_block("bar")
+
+
+@pytest.mark.parametrize(
+    "data",
+    [_FOO + " \n" + _BAR, _FOO + "\t\n" + _BAR, (_FOO + "\n" + _BAR).replace("\n", "\r\n")],
+    ids=["space", "tab", "crlf"],
+)
+def test_packages_parse_indices_splits_on_a_whitespace_only_line(data: str) -> None:
+    """Debian Policy 5.1 lets the separating line hold whitespace; CRLF line ends also split."""
+    pkgs = _new_packages()
+
+    assert pkgs._parse_indices(data) == 2
+    assert {package.fields["Package"] for package in pkgs.packages.values()} == {"foo", "bar"}
 
 
 def test_packages_parse_indices_keeps_a_legitimate_filename() -> None:

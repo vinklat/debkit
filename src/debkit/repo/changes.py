@@ -36,7 +36,6 @@ class Changes(HexDigests):
     Attributes:
         storage (Storage): Storage backend used to read the file.
         fields (dict[str, str]): Parsed header fields from the changes file.
-        hashfuns (list[str]): Hash algorithms found in the changes file.
     """
 
     def __init__(self, storage: "Storage") -> None:
@@ -47,7 +46,6 @@ class Changes(HexDigests):
         """
         self.storage = storage
         self.fields: dict[str, str] = {}
-        self.hashfuns: list[str] = []
         super().__init__()
 
     def parse(self, enc_data: bytes) -> None:
@@ -79,7 +77,6 @@ class Changes(HexDigests):
         if SHA256KEY not in self.fields:
             raise ChangesException("No SHA256 checksums found")
 
-        self.hashfuns.append("SHA256")
         for hashstr, size, filename in parse_hash_block(self.fields[SHA256KEY]):
             # a listed name is read from the incoming storage and names the pool key, so
             # it is a bare file name -> [VALIDATION.md](VALIDATION.md#filename-safety)

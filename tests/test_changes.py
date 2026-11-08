@@ -34,7 +34,6 @@ def test_parse_extracts_sha256_and_size() -> None:
 
     assert changes.digests["foo_1.0_amd64.deb"] == {"Size": "123", "SHA256": "deadbeef"}
     assert changes.digests["bar_1.0_all.deb"] == {"Size": "7", "SHA256": "cafebabe"}
-    assert changes.hashfuns == ["SHA256"]
 
 
 def test_parse_without_sha256_raises() -> None:

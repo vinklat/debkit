@@ -77,6 +77,16 @@ def test_sources_parse_expands_each_stanza_into_one_record_per_file() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "data",
+    [_STANZA_3 + " \n" + _STANZA_4, (_STANZA_3 + "\n" + _STANZA_4).replace("\n", "\r\n")],
+    ids=["whitespace-line", "crlf"],
+)
+def test_sources_parse_splits_on_a_whitespace_only_line(data: str) -> None:
+    """Sources shares the Packages stanza split: both stanzas load, not one merged block."""
+    assert _new_sources()._parse_indices(data) == 5
+
+
 def test_sources_parse_record_carries_the_stanza_fields_and_every_digest() -> None:
     """A payload record looks like a binary package record to every consumer."""
     src = _new_sources()

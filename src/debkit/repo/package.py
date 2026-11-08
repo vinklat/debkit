@@ -1,6 +1,6 @@
 """Class containing fields data from Debian package."""
 
-import os
+import posixpath
 from typing import Any
 
 from debian.deb822 import Deb822
@@ -78,8 +78,9 @@ class Package:
             if test_field not in self.fields:
                 raise PackageException(f"mandatory field '{test_field}' is missing: {self.fields}")
 
-        # when relative path is used in Filename, it not work in some storages like S3
-        self.fields[FILENAME_FIELD_KEY] = os.path.normpath(self.fields[FILENAME_FIELD_KEY])
+        # a storage key is a POSIX path whatever the host OS; a relative segment does not
+        # work in some storages like S3
+        self.fields[FILENAME_FIELD_KEY] = posixpath.normpath(self.fields[FILENAME_FIELD_KEY])
 
         for key in SINGLE_LINE_FIELDS:
             value = str(self.fields.get(key, ""))
