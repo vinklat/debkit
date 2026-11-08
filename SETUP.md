@@ -145,7 +145,5 @@ either tool are read by the other.
 | `--history-max-age` | Capped at 36500 days. |
 | Help | `--help` no longer prints secret values taken from the environment. |
 | Secret flags | `-t`/`--s3-secret` and `--gnupg-passphrase` are gone: set `DEBKIT_S3_SECRET` and `DEBKIT_GNUPG_PASSPHRASE` instead → [CONFIG.md](CONFIG.md#secrets). |
-| Pool layout | An inserted `.deb` lands in Debian's source pool layout under its source package name → [VALIDATION.md](VALIDATION.md#filename-safety). |
-| Existing pool keys | Keys written before the change stay valid. |
-| Re-inserting a version | Inserting an existing version again stores it under its new key and adds a second stanza. |
+| Pool layout | An inserted `.deb` lands in Debian's source pool layout under its source package name, not its upload path's first letter and `Package` name → [VALIDATION.md](VALIDATION.md#filename-safety). Old pool keys stay valid; re-inserting an existing version adds a second stanza under its new key. |
 | Signing without a passphrase | Fixed: with no `DEBKIT_GNUPG_PASSPHRASE`, gpg read the first line of the Release as the passphrase, so `Release.gpg` and `InRelease` signed the Release without it. Re-sign such a repository with any `insert` or `remove`. |
