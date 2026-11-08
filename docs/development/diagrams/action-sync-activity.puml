@@ -1,10 +1,5 @@
 @startuml
 start
-if (source_repo set?) then (no)
-  :raise ActionException;
-  stop
-endif
-
 if (allow_release_rollback?) then (yes)
   :log warning "Release freshness checks skipped";
 endif

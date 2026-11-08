@@ -16,14 +16,14 @@ through it or the `attach_storage_*` helpers built on it →
 
 | Input | Rule |
 | -- | -- |
-| URL | A value without `://` is a filesystem path, made absolute and prefixed with `fs://`; any other value passes to txstore unchanged → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| URL | `open_storage()` passes `storage_url()` of the value to `make_storage` → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | `create_path` | Set only on the write target of `insert`, `remove`, and `sync`: creates the S3 bucket or FS directory when missing. |
 | `--incoming-url` | Opened without `create_path`; a missing upload → `DebFileException` or `ChangesException` (Read). |
 | `verify_ssl` | `not (skip_verify or skip_verify_ssl)` → [CRYPTO.md](CRYPTO.md#verification-switches). |
 | `s3_access`, `s3_secret` | The resolved `--s3-access` and `DEBKIT_S3_SECRET` values, unset ones left to txstore → [CONFIG.md](CONFIG.md#resolution); an `s3://` URL missing either key is a construction failure below. |
 | `s3_default_acl` | `--s3-default-acl` → [CONFIG.md](CONFIG.md#storage-flags); its default is public because an apt repository serves its objects anonymously. |
 | `s3_bucket_acl` | `--s3-bucket-acl`, else none; never derived from the object ACL, since a public bucket ACL lists every key. |
-| Rejected URL | A URL txstore's rules reject → `RepoParamsException` (Generic) for every URL, wrapped by `open_storage()` → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| Rejected URL | → [VALIDATION.md](VALIDATION.md#storage-urls) |
 | Construction failure | `make_storage` raising `StorageException` (empty URL, no host, unresolved S3 key, uncreatable path): `--target-url` or `--source-url` → `RepoReadException` (Read). |
 | Construction failure, plain URL | The same on `--incoming-url` or a `log`, `revert`, or `prune` target → `StorageException` (Generic). |
 | Digest sink | `RepoRW.check` builds a `StorageNull` directly to digest a stored object without storing it again → [ROADMAP.md](ROADMAP.md#known-deviations). |

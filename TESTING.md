@@ -47,7 +47,7 @@ not copied here.
 | Actions | Orchestration, argument combinations, and error propagation. |
 | Action transactions | Begin and commit on success, discard on failure, and no-op on a non-transactional storage. |
 | Action retention | The retention policy built by `Action.__init__` reaches `maybe_transaction`. |
-| Storage construction | A bare path becomes an absolute `fs://` URL; the resolved flags reach `make_storage` → [STORAGE.md](STORAGE.md#construction). |
+| Storage construction | A bare path becomes an absolute `fs://` URL; the resolved flags reach `make_storage` → [VALIDATION.md](VALIDATION.md#storage-urls), [STORAGE.md](STORAGE.md#construction). |
 | History commands | `log`, `revert`, and `prune` output in brief and JSON, dry run, the guards → [STORAGE.md](STORAGE.md#history-commands). |
 | Repo classes | Parse and serialize round-trips, mutation invariants, checksum decisions, sync/diff behavior; the `Sources` expansion into one record per payload file and its refusal to write. |
 | Sync index set | A Release-listed index present at the source is copied, one absent there is skipped, and one already in the target is not purged. |

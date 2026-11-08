@@ -13,7 +13,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/argparser.py` | `build_parser()`, `parse_cli()`, the global and S3 flags → [CONFIG.md](CONFIG.md). |
 | `src/debkit/argtypes.py` | CLI type converters for flags and their variables → [VALIDATION.md](VALIDATION.md#principles). |
 | `src/debkit/_options.py` | `EnvArgumentParser`: options that fall back to a `DEBKIT_*` variable, then a default → [CONFIG.md](CONFIG.md#resolution). |
-| `src/debkit/_env.py` | The only reader of `os.environ` → [VALIDATION.md](VALIDATION.md#environment-values). |
+| `src/debkit/_env.py` | Environment access → [CONFIG.md](CONFIG.md#resolution); value rules → [VALIDATION.md](VALIDATION.md#environment-values). |
 | `src/debkit/_logging.py` | `configure_logging()`: root handler, plain or JSON lines → [CONFIG.md](CONFIG.md#global-flags). |
 | `src/debkit/action/__init__.py` | `ActionException`, `open_storage()`, `storage_url()`, `history_retention()`, `verify_policy()`, the `attach_storage_*` helpers, `Action` base → [STORAGE.md](STORAGE.md#construction). |
 | `src/debkit/action/action_pkg.py` | `ActionPkg`: list (`list_packages()`), dump, stats, insert, remove. |

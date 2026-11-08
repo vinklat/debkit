@@ -28,7 +28,7 @@ Tgt --> ActionPkg: archs
 ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]
 
 ActionPkg -> CM: __enter__(TStor)
-CM -> TStor: history_lock acquire\n[blocks; S3 times out after 300 s]
+CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 

@@ -26,8 +26,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   read failure stops the run, so an existing repository is never set up again →
   [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
-  concurrent writer on the same root waits and — on S3 — fails after the 300 s acquire timeout →
-  [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
+  concurrent writer on the same root waits and — on S3 — fails after txstore's lock acquire timeout
+  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - An unsafe `.changes` entry, `Package` or `Source` name, or pool path is refused before any
@@ -41,9 +41,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   footmark and leaves the live repository untouched → [STORAGE.md](../../STORAGE.md#transactions).
 - A non-transactional target skips begin, commit, and discard entirely; the same link explains why
   `FootmarkMixin` is the discriminator.
-- Escaped `ActionException`, `ValueError`, and `StorageException` reach the CLI as the Generic
-  group, a refused `.deb` (`DebFileException`) or `.changes` (`ChangesException`) as Read, and a
-  digest mismatch as Distrustful → [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).
+- A refused `.deb` or `.changes`, a digest mismatch, and an orchestration failure each exit through
+  their group; a builtin `ValueError` is in no group and surfaces as a traceback →
+  [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).
 
 ## Testing notes
 

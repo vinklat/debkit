@@ -1,9 +1,5 @@
 @startuml
 start
-if (pkg_pattern provided?) then (no)
-  :raise ValueError("No package pattern provided.");
-  stop
-endif
 note right
   argparse already compiled pkg_pattern
   (pkg_pattern_type); a bad pattern exits 2

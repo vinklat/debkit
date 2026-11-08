@@ -1,8 +1,8 @@
-# RepoSync index selection
+# Index selection
 
-Explains how [`RepoSync`](../../src/debkit/repo/repo_sync.py) decides which index files a mirror
-copies, and why that set is now read from the signed root `Release` instead of rebuilt by name.
-Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
+Explains how [`Repo`](../../src/debkit/repo/__init__.py) decides which index files a mirror copies
+and a `check` expects, and why that set is now read from the signed root `Release` instead of
+rebuilt by name. Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 [VALIDATION.md](../../VALIDATION.md#repository-index-paths) (index paths),
 [VALIDATION.md](../../VALIDATION.md#index-selection) (selection and skip rules),
 [VALIDATION.md](../../VALIDATION.md#index-exclude-globs) (exclude globs),
@@ -23,6 +23,7 @@ Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 | Manifest | `repo/release.py` | `IndexEntry`, `Release.listed_indices()` over the digest block |
 | Selection | `repo/index_selection.py` | `select_index_entry()` applies exclude, component, source, unparsed-index, and architecture rules; the last three read the key below its component |
 | Index set | `repo/__init__.py` | `Repo._get_indices()` builds path → `IndexTarget` (expected digests, and whether a parse proved the path) |
+| Shared root | `repo/__init__.py` | `shared_root_claims()` loads every other `dists/<dist>/`; `SharedRoot.deletable()` keeps what it claims |
 | Copy reduction | `repo/repo_sync.py` | `RepoSync._reduce_indices()` drops indices the target already holds unchanged |
 | Transfer skip | `repo/repo_sync.py` | `RepoSync.sync()` skips an unproven index whose transfer finds it missing at the source |
 | Flag wiring | `action/action_sync.py` | `--architectures` and `--indices-exclude` reach both repo params |
@@ -70,11 +71,12 @@ filtered by selection rules and by what the source actually publishes.
   nothing else to sync therefore copies and writes nothing, and an entry the source 404ed once is
   recovered by the next forced pass or by `--indices-only` →
   [VALIDATION.md](../../VALIDATION.md#index-selection).
-- The root `Release`, `Release.gpg`, and `InRelease` files are not listed in their own digest block,
-  so they map to no digests and always copy when the index pass runs →
-  [VALIDATION.md](../../VALIDATION.md#repository-index-paths). Each copy must match the bytes the
-  root Release load fetched and verified, so a source cannot pass the checks with one Release and
-  serve another → [CRYPTO.md](../../CRYPTO.md#verification-order).
+- The root `Release`, `Release.gpg`, and `InRelease` files the load found are not listed in their
+  own digest block, so they map to no digests and always copy when the index pass runs →
+  [VALIDATION.md](../../VALIDATION.md#repository-index-paths). A `Release.gpg` without a `Release`
+  is skipped by the load, so it is never mirrored → [CRYPTO.md](../../CRYPTO.md#gpg). Each copy must
+  match the bytes the root Release load fetched and verified, so a source cannot pass the checks
+  with one Release and serve another → [CRYPTO.md](../../CRYPTO.md#verification-order).
 - An architecture token is matched only against the architectures the repository knows: the selected
   set plus the root Release tokens, from `Repo.release_archs()`. A name part that merely looks like
   one, such as `dep11/icons-64x64.tar.gz`, is left alone, and `all` is always selected. Where
@@ -112,9 +114,11 @@ filtered by selection rules and by what the source actually publishes.
   `RepoParams.release_key()`, and a Release digest block decides a listed key →
   [CRYPTO.md](../../CRYPTO.md#verification-order).
 - Excluding an index with `--indices-exclude` also purges it from the target, because an object
-  outside the index set and outside the package set is an orphan. The globs reach every candidate,
-  including the `Packages` files found while parsing, so a glob wide enough to match one produces a
-  target apt cannot use → [VALIDATION.md](../../VALIDATION.md#index-exclude-globs).
+  outside the index set and outside the package set is an orphan, unless another dist sharing the
+  target root claims it → [VALIDATION.md](../../VALIDATION.md#index-selection). The globs reach
+  every candidate, including the `Packages` files found while parsing, so a glob wide enough to
+  match one produces a target apt cannot use →
+  [VALIDATION.md](../../VALIDATION.md#index-exclude-globs).
 - A Release-listed key that `is_unsafe_path()` rejects is dropped with a warning rather than
   raising, so one malformed or hostile record cannot stop a mirror →
   [VALIDATION.md](../../VALIDATION.md#filename-safety).

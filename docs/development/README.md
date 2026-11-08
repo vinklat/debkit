@@ -28,4 +28,4 @@ the repo and storage layers.
 | [action_pkg_insert.md](action_pkg_insert.md) | `ActionPkg.insert`: moving `.deb` packages from the incoming storage into the repository in one transaction. |
 | [action_pkg_remove.md](action_pkg_remove.md) | `ActionPkg.remove`: pattern-matched removal and the in-memory index rewrite. |
 | [action_sync.md](action_sync.md) | `ActionSync.sync`: mirroring with the source-stability retry loop and checksum abort. |
-| [repo_sync_indices.md](repo_sync_indices.md) | `RepoSync` index selection: the root Release as the mirror manifest, its filters, and the digest skip. |
+| [repo_sync_indices.md](repo_sync_indices.md) | `Repo` index selection: the root Release as the manifest a sync copies and a check verifies against, its filters, and the digest skip. |

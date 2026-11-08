@@ -21,8 +21,8 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 ## Details that matter
 
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
-  concurrent writer on the same root waits and — on S3 — fails after the 300 s acquire timeout →
-  [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
+  concurrent writer on the same root waits and — on S3 — fails after txstore's lock acquire timeout
+  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The target is loaded inside that body, so a peer that commits while this run waits for the lock is

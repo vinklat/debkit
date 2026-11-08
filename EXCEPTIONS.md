@@ -67,7 +67,7 @@ Exits outside the groups:
 | Release file cannot be signed | `ReleaseWriteException` (Write). |
 | Release file cannot be put | `StorageException` (Generic). |
 | `log` / `revert` / `prune` failures | → [STORAGE.md](STORAGE.md#history-commands) |
-| A storage URL txstore rejects (relative `fs://`, query, unknown scheme) | txstore's `ValueError`, wrapped by `open_storage()` as `RepoParamsException` (Generic) → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| A storage URL txstore refuses | → [VALIDATION.md](VALIDATION.md#storage-urls) |
 
 ## Maintenance
 

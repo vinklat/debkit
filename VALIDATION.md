@@ -21,9 +21,10 @@ including HTTP joins and the S3 path split.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Bare path | A value without `://` is a filesystem path, made absolute against the working directory and prefixed with `fs://`. | — |
+| Bare path | A value without `://` is a filesystem path, made absolute against the working directory and prefixed with `fs://`; any other value passes to txstore unchanged. | — |
 | `fs://` | The path is absolute: `fs:///srv/repo`. | `fs://relative` → `RepoParamsException` (Generic) |
 | Schemes | `fs`, `s3`, `http`, `https`, from txstore's `get_supported_schemes()`. | Other scheme → `RepoParamsException` (Generic) |
+| Other refusal | Any other URL txstore refuses fails the same way: `open_storage()` wraps txstore's `ValueError`. | → `RepoParamsException` (Generic) |
 
 ## Debian source strings
 
@@ -118,9 +119,10 @@ per entry by its transfer; the source is never probed.
 
 ## Object sizes
 
-Implemented by `read_capped()` in `repo/compress.py`, which reads at most one byte past a cap, so
-each object below is refused before it is verified or buffered in full. "Checked" means digest
-verification is on.
+Release files and stored indices are read by `read_capped()` in `repo/compress.py`, which reads at
+most one byte past a cap, so each is refused before it is verified or buffered in full. Upload
+control data is capped by `_control_of()` in `repo/debfile.py` from the member headers. "Checked"
+means digest verification is on.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |

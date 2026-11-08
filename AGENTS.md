@@ -17,40 +17,40 @@ second definition.
 
 ## Canonical sources
 
-| File            | Owns                                                                                                           |
-| --------------- | -------------------------------------------------------------------------------------------------------------- |
-| `STYLE.md`      | Coding conventions, logging rules, layer responsibilities, performance rules; prevails on style                |
-| `STRUCTURE.md`  | Layout, module ownership, internal import directions, the txstore boundary                                     |
-| `STORAGE.md`    | How debkit constructs storage, records transactions, and uses history                                          |
+| File | Owns |
+| -- | -- |
+| `STYLE.md` | Coding conventions, logging rules, layer responsibilities, performance rules; prevails on style |
+| `STRUCTURE.md` | Layout, module ownership, internal import directions, the txstore boundary |
+| `STORAGE.md` | How debkit constructs storage, records transactions, and uses history |
 | `VALIDATION.md` | Input constraints at the CLI, environment, URL, and `RepoParams` boundaries; path safety; sync index selection |
-| `EXCEPTIONS.md` | Domain exception classes, owning modules, CLI exit groups and messages                                         |
-| `CONFIG.md`     | CLI flags, `DEBKIT_*` variables, resolution order, defaults, secrets                                           |
-| `CRYPTO.md`     | GPG verify and sign, Debian hash blocks, verification order, Release freshness                                 |
-| `TESTING.md`    | Required coverage, harness rules, gates                                                                        |
-| `SETUP.md`      | Install, run, test, quality gates, diagrams, dependency policy, release, upgrade notes                         |
+| `EXCEPTIONS.md` | Domain exception classes, owning modules, CLI exit groups and messages |
+| `CONFIG.md` | CLI flags, `DEBKIT_*` variables, resolution order, defaults, secrets |
+| `CRYPTO.md` | GPG verify and sign, Debian hash blocks, verification order, Release freshness |
+| `TESTING.md` | Required coverage, harness rules, gates |
+| `SETUP.md` | Install, run, test, quality gates, diagrams, dependency policy, release, upgrade notes |
 
 ## Task routing
 
 Read only the relevant sections; locate code from [STRUCTURE.md](STRUCTURE.md#layout).
 
-| Task                                | Primary                               | Also check                                                                     |
-| ----------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
-| Validator / input rule              | `VALIDATION.md`                       | `EXCEPTIONS.md` failure notation, `TESTING.md`                                 |
-| Exception or exit group             | `EXCEPTIONS.md`                       | `src/debkit/cli.py`, `STYLE.md` logging                                        |
-| CLI flag / `DEBKIT_*` variable      | `CONFIG.md`                           | `VALIDATION.md` environment values, `src/debkit/_options.py`                   |
-| Storage construction / transactions | `STORAGE.md`                          | txstore contracts, `CONFIG.md` storage flags                                   |
-| Repo logic (`Repo*`)                | `STYLE.md` layers → `STRUCTURE.md`    | `EXCEPTIONS.md`, `VALIDATION.md`, `CRYPTO.md`                                  |
-| Action / subcommand                 | `STYLE.md` layers + `CONFIG.md`       | `EXCEPTIONS.md`, `STORAGE.md`, `TESTING.md`                                    |
-| GPG / checksum / freshness          | `CRYPTO.md`                           | `EXCEPTIONS.md` Distrustful group, `VALIDATION.md`                             |
-| Import boundary                     | `STRUCTURE.md` dependencies           | `tests/test_package.py`, `STYLE.md` layers                                     |
-| Dependency change                   | `SETUP.md` dependency policy          | `STRUCTURE.md` dependencies, `tests/test_package.py`, `.github/debian-test.sh` |
-| Bug fix                             | Owning contract + `EXCEPTIONS.md`     | `TESTING.md`                                                                   |
-| Tests                               | `TESTING.md`                          | Contract for the behavior under test                                           |
-| Contract / doc edit                 | Writing rules below → owning contract | `scripts/check_docs.py`, `SETUP.md` quality gates                              |
-| Release                             | `SETUP.md` release                    | `.github/workflows/release.yml`, `ROADMAP.md` phases                           |
-| Quality gate / CI change            | `SETUP.md` quality gates              | `.github/workflows/ci.yml`                                                     |
-| Developer explanation / diagram     | `docs/development/`                   | Owning root contract, `SETUP.md` diagrams                                      |
-| User how-to / future behavior       | `docs/guides/` / `ROADMAP.md`         | Owning root contract before implementing                                       |
+| Task | Primary | Also check |
+| -- | -- | -- |
+| Validator / input rule | `VALIDATION.md` | `EXCEPTIONS.md` failure notation, `TESTING.md` |
+| Exception or exit group | `EXCEPTIONS.md` | `src/debkit/cli.py`, `STYLE.md` logging |
+| CLI flag / `DEBKIT_*` variable | `CONFIG.md` | `VALIDATION.md` environment values, `src/debkit/_options.py` |
+| Storage construction / transactions | `STORAGE.md` | txstore contracts, `CONFIG.md` storage flags |
+| Repo logic (`Repo*`) | `STYLE.md` layers → `STRUCTURE.md` | `EXCEPTIONS.md`, `VALIDATION.md`, `CRYPTO.md` |
+| Action / subcommand | `STYLE.md` layers + `CONFIG.md` | `EXCEPTIONS.md`, `STORAGE.md`, `TESTING.md` |
+| GPG / checksum / freshness | `CRYPTO.md` | `EXCEPTIONS.md` Distrustful group, `VALIDATION.md` |
+| Import boundary | `STRUCTURE.md` dependencies | `tests/test_package.py`, `STYLE.md` layers |
+| Dependency change | `SETUP.md` dependency policy | `STRUCTURE.md` dependencies, `tests/test_package.py`, `.github/debian-test.sh` |
+| Bug fix | Owning contract + `EXCEPTIONS.md` | `TESTING.md` |
+| Tests | `TESTING.md` | Contract for the behavior under test |
+| Contract / doc edit | Writing rules below → owning contract | `scripts/check_docs.py`, `SETUP.md` quality gates |
+| Release | `SETUP.md` release | `.github/workflows/release.yml`, `ROADMAP.md` phases |
+| Quality gate / CI change | `SETUP.md` quality gates | `.github/workflows/ci.yml` |
+| Developer explanation / diagram | `docs/development/` | Owning root contract, `SETUP.md` diagrams |
+| User how-to / future behavior | `docs/guides/` / `ROADMAP.md` | Owning root contract before implementing |
 
 ## Agent workflow
 
