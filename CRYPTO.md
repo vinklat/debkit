@@ -109,6 +109,7 @@ older Release no longer lists.
 | `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed. An unfixed error exits `Repository is not consistent.` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | `sync --verify-existing` payload digest mismatch | Logged and deleted inside the sync's transaction; the sync copies it again. Nothing is raised. |
 | `insert` payload | Never verified against an index; a `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
+| `insert` signed `.changes` | A clearsigned `.changes` is parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. A malformed armor → `ChangesException` (Write). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure                                   | `GPGVerifyException` (Read).                                                                                                                                                 |
 

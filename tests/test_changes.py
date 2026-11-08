@@ -107,3 +107,26 @@ def test_parse_refuses_a_listed_file_that_is_not_a_bare_name(name: str) -> None:
     blob = f"Format: 1.8\nChecksums-Sha256:\n deadbeef 1 {name}\n".encode()
     with pytest.raises(ChangesException, match="unsafe file name"):
         Changes(_storage_with(blob)).parse(blob)
+
+
+def _clearsigned(body: bytes) -> bytes:
+    return (
+        b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
+        + body
+        + b"-----BEGIN PGP SIGNATURE-----\n\nsig\n-----END PGP SIGNATURE-----\n"
+    )
+
+
+def test_parse_reads_a_clearsigned_file_through_its_signed_body() -> None:
+    """Regression: `debsign` output failed with "No SHA256 checksums found"."""
+    blob = _clearsigned(_CHANGES_BLOB)
+    changes = Changes(_storage_with(blob))
+    changes.parse(blob)
+
+    assert changes.get_deb_files() == ["foo_1.0_amd64.deb", "bar_1.0_all.deb"]
+
+
+def test_parse_malformed_clearsigned_file_raises() -> None:
+    blob = b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n" + _CHANGES_BLOB
+    with pytest.raises(ChangesException, match="malformed signed file"):
+        Changes(_storage_with(blob)).parse(blob)

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from txstore import is_unsafe_path
 
+from debkit.repo.gnupg import CLEARSIGN_BEGIN, GPGVerifyException, cleartext_body
 from debkit.repo.hashes import ChecksumException, HexDigests, parse_hash_block
 from debkit.repo.params import SOURCE_ARCH
 
@@ -55,10 +56,19 @@ class Changes(HexDigests):
         Args:
             enc_data (bytes): The encoded data to parse.
 
+        A clearsigned file, as `debsign` writes it, is read through its signed body; the
+        signature itself is not verified -> [CRYPTO.md](CRYPTO.md#verification-failures).
+
         Raises:
             ChangesException: If no SHA256 checksums found in changes file.
             ChangesException: If a listed file is not a bare, safe file name.
+            ChangesException: If a clearsigned file is malformed.
         """
+        if enc_data.startswith(CLEARSIGN_BEGIN.encode()):
+            try:
+                enc_data = cleartext_body(enc_data)
+            except GPGVerifyException as exc:
+                raise ChangesException(f"malformed signed file: {exc}") from exc
         data = enc_data.decode("utf-8")
 
         data = re.sub("\n\n", "\n", data)  # fix - remove blank lines
