@@ -1,8 +1,8 @@
 """Debian repo operations commands."""
 
 import builtins
-import json
 import logging
+import re
 from copy import copy
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +17,7 @@ from debkit.action import (
     attach_storage_plain,
     dump_json,
 )
+from debkit.argtypes import pkg_pattern_type
 from debkit.repo.changes import Changes
 from debkit.repo.debfile import DebFile
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
@@ -53,7 +54,7 @@ class ActionPkg(Action):
         """
         super().__init__(pars, create_path=create_path)
         self.output: OutputType = pars.output if hasattr(pars, "output") else OutputType.brief
-        self.pkg_pattern: str | None = pars.pkg_pattern if hasattr(pars, "pkg_pattern") else None
+        self.pkg_pattern: dict[str, re.Pattern[str]] | None = getattr(pars, "pkg_pattern", None)
         self.changes_filename: str | None = (
             pars.changes_filename if hasattr(pars, "changes_filename") else None
         )
@@ -319,10 +320,11 @@ class ActionPkg(Action):
             self._print_pkg_json(ret_diff)
 
     def remove(self) -> None:
-        """Remove packages from repository.
+        """Remove the packages matching the parsed ``--pkg-pattern`` from the repository.
 
         Raises:
-            ValueError: If the pattern str is not a valid JSON.
+            ValueError: If no package pattern was parsed.
+            ActionException: If no package matched.
         """
         if self.pkg_pattern is None:
             raise ValueError("No package pattern provided.")
@@ -330,13 +332,8 @@ class ActionPkg(Action):
         self.target_repo.update()
         prev_repo = copy(self.target_repo)
 
-        try:
-            fields: dict[str, Any] = json.loads(self.pkg_pattern)
-        except json.JSONDecodeError as json_error:
-            raise ValueError(f"Invalid JSON format: {json_error}") from json_error
-
         with maybe_transaction(self.target_repo.storage, self.history_retention):
-            if not self.target_repo.remove_pkg(fields):
+            if not self.target_repo.remove_pkg(self.pkg_pattern):
                 raise ActionException("No packages matched the pattern.")
             ret_diff = self.target_repo.diff(prev_repo)
 
@@ -431,6 +428,7 @@ class ActionPkg(Action):
             "--pkg-pattern",
             env="DEBKIT_PKG_PATTERN",
             dest="pkg_pattern",
+            type=pkg_pattern_type,
             help="JSON format of regexp patterns of package fields. "
             'Example: {"Filename":"filename_1.deb|filename_2.deb"}',
             required=True,

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import re
 from argparse import ArgumentTypeError
 
 import pytest
 
 from debkit.argtypes import (
     HISTORY_MAX_AGE_LIMIT,
+    PKG_PATTERN_MAX_LENGTH,
     bucket_acl_type,
     history_max_age_type,
     object_acl_type,
+    pkg_pattern_type,
     positive_int_type,
 )
 
@@ -64,3 +68,99 @@ def test_bucket_acl_type_accepts_bucket_acls(value: str) -> None:
 def test_bucket_acl_type_rejects_non_bucket_acl(value: str) -> None:
     with pytest.raises(ArgumentTypeError):
         bucket_acl_type(value)
+
+
+# ---------- package pattern
+
+
+def test_pkg_pattern_type_compiles_each_field() -> None:
+    assert pkg_pattern_type('{"Package": "^foo$", "Version": "1"}') == {
+        "Package": re.compile("^foo$"),
+        "Version": re.compile("1"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("{bad", "invalid JSON"),
+        ('["a"]', "JSON object"),
+        ('"a"', "JSON object"),
+        ("{}", "non-empty"),
+        ('{"Package": 5}', "must be a string"),
+        ('{"Package": ["a"]}', "must be a string"),
+        ('{"Package": "("}', "invalid regex pattern"),
+    ],
+)
+def test_pkg_pattern_type_rejects_bad_shape(value: str, message: str) -> None:
+    with pytest.raises(ArgumentTypeError, match=message):
+        pkg_pattern_type(value)
+
+
+def test_pkg_pattern_type_rejects_too_long_pattern() -> None:
+    value = '{"Package": "%s"}' % ("a" * (PKG_PATTERN_MAX_LENGTH + 1))
+    with pytest.raises(ArgumentTypeError, match="too long"):
+        pkg_pattern_type(value)
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "(a+)+$",
+        "(.*)*",
+        "(x+x+)+y",
+        "(a+){2,}+",
+        "((a+)b)+",
+        "(a*)*b",
+        "(a+)*$",
+        r"(\d{2,})+",
+        r"(?:a+)+$",
+        r"(a+|b)+$",
+    ],
+)
+def test_pkg_pattern_type_rejects_nested_quantifiers(pattern: str) -> None:
+    with pytest.raises(ArgumentTypeError, match="nested quantifiers"):
+        pkg_pattern_type(json.dumps({"Package": pattern}))
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "(a|a)+$",
+        "(a|aa)+$",
+        r"(\w|\d)+$",
+        "(.|a)*$",
+        "((?:a|a))+$",
+        "(a|)+",
+        "(?P<name>a|a)+",
+        "(a|b|a){1,}",
+    ],
+)
+def test_pkg_pattern_type_rejects_repeated_overlapping_alternatives(pattern: str) -> None:
+    with pytest.raises(ArgumentTypeError, match="repeated alternatives"):
+        pkg_pattern_type(json.dumps({"Package": pattern}))
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "foo|bar",
+        r"filename_\d+\.deb",
+        r"^pool/.*\.deb$",
+        "simple",
+        "(foo|bar)+",
+        r"lib[a-z]+_\d+",
+        "(one|two|three)",
+        "(?:foo)+",
+        "(?:a|b)*",
+        "(?=foo)+",
+        "(?!bar)*",
+        r"(\d{3})+",
+        "(ab{2,4})+",
+        "(a|a)?",
+        "(?P<name>foo|bar)+",
+        "(?i:foo|bar)+",
+    ],
+)
+def test_pkg_pattern_type_accepts_safe_patterns(pattern: str) -> None:
+    assert pkg_pattern_type(json.dumps({"Package": pattern})) == {"Package": re.compile(pattern)}

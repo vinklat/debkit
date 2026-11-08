@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -145,7 +146,7 @@ def test_remove_begins_and_commits_on_success() -> None:
     txn = TxnStorageStub()
     action = _make_pkg_action(storage=txn)
     action.deb_filename = None
-    action.pkg_pattern = '{"Package": "hello"}'
+    action.pkg_pattern = {"Package": re.compile("hello")}
 
     action.remove()
 
@@ -158,7 +159,7 @@ def test_remove_discards_on_exception() -> None:
     txn = TxnStorageStub()
     action = _make_pkg_action(storage=txn)
     action.deb_filename = None
-    action.pkg_pattern = '{"Package": "hello"}'
+    action.pkg_pattern = {"Package": re.compile("hello")}
     _target(action).remove_pkg.side_effect = RuntimeError("fail")
 
     with pytest.raises(RuntimeError, match="fail"):
@@ -179,7 +180,7 @@ def test_remove_no_txn_on_non_txn_storage() -> None:
     non_txn = NonTxnStorageStub()
     action = _make_pkg_action(storage=non_txn)
     action.deb_filename = None
-    action.pkg_pattern = '{"Package": "hello"}'
+    action.pkg_pattern = {"Package": re.compile("hello")}
 
     action.remove()  # must not raise
 
@@ -206,7 +207,7 @@ def test_remove_hands_retention_to_maybe_transaction() -> None:
     txn = TxnStorageStub()
     action = _make_pkg_action(storage=txn)
     action.deb_filename = None
-    action.pkg_pattern = '{"Package": "hello"}'
+    action.pkg_pattern = {"Package": re.compile("hello")}
     action.history_retention = HistoryRetention(keep=1, max_age_days=5)
 
     with patch("debkit.action.action_pkg.maybe_transaction") as wiring:

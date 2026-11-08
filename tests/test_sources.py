@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import re
 from copy import copy
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -203,7 +204,7 @@ def test_sources_remove_matches_nothing() -> None:
     src = _new_sources()
     src._parse_indices(_STANZA_3)
 
-    assert src.remove({"Package": ".*"}) == set()
+    assert src.remove({"Package": re.compile(".*")}) == set()
 
 
 def test_sources_copy_preserves_the_type() -> None:

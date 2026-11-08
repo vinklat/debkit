@@ -55,7 +55,7 @@ cli → argparser → action → repo → txstore
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cli`                | May import any layer for dispatch and exception grouping.                                                                                                   |
 | Leaves               | `_env` and `_logging` import no `debkit` module; `_options` imports only `_env`; `argtypes` imports only the standard library and txstore.                  |
-| `action`             | Uses `repo`, `_options` for flag registration types, and txstore; never imports `cli`, `argparser`, or `_logging`.                                          |
+| `action` | Uses `repo`, `_options` for flag registration types, `argtypes` for flag converters, and txstore; never imports `cli`, `argparser`, or `_logging`. |
 | `repo`               | Depends on txstore and crypto helpers; never on `action`, `cli`, `argparser`, `argtypes`, `_options`, or `_logging`.                                        |
 | `debkit` → `txstore` | Every import is `from txstore import ...` of a name in its `__all__`; a `txstore.<module>` import is a boundary violation.                                  |
 | Load-time cycles     | None: no import is deferred.                                                                                                                                |

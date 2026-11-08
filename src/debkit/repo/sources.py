@@ -149,14 +149,14 @@ class Sources(Packages):
         """
         raise PackagesException("Sources index is read-only")
 
-    def remove(self, fields: dict[str, Any]) -> set[str]:
+    def remove(self, fields: dict[str, re.Pattern[str]]) -> set[str]:
         """Remove nothing: a `Sources` index is mirrored, never composed.
 
         Returning the base contract's "nothing removed" lets a caller iterate every
         container without knowing which one is read-only.
 
         Args:
-            fields (Dict[str, Any]): Ignored.
+            fields (Dict[str, re.Pattern[str]]): Ignored.
 
         Returns:
             Set[str]: Always empty.

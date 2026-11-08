@@ -1,11 +1,11 @@
 # ActionPkg.remove behavior
 
 Explains how [`ActionPkg.remove`](../../src/debkit/action/action_pkg.py) removes the packages whose
-fields match a JSON regex map such as `{"Package": "hello", "Version": "1.0"}`: the pattern is
-applied in memory by `RepoRW.remove_pkg`, and the payload deletes and index rewrite run inside one
-transaction. Rules
-are owned by [STYLE.md](../../STYLE.md#layers) (action layer), [CONFIG.md](../../CONFIG.md#remove)
-(flags), [VALIDATION.md](../../VALIDATION.md#package-pattern-matching) (pattern rules),
+fields match a JSON regex map such as `{"Package": "hello", "Version": "1.0"}`: the parsed pattern
+is applied in memory by `RepoRW.remove_pkg`, and the payload deletes and index rewrite run inside
+one transaction. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
+[CONFIG.md](../../CONFIG.md#remove) (flags),
+[VALIDATION.md](../../VALIDATION.md#package-pattern-matching) (pattern rules),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics) (no-match semantics), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#remove-packages).
@@ -25,8 +25,9 @@ in [examples.md](../guides/examples.md#remove-packages).
   [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
-- The JSON pattern is parsed before the transaction starts; a malformed pattern aborts without
-  touching the storage backend → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
+- The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed or risky
+  pattern exits 2 before the target is read →
+  [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 - `Packages.remove` only drops matching entries from its in-memory index and returns their
   filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
   listed by every binary arch index. The rewritten indices reach storage only through
@@ -39,10 +40,10 @@ in [examples.md](../guides/examples.md#remove-packages).
 
 ## Testing notes
 
-`tests/test_action_pkg.py` covers pattern handling, the no-match `ActionException`, and the
-transaction wiring; `tests/test_packages.py` covers `Packages.remove()` and its filename-safety
-check; `tests/test_repo_rw.py` removes an `all` payload from a real `StorageFS` →
-[TESTING.md](../../TESTING.md#required-coverage).
+`tests/test_argtypes.py` covers pattern parsing and the ReDoS checks; `tests/test_action_pkg.py`
+covers the no-match `ActionException` and the transaction wiring; `tests/test_packages.py` covers
+`Packages.remove()` and its filename-safety check; `tests/test_repo_rw.py` removes an `all` payload
+from a real `StorageFS` → [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 

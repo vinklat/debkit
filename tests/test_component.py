@@ -8,6 +8,7 @@ Storage and Packages are mocked; no real backend.
 from __future__ import annotations
 
 import logging
+import re
 from copy import copy
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -227,7 +228,10 @@ def test_component_remove_pkg_iterates_all_arches() -> None:
     a.remove.return_value = {"pool/foo_all.deb", "pool/foo_amd64.deb"}
     b.remove.return_value = {"pool/foo_all.deb"}
     comp.packages = {"amd64": a, "arm64": b}
-    assert comp.remove_pkg({"Package": "foo"}) == {"pool/foo_all.deb", "pool/foo_amd64.deb"}
+    assert comp.remove_pkg({"Package": re.compile("foo")}) == {
+        "pool/foo_all.deb",
+        "pool/foo_amd64.deb",
+    }
     a.remove.assert_called_once()
     b.remove.assert_called_once()
     assert comp.modified is True
@@ -238,7 +242,7 @@ def test_component_remove_pkg_no_match_returns_false() -> None:
     a = MagicMock()
     a.remove.return_value = set()
     comp.packages = {"amd64": a}
-    assert comp.remove_pkg({"Package": "x"}) == set()
+    assert comp.remove_pkg({"Package": re.compile("x")}) == set()
     assert comp.modified is False
 
 
@@ -256,7 +260,7 @@ def test_component_remove_pkg_skips_the_read_only_source_container() -> None:
         "source": Sources(make_storage_mock(), make_params()),
     }
 
-    assert comp.remove_pkg({"Package": "foo"}) == {"pool/foo.deb"}
+    assert comp.remove_pkg({"Package": re.compile("foo")}) == {"pool/foo.deb"}
 
     binary.remove.assert_called_once()
     assert comp.modified is True
@@ -266,7 +270,7 @@ def test_component_remove_pkg_returns_false_when_only_the_source_container_is_lo
     """Nothing is removable, but the removal still reports cleanly."""
     comp = _component()
     comp.packages = {"source": Sources(make_storage_mock(), make_params())}
-    assert comp.remove_pkg({"Package": "foo"}) == set()
+    assert comp.remove_pkg({"Package": re.compile("foo")}) == set()
     assert comp.modified is False
 
 

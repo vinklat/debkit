@@ -27,22 +27,6 @@ if TYPE_CHECKING:
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
-def _is_unbounded_brace(pattern: str, i: int) -> bool:
-    """Return True if the ``{`` at position *i* opens an unbounded quantifier ``{n,}``.
-
-    Bounded forms such as ``{n}`` and ``{n,m}`` cannot cause catastrophic
-    backtracking and must not be treated as dangerous quantifiers.
-    """
-    j = i + 1
-    length = len(pattern)
-    while j < length and pattern[j].isdigit():
-        j += 1
-    if j >= length or pattern[j] != ",":
-        return False  # {n} form — bounded
-    j += 1  # skip comma
-    return j < length and pattern[j] == "}"  # True only for {n,}
-
-
 # Soft cap on decompressed Packages-indices size (bytes). Guards against
 # zip-bomb-style payloads served over http(s). Documented in VALIDATION.md.
 MAX_INDICES_BYTES = 256 * 1024 * 1024
@@ -400,143 +384,28 @@ class Packages:
         self.packages[str(package)] = package
         self.modified = True
 
-    _MAX_PATTERN_LENGTH = 500
-
-    @staticmethod
-    def _validate_regex_safe(pattern: str) -> None:
-        """Reject regex patterns that contain nested quantifiers.
-
-        This is a lightweight heuristic that catches the most common ReDoS
-        pattern family (quantified groups containing inner quantifiers, e.g.
-        ``(a+)+``).  It does NOT guarantee protection against all catastrophic
-        backtracking constructs.  This is acceptable for a local CLI tool
-        where the pattern originates from the operator, not from untrusted
-        network input.
-
-        Raises:
-            ValueError: If the pattern contains nested quantifiers or exceeds
-                the maximum allowed length.
-        """
-        if len(pattern) > Packages._MAX_PATTERN_LENGTH:
-            raise ValueError(
-                f"Regex pattern too long ({len(pattern)} chars, "
-                f"max {Packages._MAX_PATTERN_LENGTH})."
-            )
-
-        # Single-pass state machine detecting nested quantifiers.
-        # Tracks whether a quantifier (+, *, ?, {n,m}) appears inside a group,
-        # then checks if the group closing ')' is itself followed by a quantifier.
-        quantifiers = {"+", "*", "?"}
-        i = 0
-        length = len(pattern)
-        # Stack of booleans: True if current group contains a quantifier.
-        group_has_quantifier: list[bool] = []
-
-        while i < length:
-            ch = pattern[i]
-
-            # Skip escaped characters.
-            if ch == "\\":
-                i += 2
-                continue
-
-            # Skip character classes entirely.
-            if ch == "[":
-                i += 1
-                if i < length and pattern[i] == "^":
-                    i += 1
-                if i < length and pattern[i] == "]":
-                    i += 1
-                while i < length and pattern[i] != "]":
-                    if pattern[i] == "\\":
-                        i += 1
-                    i += 1
-                i += 1
-                continue
-
-            if ch == "(":
-                # Push new group onto stack.
-                group_has_quantifier.append(False)
-                i += 1
-                # Skip Python's group-extension prefix `?` (e.g. `(?:`, `(?P<`,
-                # `(?=`, `(?!`, `(?<=`, `(?<!`) so it is not misread as a
-                # quantifier and does not falsely mark the group as quantifier-bearing.
-                if i < length and pattern[i] == "?":
-                    i += 1
-                    if i < length and pattern[i] in "P<=!:":
-                        i += 1
-                continue
-
-            if ch == ")":
-                inner_has_quantifier = group_has_quantifier.pop() if group_has_quantifier else False
-                # Check if the group is followed by a quantifier.
-                next_i = i + 1
-                if (
-                    inner_has_quantifier
-                    and next_i < length
-                    and (
-                        pattern[next_i] in quantifiers
-                        or (pattern[next_i] == "{" and _is_unbounded_brace(pattern, next_i))
-                    )
-                ):
-                    raise ValueError(
-                        "Regex pattern rejected: nested quantifiers are not allowed "
-                        "(potential ReDoS)."
-                    )
-                # Propagate: a child group that contained a quantifier counts
-                # as a quantifier-bearing element in the parent group.
-                if inner_has_quantifier and group_has_quantifier:
-                    group_has_quantifier[-1] = True
-                # Closing ')' followed by an unbounded quantifier also marks the parent.
-                if next_i < length and (
-                    pattern[next_i] in quantifiers
-                    or (pattern[next_i] == "{" and _is_unbounded_brace(pattern, next_i))
-                ):
-                    if group_has_quantifier:
-                        group_has_quantifier[-1] = True
-                i += 1
-                continue
-
-            # Detect quantifier and mark the current group.
-            # Only unbounded braces ({n,}) count; bounded {n} / {n,m} are safe.
-            if ch in quantifiers or (ch == "{" and _is_unbounded_brace(pattern, i)):
-                if group_has_quantifier:
-                    group_has_quantifier[-1] = True
-                i += 1
-                continue
-
-            i += 1
-
-    def remove(self, fields: dict[str, Any]) -> set[str]:
+    def remove(self, fields: dict[str, re.Pattern[str]]) -> set[str]:
         """Drop the matching packages from this index; never touch storage.
 
         An `all` package is listed in several arch indices, so the caller deletes each returned
         payload once → `RepoRW.remove_pkg`.
 
         Args:
-            fields (Dict[str, str]): The fields to match a package
-                (regex patterns; ALL must match).
+            fields (Dict[str, re.Pattern[str]]): Compiled pattern per package field; a package
+                matches when every pattern finds a match in its field →
+                [VALIDATION.md](VALIDATION.md#package-pattern-matching).
 
         Raises:
-            ValueError: If any pattern is not a valid regular expression.
             PackagesException: If a matched package has an unsafe Filename; nothing is dropped.
 
         Returns:
             Set[str]: Filenames of the dropped packages; empty when nothing matched.
         """
-        for pattern in fields.values():
-            self._validate_regex_safe(pattern)
-
-        try:
-            compiled = {field: re.compile(pattern) for field, pattern in fields.items()}
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {exc}") from exc
-
         removed: set[str] = set()
         for pkg_name, package in self.packages.items():
             if all(
                 field in package.fields and rx.search(package.fields[field])
-                for field, rx in compiled.items()
+                for field, rx in fields.items()
             ):
                 if is_unsafe_path(pkg_name):
                     raise PackagesException(f"unsafe filename: {pkg_name}")

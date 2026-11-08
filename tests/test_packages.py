@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import re
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -474,7 +475,7 @@ def test_packages_remove_all_fields_match() -> None:
         "pool/foo.deb": make_package("pool/foo.deb", Package="foo"),
         "pool/bar.deb": make_package("pool/bar.deb", Package="bar"),
     }
-    assert pkgs.remove({"Package": "^foo$"}) == {"pool/foo.deb"}
+    assert pkgs.remove({"Package": re.compile("^foo$")}) == {"pool/foo.deb"}
     _storage(pkgs).delete.assert_not_called()
     assert "pool/foo.deb" not in pkgs.packages
     assert "pool/bar.deb" in pkgs.packages
@@ -485,7 +486,7 @@ def test_packages_remove_rejects_traversal_filename() -> None:
     pkgs = _new_packages()
     pkgs.packages = {"../../etc/passwd": make_package("../../etc/passwd", Package="evil")}
     with pytest.raises(PackagesException, match="unsafe filename"):
-        pkgs.remove({"Package": "evil"})
+        pkgs.remove({"Package": re.compile("evil")})
     assert "../../etc/passwd" in pkgs.packages
 
 
@@ -493,74 +494,14 @@ def test_packages_remove_rejects_leading_slash() -> None:
     pkgs = _new_packages()
     pkgs.packages = {"/etc/passwd": make_package("/etc/passwd", Package="evil")}
     with pytest.raises(PackagesException, match="unsafe filename"):
-        pkgs.remove({"Package": "evil"})
-
-
-def test_packages_remove_invalid_regex_raises_value_error() -> None:
-    pkgs = _new_packages()
-    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb")}
-    with pytest.raises(ValueError, match="Invalid regex"):
-        pkgs.remove({"Package": "("})
+        pkgs.remove({"Package": re.compile("evil")})
 
 
 def test_packages_remove_no_match_returns_false() -> None:
     pkgs = _new_packages()
     pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", Package="foo")}
-    assert pkgs.remove({"Package": "nope"}) == set()
+    assert pkgs.remove({"Package": re.compile("nope")}) == set()
     assert pkgs.modified is False
-
-
-@pytest.mark.parametrize(
-    "pattern",
-    [
-        "(a+)+$",
-        "(.*)*",
-        "(x+x+)+y",
-        "(a+){2,}+",
-        "((a+)b)+",
-        "(a*)*b",
-        "(a+)*$",
-        r"(\d{2,})+",
-    ],
-)
-def test_packages_remove_nested_quantifier_rejected(pattern: str) -> None:
-    pkgs = _new_packages()
-    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", Package="foo")}
-    with pytest.raises(ValueError, match="nested quantifiers"):
-        pkgs.remove({"Package": pattern})
-
-
-@pytest.mark.parametrize(
-    "pattern",
-    [
-        "foo|bar",
-        r"filename_\d+\.deb",
-        r"^pool/.*\.deb$",
-        "simple",
-        "(foo|bar)+",
-        r"lib[a-z]+_\d+",
-        r"(one|two|three)",
-        r"(?:foo)+",
-        r"(?:a|b)*",
-        r"(?=foo)+",
-        r"(?!bar)*",
-        r"(\d{3})+",
-        r"(ab{2,4})+",
-    ],
-)
-def test_packages_remove_patterns_without_nested_quantifiers_accepted(pattern: str) -> None:
-    pkgs = _new_packages()
-    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", Package="foo")}
-    # Should not raise ValueError — it may match or not, that's fine.
-    pkgs.remove({"Package": pattern})
-
-
-def test_packages_remove_pattern_too_long_rejected() -> None:
-    pkgs = _new_packages()
-    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", Package="foo")}
-    long_pattern = "a" * 501
-    with pytest.raises(ValueError, match="too long"):
-        pkgs.remove({"Package": long_pattern})
 
 
 # ---------------------------------------------------------------------------

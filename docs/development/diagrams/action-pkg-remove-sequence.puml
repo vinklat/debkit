@@ -6,15 +6,14 @@ participant "Storage\n(target)" as TStor
 participant "maybe_transaction" as CM
 
 Caller -> ActionPkg: remove()
+note right
+  fields = pkg_pattern, compiled by
+  pkg_pattern_type at parse time;
+  a bad pattern exited 2 before this
+end note
 
 ActionPkg -> Tgt: update()
 Tgt --> ActionPkg: ok
-
-ActionPkg -> ActionPkg: json.loads(pkg_pattern) -> fields
-note right
-  JSONDecodeError -> raise ValueError
-  (chained, no transaction started)
-end note
 
 ActionPkg -> CM: __enter__(TStor)
 CM -> TStor: history_lock acquire\n[blocks; S3 times out after 300 s]

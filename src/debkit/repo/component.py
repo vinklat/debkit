@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from copy import copy
 from typing import TYPE_CHECKING, Any
 
@@ -251,14 +252,14 @@ class Component:
         self.packages[arch].insert(package)
         self.modified = True
 
-    def remove_pkg(self, fields_patterns: dict[str, Any]) -> set[str]:
+    def remove_pkg(self, fields_patterns: dict[str, re.Pattern[str]]) -> set[str]:
         """Drop matching packages from every arch index of the component; storage is untouched.
 
         A mirrored `Sources` index removes nothing →
         [VALIDATION.md](VALIDATION.md#sources-stanzas).
 
         Args:
-            fields_patterns (Dict[str, Any]): The fields of the package to match.
+            fields_patterns (Dict[str, re.Pattern[str]]): Compiled pattern per package field.
 
         Returns:
             Set[str]: Filenames dropped from any arch, each once.

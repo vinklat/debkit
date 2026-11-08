@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, call
@@ -48,7 +49,7 @@ def test_remove_pkg_returns_false_when_no_match() -> None:
     comp = MagicMock()
     comp.remove_pkg.return_value = set()
     repo.components = {"main": comp}
-    assert repo.remove_pkg({"Package": "missing"}) is False
+    assert repo.remove_pkg({"Package": re.compile("missing")}) is False
     assert repo.modified is False
     cast(MagicMock, repo.storage).delete.assert_not_called()
 
@@ -59,7 +60,7 @@ def test_remove_pkg_deletes_each_payload_once_and_marks_modified() -> None:
     main.remove_pkg.return_value = {"pool/foo_all.deb"}
     contrib.remove_pkg.return_value = {"pool/foo_all.deb", "pool/bar.deb"}
     repo.components = {"main": main, "contrib": contrib}
-    assert repo.remove_pkg({"Package": "foo"}) is True
+    assert repo.remove_pkg({"Package": re.compile("foo")}) is True
     assert repo.modified is True
     assert cast(MagicMock, repo.storage).delete.call_args_list == [
         call("pool/bar.deb"),
@@ -74,7 +75,7 @@ def test_remove_pkg_propagates_a_delete_failure() -> None:
     repo.components = {"main": comp}
     cast(MagicMock, repo.storage).delete.side_effect = StorageException("boom")
     with pytest.raises(StorageException, match="boom"):
-        repo.remove_pkg({"Package": "foo"})
+        repo.remove_pkg({"Package": re.compile("foo")})
 
 
 def test_transfer_from_does_not_pass_acl_kwarg() -> None:
@@ -116,7 +117,7 @@ def test_remove_pkg_of_an_arch_all_payload_on_a_real_storage(tmp_path: Path) -> 
     repo = RepoRW(storage, make_params())
     repo.update()
     assert not storage.in_transaction()
-    assert repo.remove_pkg({"Package": "^hello$"}) is True
+    assert repo.remove_pkg({"Package": re.compile("^hello$")}) is True
 
     assert not storage.exists(payload)
     assert {arch: pkgs.packages for arch, pkgs in repo.components["main"].packages.items()} == {

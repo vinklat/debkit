@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from importlib import metadata
 
 import pytest
@@ -36,6 +37,31 @@ def test_parse_cli_list_command() -> None:
 def test_parse_cli_remove_requires_pkg_pattern() -> None:
     with pytest.raises(SystemExit):
         parse_cli(["--target-url", "fs:///tmp dist main", "remove"])
+
+
+def test_parse_cli_remove_compiles_pkg_pattern() -> None:
+    ns = parse_cli(
+        ["--target-url", "fs:///tmp dist main", "remove", "--pkg-pattern", '{"Package": "^a"}']
+    )
+    assert ns.pkg_pattern == {"Package": re.compile("^a")}
+
+
+@pytest.mark.parametrize("value", ['["a"]', '{"Package": 5}', "{bad", '{"Package": "(a+)+"}'])
+def test_parse_cli_remove_rejects_bad_pkg_pattern(value: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        parse_cli(["--target-url", "fs:///tmp dist main", "remove", "--pkg-pattern", value])
+    assert exc.value.code == 2
+
+
+def test_parse_cli_remove_converts_pkg_pattern_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEBKIT_PKG_PATTERN", '{"Package": "^a"}')
+    assert parse_cli(["--target-url", "fs:///tmp dist main", "remove"]).pkg_pattern == {
+        "Package": re.compile("^a")
+    }
+    monkeypatch.setenv("DEBKIT_PKG_PATTERN", '["a"]')
+    with pytest.raises(SystemExit) as exc:
+        parse_cli(["--target-url", "fs:///tmp dist main", "remove"])
+    assert exc.value.code == 2
 
 
 def test_parse_cli_log_command() -> None:

@@ -4,8 +4,9 @@ Inherits from Repo.
 """
 
 import logging
+import re
 from email.utils import formatdate
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
@@ -103,13 +104,13 @@ class RepoRW(Repo):
         self.components[name] = new_component
         self.modified = True
 
-    def remove_pkg(self, fields_patterns: dict[str, Any]) -> bool:
+    def remove_pkg(self, fields_patterns: dict[str, re.Pattern[str]]) -> bool:
         """Drop packages matching ``fields_patterns`` from the indices and delete their payloads.
 
         Several arch indices list one `all` payload, so each payload is deleted once.
 
         Args:
-            fields_patterns (Dict[str, Any]): The fields of the package to match.
+            fields_patterns (Dict[str, re.Pattern[str]]): Compiled pattern per package field.
 
         Raises:
             StorageException: If the backend fails to delete a payload.
@@ -117,7 +118,10 @@ class RepoRW(Repo):
         Returns:
             bool: True iff at least one package was removed.
         """
-        logging.info("Removing packages with fields patterns: %s", fields_patterns)
+        logging.info(
+            "Removing packages with fields patterns: %s",
+            {field: rx.pattern for field, rx in fields_patterns.items()},
+        )
 
         removed: set[str] = set()
         for component in self.components.values():
