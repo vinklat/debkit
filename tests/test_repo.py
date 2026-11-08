@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from copy import copy
+
 import pytest
 from helpers.factories import make_package, make_packages, make_params, make_storage_mock
 
@@ -336,3 +338,47 @@ def test_verify_checksum_still_uses_the_index_for_a_path_no_release_lists() -> N
     repo.release.digests = {_INDEX_KEY: _DIGEST}
 
     assert repo.verify_checksum(_DEB, _DIGEST) is True
+
+
+# --- copies -------------------------------------------------------------------------------------
+
+
+def _loaded_repo() -> Repo:
+    """Repo with one indexed component and a digest record in its root Release."""
+    repo = _repo()
+    repo.release.update_digests("main/binary-amd64/Packages", {"SHA256": "old", "Size": "1"})
+    repo.release.root_digests = {"Release": {"SHA256": "root"}}
+    _with_component_package(repo, _DEB, _DIGEST)
+    return repo
+
+
+def test_copy_rebinds_each_component_to_the_copied_release() -> None:
+    """A copy's save records index digests in its own Release, never the original's."""
+    repo = _loaded_repo()
+
+    copied = copy(repo)
+
+    assert copied.release is not repo.release
+    assert copied.components["main"].root_release is copied.release
+    assert repo.components["main"].root_release is repo.release
+
+
+def test_copy_from_rebinds_each_component_to_the_receiving_release() -> None:
+    source = _loaded_repo()
+    target = _repo()
+
+    target.copy_from(source)
+
+    assert target.components["main"].root_release is target.release
+
+
+def test_copied_release_digest_records_are_independent() -> None:
+    """`update_digests` mutates a record in place, so a shared one would change both."""
+    repo = _loaded_repo()
+    copied = copy(repo)
+
+    copied.release.update_digests("main/binary-amd64/Packages", {"SHA256": "new"})
+    copied.release.root_digests["Release"]["SHA256"] = "changed"
+
+    assert repo.release.digests["main/binary-amd64/Packages"]["SHA256"] == "old"
+    assert repo.release.root_digests["Release"]["SHA256"] == "root"

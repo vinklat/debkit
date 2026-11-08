@@ -177,20 +177,23 @@ class Release(HexDigests):
         self.root_digests = {}
 
     def __copy__(self) -> "Release":
-        """Create a shallow copy of this Release.
+        """Create a copy of this Release whose digest records are its own.
+
+        `update_digests` mutates a record in place, so a record shared with the copy
+        would change the original too.
 
         Returns:
-            Release: A shallow copy of this Release.
+            Release: A copy of this Release.
         """
         ret = Release(self.storage, self.params, gpg=self.gpg)
         ret.fields = self.fields.copy()
-        ret.digests = self.digests.copy()
+        ret.digests = {key: digests.copy() for key, digests in self.digests.items()}
         ret.filename = self.filename
         ret.found_indices_files = self.found_indices_files.copy()
         ret.hashfuns = self.hashfuns.copy()
         ret.modified = self.modified
         ret.hash = self.hash
-        ret.root_digests = self.root_digests.copy()
+        ret.root_digests = {key: digests.copy() for key, digests in self.root_digests.items()}
         return ret
 
     def __repr__(self) -> str:

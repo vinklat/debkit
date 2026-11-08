@@ -18,6 +18,7 @@ or the work is planned; drop it when it no longer applies.
 | Typed settings object passed to actions instead of the argparse `Namespace` | An action is called from Python rather than the CLI | [STRUCTURE.md](STRUCTURE.md#dependencies)             |
 | Debian package `debkit`                                                     | txstore is packaged for Debian (txstore 0.2.0)      | [SETUP.md](SETUP.md#dependency-policy)                |
 | Mirror `by-hash/` indices                                                   | A mirror's clients rely on `Acquire-By-Hash`        | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
+| `ReleaseKey`/`StoragePath` NewTypes and a coordinate-aware `Packages` owning its component, arch, and codec | The next change to Release or Packages loading | [STRUCTURE.md](STRUCTURE.md#layout) |
 
 ## Known deviations
 

@@ -89,12 +89,26 @@ class Component:
         return self.params.is_flat
 
     def __copy__(self) -> Component:
-        """Create a shallow copy of this Component object.
+        """Create a shallow copy of this Component object on the same root Release.
 
         Returns:
             Component: A shallow copy of this Component object.
         """
-        ret = Component(self.storage, self.params, self.root_release, self.name)
+        return self.copy_onto(self.root_release)
+
+    def copy_onto(self, root_release: Release) -> Component:
+        """Copy this component onto another root Release, the one of the repo copy owning it.
+
+        `save` records its index digests in the root Release, so a repo copy whose
+        components kept the original Release would write into it.
+
+        Args:
+            root_release (Release): The root Release of the repo the copy belongs to.
+
+        Returns:
+            Component: A copy whose package sets are copied too.
+        """
+        ret = Component(self.storage, self.params, root_release, self.name)
         ret.packages = {arch: copy(packages) for arch, packages in self.packages.items()}
         ret.modified = self.modified
         return ret

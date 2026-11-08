@@ -87,7 +87,8 @@ class Repo:
         ret = Repo(self.storage, self.params, gpg=self.gpg)
         ret.release = copy(self.release)
         ret.components = {
-            comp_name: copy(component) for comp_name, component in self.components.items()
+            comp_name: component.copy_onto(ret.release)
+            for comp_name, component in self.components.items()
         }
         ret.modified = self.modified
         return ret
