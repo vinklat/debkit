@@ -87,9 +87,9 @@ endif
 
 :ret_diff = source.diff(target_before);
 if (output == json?) then (yes)
-  :print_sync_json(ret_diff);
+  :_print_sync_json(ret_diff);
 else (no)
-  :print_sync_brief(ret_diff);
+  :_print_sync_brief(ret_diff);
 endif
 stop
 @enduml

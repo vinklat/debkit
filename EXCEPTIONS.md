@@ -64,8 +64,7 @@ Exits outside the groups:
 | `sync` or `check` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: `sync` treats the target as empty, `check` reports it inconsistent; any other `ReleaseReadException` (Read) stops the run. |
 | Release file cannot be signed | `ReleaseWriteException` (Write). |
 | Release file cannot be put | `StorageException` (Generic). |
-| `log` / `revert` / `prune` on a non-transactional backend, or `revert` with empty history | `ActionException` (Generic) → [STORAGE.md](STORAGE.md#history-commands). |
-| `log` / `revert` / `prune` hit any storage failure | `ActionHistory` re-wraps `StorageException` as `ActionException` (Generic), so a malformed history record reaches the CLI as `ActionException`. Same group, so the exit is unchanged. |
+| `log` / `revert` / `prune` failures | → [STORAGE.md](STORAGE.md#history-commands) |
 | A storage URL txstore rejects (relative `fs://`, query, unknown scheme) | `ValueError` (Generic) → [VALIDATION.md](VALIDATION.md#storage-urls). |
 
 ## Maintenance

@@ -7,6 +7,7 @@ together. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
 [CONFIG.md](../../CONFIG.md#insert) (flags),
 [VALIDATION.md](../../VALIDATION.md#debian-source-strings) (deb source and file rules),
 [VALIDATION.md](../../VALIDATION.md#filename-safety) (upload names),
+[CRYPTO.md](../../CRYPTO.md#verification-failures) (`.changes` and payload digests),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups) (exit groups), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
@@ -58,6 +59,7 @@ wiring (begin/commit on success, discard on failure, no-op on a non-transactiona
 - [STYLE.md](../../STYLE.md#layers), [CONFIG.md](../../CONFIG.md#insert),
   [VALIDATION.md](../../VALIDATION.md#debian-source-strings),
   [VALIDATION.md](../../VALIDATION.md#filename-safety),
+  [CRYPTO.md](../../CRYPTO.md#verification-failures),
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [action_pkg_remove.md](action_pkg_remove.md), [action_sync.md](action_sync.md),
   [repo_sync_indices.md](repo_sync_indices.md),

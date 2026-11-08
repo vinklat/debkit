@@ -11,8 +11,7 @@ skips, or recopies. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 - Reject unknown schemes and malformed source strings early.
 - Failures use `EXCEPTIONS.md` classes, written below as `Exception (group)`; CLI type converters
   raise `ArgumentTypeError` (Usage) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups).
-- A variable passes through its flag's converter and choices; a rejected value exits 2 naming the
-  variable → [CONFIG.md](CONFIG.md#resolution).
+- Variable resolution and rejected values → [CONFIG.md](CONFIG.md#resolution).
 
 ## Storage URLs
 
@@ -67,7 +66,9 @@ Built by `RepoParams.indices_path()` from the layout prefix, component, and inne
 | Compression preference | `Packages` and `Sources` discovery follows the codec order in `repo/compress.py`, the uncompressed index last; a save rewrites every form discovery found |
 | Release files | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
 | Component Release | Only a componented repo reads or writes a per-component `Release`; its component and architecture are non-empty, else → `ValueError` (Generic). |
-| Flat component | A flat layout has one component slot: insert joins the component it loaded, `/` when its Release names none, whatever `--component` says. A new flat repository is set up without `Components`, and a save never rewrites the field, so a loaded one is kept. `--component` still names the pool key → [Filename safety](#filename-safety). |
+| Flat component | A flat layout has one component slot: insert joins the component it loaded, `/` when its Release names none, whatever `--component` says. |
+| Flat Components field | A new flat repository is set up without `Components`; a save never rewrites the field, so a loaded one is kept. |
+| Flat pool key | `--component` still names the pool key of a flat insert → [Filename safety](#filename-safety). |
 | Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. |
 | Release key | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends |
 
@@ -174,7 +175,7 @@ Implemented by `positive_int_type()` and `history_max_age_type()` in `argtypes.p
 | -- | -- | -- |
 | Integer | Plain ASCII decimal, optional sign, surrounding whitespace ignored; `1_0` and non-ASCII digits are refused. | → `ArgumentTypeError` (Usage) |
 | `--history-keep` | 1 or greater. | Below 1 → `ArgumentTypeError` (Usage) |
-| `--history-max-age` | 0 to 36500 days, txstore's bound; `0` disables pruning. | Outside → `ArgumentTypeError` (Usage) |
+| `--history-max-age` | 0 to 36500 days, txstore's bound; meaning of `0` → [CONFIG.md](CONFIG.md#global-flags). | Outside → `ArgumentTypeError` (Usage) |
 
 ## Environment values
 
@@ -182,12 +183,11 @@ Implemented by `_env.py` and `_options.py`; resolution → [CONFIG.md](CONFIG.md
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Empty | An empty variable counts as unset. | — |
 | Switch true | `1`, `true`, `yes`, `on`; case-insensitive, surrounding whitespace ignored. | — |
 | Switch false | `0`, `false`, `no`, `off`; case-insensitive, surrounding whitespace ignored. | — |
 | Switch other | Never read as true, so a typo cannot disable verification. | → usage error naming the variable (Usage) |
 | Valued | Converted and checked as the flag's value would be. | → usage error naming the variable (Usage) |
-| Prefix | Only `DEBKIT_` names are read. | Other name → `ValueError` (a programming error) |
+| Prefix | Only `DEBKIT_` names are read; another name is a programming error. | Other name → `ValueError` (Generic) |
 
 ## Release dates
 
@@ -225,7 +225,7 @@ path.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Value | Comma-separated string, default `amd64,arm64`; split on commas, with no trimming or case folding. | — |
+| Value | Comma-separated string; split on commas, with no trimming or case folding; default → [CONFIG.md](CONFIG.md#sync). | — |
 | Empty token | Dropped, so `amd64,,arm64` selects two architectures; a value of commas alone selects none, and the Release tokens decide. | — |
 | Empty string | No override is applied. | — |
 | Token | Lower-case letters, digits, and `-`, not starting with `-`, e.g. `amd64`, `hurd-i386`; a flag token is checked before any storage is opened. | Flag token → `ActionException` (Generic) |

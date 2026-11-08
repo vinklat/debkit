@@ -37,7 +37,7 @@ loop for filename in filenames
   ActionPkg -> Df: get_package()
   Df --> ActionPkg: package
   ActionPkg -> ActionPkg: pkg_arch = package.get_arch()
-  opt pkg_arch == "source"
+  opt pkg_arch invalid or "source"
     ActionPkg -> ActionPkg: raise ActionException\n[before any transfer]
   end
   ActionPkg -> ActionPkg: archs = [pkg_arch], or binary_archs\nfor "all" or no Architecture
@@ -47,7 +47,7 @@ loop for filename in filenames
   ActionPkg -> Tgt: transfer_from(Inc, filename, path_dst)
   Tgt -> TStor: put / add_metadata (staged via footmarks)
   Tgt --> ActionPkg: digests
-  opt .changes upload and digests differ from its entry
+  opt .changes upload, not --skip-verify, and digests differ from its entry
     ActionPkg -> ActionPkg: raise ChecksumException\n[staged transfer discarded]
   end
   ActionPkg -> ActionPkg: package.set_digests(digests)

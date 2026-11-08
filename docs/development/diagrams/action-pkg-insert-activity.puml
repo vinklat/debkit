@@ -2,7 +2,7 @@
 start
 if (XOR of changes_filename / deb_filename?) then (no)
   :raise ActionException
-   ("provide either --changes-filename or --deb-filename, not both");
+   ("provide either ~--changes-filename or ~--deb-filename, not both");
   stop
 endif
 
@@ -46,6 +46,12 @@ partition "with maybe_transaction(target.storage)" {
     :debfile = DebFile(incoming_storage, filename, comp);
     :package = debfile.get_package();
     :pkg_arch = package.get_arch();
+    if (pkg_arch set and not an architecture name?) then (yes)
+      :raise ActionException
+       ("Invalid architecture in {filename}: ...");
+      note right: refused before any transfer
+      stop
+    endif
     if (pkg_arch == "source"?) then (yes)
       :raise ActionException
        ("Source packages are not supported yet");
@@ -67,9 +73,9 @@ partition "with maybe_transaction(target.storage)" {
     :digests = target.transfer_from(
         incoming_storage, filename,
         path_dst=debfile.filename_field);
-    if (.changes upload and digests differ from its entry?) then (yes)
+    if (.changes upload, digest verification on,\n and digests differ from its entry?) then (yes)
       :raise ChecksumException;
-      note right: the transaction discards the staged transfer
+      note right: the transaction discards the staged transfer;\noff under --skip-verify
       stop
     endif
     :package.set_digests(digests);
@@ -77,10 +83,8 @@ partition "with maybe_transaction(target.storage)" {
       :target.insert_pkg(component, arch, package);
     endwhile (no)
   endwhile (no)
-  :ret_diff = target.diff(prev_repo);
-  if (ret_diff is non-empty?) then (yes)
-    :target.save();
-  endif
+  :ret_diff = _save_if_changed(prev_repo)
+   [target.diff(prev_repo); target.save() if non-empty];
 }
 
 if (any exception escaped the partition?) then (yes)
@@ -93,9 +97,9 @@ else (no)
 endif
 
 if (output == brief?) then (yes)
-  :print_pkg_brief(ret_diff);
+  :_print_pkg_brief(ret_diff);
 else (json)
-  :print_pkg_json(ret_diff);
+  :_print_pkg_json(ret_diff);
 endif
 stop
 @enduml

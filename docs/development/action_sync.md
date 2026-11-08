@@ -27,9 +27,9 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   [STORAGE.md](../../STORAGE.md#transactions).
 - The target is loaded inside that body, so a peer that commits while this run waits for the lock is
   what every pass plans, floors, and reports against. `--verify-existing` checks that same load
-  before the first pass → [CONFIG.md](../../CONFIG.md#sync); its deletions are recorded with the
-  sync → [STORAGE.md](../../STORAGE.md#transactions), and a failure it could not delete is logged
-  as a warning.
+  before the first pass → [CRYPTO.md](../../CRYPTO.md#verification-failures); its deletions are
+  recorded with the sync → [STORAGE.md](../../STORAGE.md#transactions), and a failure it could not
+  delete is logged as a warning.
 - The source repository is re-read after each pass until its `Release` hash is stable, so a source
   that changes during the mirror is synced again rather than left inconsistent. After
   `MAX_UPDATED_REPO_RETRIES` passes the run stops re-reading, logs a warning, and commits the last

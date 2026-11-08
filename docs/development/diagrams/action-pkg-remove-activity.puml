@@ -34,9 +34,9 @@ else (no)
 endif
 
 if (output == brief?) then (yes)
-  :print_pkg_brief(ret_diff);
+  :_print_pkg_brief(ret_diff);
 else (json)
-  :print_pkg_json(ret_diff);
+  :_print_pkg_json(ret_diff);
 endif
 stop
 @enduml

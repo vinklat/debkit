@@ -10,7 +10,7 @@ Verification is on by default; skipping is explicit through the switches below.
 
 | Flag | Effect |
 | -- | -- |
-| `--skip-verify` | Disables TLS, GPG, and digest verification; GPG as under `--skip-verify-gpg`. |
+| `--skip-verify` | Disables TLS, GPG, and index and payload digest verification; GPG as under `--skip-verify-gpg`. An explicit `--changes-sha256` is still checked → [Verification failures](#verification-failures). |
 | `--skip-verify-gpg` | No `GnuPG` instance is created by action setup; Release signatures are not checked, and a root Release without `Release.gpg` or `InRelease` reads as-is. |
 | `--skip-verify-gpg`, writing | Release signing is off too: `insert` and `remove` save the root `Release` unsigned and delete its old `InRelease` and `Release.gpg`, logging each, since both sign the previous content. |
 | `--skip-verify` or `--skip-verify-gpg` | Every command that reads a repository logs a warning once per run; `log`, `revert`, and `prune` verify nothing and do not. |
@@ -112,7 +112,8 @@ older Release no longer lists.
 | `insert` `.changes` file | A `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
 | `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off; a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
-| `insert` signed `.changes` | A clearsigned `.changes` is parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. A malformed armor → `ChangesException` (Write). |
+| `insert` signed `.changes` | Parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. |
+| `insert` `.changes` with malformed armor | → `ChangesException` (Write). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure | `GPGVerifyException` (Read). |
 

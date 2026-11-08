@@ -13,7 +13,7 @@ flags in `argparser.py`, subcommand flags in the owning `Action*` module.
 | Order | The flag, then its `DEBKIT_*` variable, then the default. |
 | Empty | An empty variable counts as unset. |
 | Switches | A boolean flag is a bare switch with a `--no-` form, so `--no-skip-verify` overrides `DEBKIT_SKIP_VERIFY=1`; its variable takes the boolean vocabulary → [VALIDATION.md](VALIDATION.md#environment-values). |
-| Values | A variable passes through the flag's converter and choices; a rejected value exits 2 naming the variable → [VALIDATION.md](VALIDATION.md#principles). |
+| Values | A variable passes through the flag's converter and choices; a rejected value exits 2 naming the variable → [VALIDATION.md](VALIDATION.md#environment-values). |
 | Required | A required flag with neither flag nor variable exits 2 naming both. |
 | Variable only | A [variable-only setting](#variable-only-settings) has no flag: its variable, then the default. |
 | Lazy read | A variable is read only when its flag is absent, after argparse parses the command line. |
@@ -87,7 +87,7 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 | `--architectures` | `DEBKIT_ARCHITECTURES` | `amd64,arm64` | Comma-separated list; `source` selects source packages → [VALIDATION.md](VALIDATION.md#architectures) |
 | `--indices-exclude` | `DEBKIT_INDICES_EXCLUDE` | empty string | Comma-separated globs of Release-listed index paths to skip → [VALIDATION.md](VALIDATION.md#index-exclude-globs) |
 | `--allow-release-rollback` | `DEBKIT_ALLOW_RELEASE_ROLLBACK` | off | Skips the Release freshness checks → [CRYPTO.md](CRYPTO.md#release-freshness) |
-| `--verify-existing` | none | off | Verify target packages before the first pass; each that fails is deleted, and the sync copies it again |
+| `--verify-existing` | none | off | Verify target packages before the first pass → [CRYPTO.md](CRYPTO.md#verification-failures) |
 | `--indices-only` | none | off | Sync index objects only |
 
 ## Check
