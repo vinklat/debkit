@@ -36,15 +36,15 @@ class Changes(HexDigests):
     """Object holding parsed Debian ``.changes`` file data.
 
     Attributes:
-        storage (Storage): Storage backend used to read the file.
-        fields (dict[str, str]): Parsed header fields from the changes file.
+        storage: Storage backend used to read the file.
+        fields: Parsed header fields from the changes file.
     """
 
     def __init__(self, storage: Storage) -> None:
         """Initialize Changes object.
 
         Args:
-            storage (Storage): Storage object
+            storage: Storage object
         """
         self.storage = storage
         self.fields: dict[str, str] = {}
@@ -54,7 +54,7 @@ class Changes(HexDigests):
         """Parse Changes file fields from headers format.
 
         Args:
-            enc_data (bytes): The encoded data to parse.
+            enc_data: The encoded data to parse.
 
         A clearsigned file, as `debsign` writes it, is read through its signed body; the
         signature itself is not verified -> [CRYPTO.md](CRYPTO.md#verification-failures).
@@ -91,8 +91,8 @@ class Changes(HexDigests):
         """Load Changes file fields from data.
 
         Args:
-            filename (str): The filename of the data.
-            digest_expected (str): The expected digest of the data.
+            filename: The filename of the data.
+            digest_expected: The expected digest of the data.
 
         Raises:
             ChecksumException: If the checksum of the file does not match the expected checksum.
@@ -114,10 +114,10 @@ class Changes(HexDigests):
         """Get the digests of a file.
 
         Args:
-            filename (str): The filename of the file.
+            filename: The filename of the file.
 
         Returns:
-            Dict[str, Any]: The digests of the file.
+            The digests of the file.
         """
         return self.digests[filename]
 
@@ -129,7 +129,7 @@ class Changes(HexDigests):
         makes the field order decide the upload, so every token is returned.
 
         Returns:
-            List[str]: The architecture tokens of the Changes file.
+            The architecture tokens of the Changes file.
         """
         return self.fields.get("Architecture", DEFAULT_ARCH).split()
 
@@ -140,7 +140,7 @@ class Changes(HexDigests):
         order `dpkg-genchanges` wrote -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
 
         Returns:
-            bool: True when any architecture token is the source one.
+            True when any architecture token is the source one.
         """
         return SOURCE_ARCH in self.get_archs()
 
@@ -148,7 +148,7 @@ class Changes(HexDigests):
         """Get the files in the Changes file.
 
         Returns:
-            List[str]: The files in the Changes file.
+            The files in the Changes file.
         """
         return list(self.digests.keys())
 
@@ -156,6 +156,6 @@ class Changes(HexDigests):
         """Get the .deb files in the Changes file.
 
         Returns:
-            List[str]: The deb files in the Changes file.
+            The deb files in the Changes file.
         """
         return [f for f in self.get_files() if f.endswith(".deb")]

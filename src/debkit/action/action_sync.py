@@ -43,10 +43,10 @@ def _split_csv(value: str) -> list[str]:
     -> [VALIDATION.md](VALIDATION.md#architectures).
 
     Args:
-        value (str): The raw flag value.
+        value: The raw flag value.
 
     Returns:
-        List[str]: The non-empty tokens, in order.
+        The non-empty tokens, in order.
     """
     return [token for token in value.split(",") if token]
 
@@ -55,16 +55,16 @@ class ActionSync(Action):
     """Sync debian repo from source repository.
 
     Attributes:
-        source_repo (RepoSync | None): The `sync` source; None for `check`.
-        fix (bool): Fix inconsistencies if True.
+        source_repo: The `sync` source; None for `check`.
+        fix: Fix inconsistencies if True.
     """
 
     def __init__(self, pars: Namespace, create_path: bool = False):
         """Initialize ActionSync.
 
         Args:
-            pars (Namespace): Command line arguments from argparser.
-            create_path (bool): Create path or bucket if True.
+            pars: Command line arguments from argparser.
+            create_path: Create path or bucket if True.
 
         Raises:
             ActionException: An `--architectures` token is not an architecture name; refused
@@ -97,8 +97,8 @@ class ActionSync(Action):
         -> [CRYPTO.md](CRYPTO.md#gpg).
 
         Args:
-            pars (Namespace): Command line arguments from argparser.
-            create_path (bool): Create the target path or bucket if True.
+            pars: Command line arguments from argparser.
+            create_path: Create the target path or bucket if True.
         """
         if hasattr(pars, "source_url"):
             logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
@@ -123,7 +123,7 @@ class ActionSync(Action):
         """Print sync brief output.
 
         Args:
-            diff (RepoDiff): Repository diff object.
+            diff: Repository diff object.
         """
         print(f"Added {diff.count_pkgs_to_copy()} packages.")
         print(f"Removed {diff.count_pkgs_to_remove()} packages.")
@@ -136,8 +136,8 @@ class ActionSync(Action):
         """Print sync json output.
 
         Args:
-            diff (RepoDiff): Repository diff object.
-            source (RepoSync): The source repository the sync read.
+            diff: Repository diff object.
+            source: The source repository the sync read.
         """
         json_dict: dict[str, Any] = {
             "packages": diff.dump(),
@@ -233,7 +233,7 @@ class ActionSync(Action):
         -> [CRYPTO.md](CRYPTO.md#release-freshness).
 
         Returns:
-            Release: A snapshot of the target Release as read, taken before any reset.
+            A snapshot of the target Release as read, taken before any reset.
         """
         try:
             self.target_repo.update()
@@ -255,7 +255,7 @@ class ActionSync(Action):
         -> [STORAGE.md](STORAGE.md#transactions).
 
         Args:
-            target (RepoRW): The loaded target repository.
+            target: The loaded target repository.
         """
         logger.info("---------- Verify target repo packages...")
         checker = RepoSync.over(target)
@@ -271,7 +271,7 @@ class ActionSync(Action):
         """Print check brief output.
 
         Args:
-            status (dict[str, int]): Dictionary with errors and fixed errors.
+            status: Dictionary with errors and fixed errors.
         """
         print(f"Errors total: {status['errors_total']} files")
         print(f"Errors fixed: {status['errors_fixed_total']} files")
@@ -280,7 +280,7 @@ class ActionSync(Action):
         """Print check json output.
 
         Args:
-            status (dict[str, int]): Dictionary with errors and fixed errors.
+            status: Dictionary with errors and fixed errors.
         """
         json_dict: dict[str, dict[str, Any]] = {"status": status, "metrics": {}}
         json_dict["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
@@ -291,7 +291,7 @@ class ActionSync(Action):
         """Check debian repo for consistency.
 
         Returns:
-            bool: True if repo is consistent.
+            True if repo is consistent.
         """
         # `--fix` writes, so it is recorded as one transaction -> STORAGE.md#transactions
         with (
@@ -317,10 +317,10 @@ class ActionSync(Action):
         """Check the loaded target against its own indices, fixing it with `--fix`.
 
         Args:
-            target (RepoRW): The loaded target repository.
+            target: The loaded target repository.
 
         Returns:
-            Dict[str, int]: The error and fixed-error totals.
+            The error and fixed-error totals.
         """
         dup_repo = RepoSync.over(target)
         missing_list, orphan_list = dup_repo.consistency_lists()
@@ -358,7 +358,7 @@ class ActionSync(Action):
         -> [CONFIG.md](../../../CONFIG.md#check).
 
         Args:
-            parser (EnvArgumentParser): The parser to add arguments to.
+            parser: The parser to add arguments to.
         """
         parser.add_env_argument(
             "--architectures",
@@ -382,7 +382,7 @@ class ActionSync(Action):
         """Add argparser arguments for sync.
 
         Args:
-            parser (EnvArgumentParser): The parser to add arguments to.
+            parser: The parser to add arguments to.
         """
         parser.add_env_argument(
             "--source-url",
@@ -426,7 +426,7 @@ class ActionSync(Action):
         too.
 
         Args:
-            parser (EnvArgumentParser): The parser to add arguments to.
+            parser: The parser to add arguments to.
         """
         parser.add_argument(
             "--fix",

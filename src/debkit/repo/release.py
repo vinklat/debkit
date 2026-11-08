@@ -44,9 +44,9 @@ class IndexEntry(NamedTuple):
     """One index file listed in the digest block of a Release file.
 
     Attributes:
-        key (str): Path as the Release lists it, relative to the layout prefix.
-        path (str): Full storage path of the same object.
-        digests (Dict[str, str]): Digests and `Size` the Release records for it.
+        key: Path as the Release lists it, relative to the layout prefix.
+        path: Full storage path of the same object.
+        digests: Digests and `Size` the Release records for it.
     """
 
     key: str
@@ -98,13 +98,13 @@ def parse_release_date(value: str) -> datetime:
     UTC -> [VALIDATION.md](VALIDATION.md#release-dates).
 
     Args:
-        value (str): Raw field value.
+        value: Raw field value.
 
     Raises:
         ValueError: If *value* is not an RFC 2822 date with an accepted zone.
 
     Returns:
-        datetime: The zone-aware date.
+        The zone-aware date.
     """
     tokens = value.split()
     zone = tokens[-1] if tokens else ""
@@ -121,27 +121,26 @@ class Release(HexDigests):
     """Object to store Debian Release file data.
 
     Attributes:
-        storage (Storage): The storage class of the repo.
-        params (Params): The input parameters of the repo.
-        gpg (GnuPG): The GnuPG object.
-        fields (dict): The fields of the release.
-        filename (str): The filename of the release.
-        found_indices_files List[str]: List of all found Release files.
-        hashfuns List[str]: Available hexdigest algorithms in data.
-        hash (str): Hexdigest of a file content (for changes detection).
-        root_digests (Dict[str, Dict[str, str]]): Release key → digests of each root
-            Release file as the last load fetched it.
-        is_root (bool): True once `load` or `setup` made this the root Release; a root
-            save writes and signs the layout's root paths, not the file it was read from.
+        storage: The storage class of the repo.
+        params: The input parameters of the repo.
+        gpg: The GnuPG object.
+        fields: The fields of the release.
+        filename: The filename of the release.
+        found_indices_files: List of all found Release files.
+        hashfuns: Available hexdigest algorithms in data.
+        hash: Hexdigest of a file content (for changes detection).
+        root_digests: Release key → digests of each root Release file as the last load fetched it.
+        is_root: True once `load` or `setup` made this the root Release; a root save writes and
+            signs the layout's root paths, not the file it was read from.
     """
 
     def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Initialize Release object.
 
         Args:
-            storage (Storage): The storage class of the repo.
-            params (RepoParams): The input parameters of the repo.
-            gpg (GnuPG | None): Optional GnuPG object. Defaults to None.
+            storage: The storage class of the repo.
+            params: The input parameters of the repo.
+            gpg: Optional GnuPG object. Defaults to None.
         """
         self.storage = storage
         self.params = params
@@ -174,7 +173,7 @@ class Release(HexDigests):
         would change the original too.
 
         Returns:
-            Release: A copy of this Release.
+            A copy of this Release.
         """
         ret = Release(self.storage, self.params, gpg=self.gpg)
         ret.fields = self.fields.copy()
@@ -253,7 +252,7 @@ class Release(HexDigests):
         """Parse Release file fields from headers format.
 
         Args:
-            enc_data (bytes): The encoded data to parse.
+            enc_data: The encoded data to parse.
 
         Note:
             Some repositories produce non-RFC-2822-compliant Release files where multi-value
@@ -296,11 +295,11 @@ class Release(HexDigests):
         where the loader looks -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
         Args:
-            comp (str): The component the Release belongs to.
-            arch (str): The architecture the Release belongs to.
+            comp: The component the Release belongs to.
+            arch: The architecture the Release belongs to.
 
         Returns:
-            str: The storage path of the component Release.
+            The storage path of the component Release.
         """
         filename = self.params.indices_path(f"{self.params.arch_dir(arch)}/Release", comp)
         return filename
@@ -314,7 +313,7 @@ class Release(HexDigests):
                 `InRelease` exists.
 
         Returns:
-            Tuple[bool, str]: Whether to parse `InRelease`, and the file to parse.
+            Whether to parse `InRelease`, and the file to parse.
         """
         # the layout decides the prefix -> [VALIDATION.md](VALIDATION.md#repository-index-paths)
         release_path = self.params.indices_path("Release")
@@ -369,7 +368,7 @@ class Release(HexDigests):
         """Whether a root Release load verifies signatures.
 
         Returns:
-            bool: True with GPG verification on and a `GnuPG` to verify with.
+            True with GPG verification on and a `GnuPG` to verify with.
         """
         return self.params.verify_gpg and self.gpg is not None
 
@@ -377,11 +376,11 @@ class Release(HexDigests):
         """Verify GPG signature.
 
         Args:
-            data (bytes): The data to verify.
-            detach_sign (Optional[bytes]): The detached signature. Defaults to None.
+            data: The data to verify.
+            detach_sign: The detached signature. Defaults to None.
 
         Returns:
-            bytes: The verified data.
+            The verified data.
         """
         # only reached when `_checks_signatures()` holds, so a missing GnuPG is a caller bug,
         # never an unverified load
@@ -401,14 +400,14 @@ class Release(HexDigests):
         -> [CRYPTO.md](CRYPTO.md#verification-order).
 
         Args:
-            use_inrelease (bool): Whether `InRelease` is the file to parse.
+            use_inrelease: Whether `InRelease` is the file to parse.
 
         Raises:
             ChecksumException: Both `InRelease` and `Release` are present and their
                 verified contents differ.
 
         Returns:
-            bytes: The verified content of the file to parse.
+            The verified content of the file to parse.
         """
         raw = {
             self.params.release_key(path): self.storage.get(path)
@@ -441,11 +440,11 @@ class Release(HexDigests):
         """Verify a root Release file against the bytes the last load fetched.
 
         Args:
-            key (str): `Release`, `InRelease`, or `Release.gpg`.
-            incoming_digests (Dict[str, str]): The digests to verify.
+            key: `Release`, `InRelease`, or `Release.gpg`.
+            incoming_digests: The digests to verify.
 
         Returns:
-            bool: True when the last load fetched the file with these digests.
+            True when the last load fetched the file with these digests.
         """
         return compare_digests(self.root_digests.get(key, {}), incoming_digests)
 
@@ -478,17 +477,16 @@ class Release(HexDigests):
         """Load the per-component Release of one architecture.
 
         Args:
-            comp (str): The component to load.
-            arch (str): The architecture to load.
-            root_release (Optional[Release]): The root Release listing its digests.
-                Defaults to None (not verified).
+            comp: The component to load.
+            arch: The architecture to load.
+            root_release: The root Release listing its digests. Defaults to None (not verified).
 
         Raises:
             ValueError: `comp` or `arch` is empty.
             ChecksumException: Checksum mismatch against the root Release.
 
         Returns:
-            bool: True if the Release file was loaded, False when storage lacks it.
+            True if the Release file was loaded, False when storage lacks it.
         """
         self._require_coordinates(comp, arch)
         self.is_root = False
@@ -515,7 +513,7 @@ class Release(HexDigests):
         """Serialize Release file data to headers format.
 
         Returns:
-            str: The serialized Release file fields.
+            The serialized Release file fields.
         """
         msg = EmailMessage(policy=policy.default.clone(max_line_length=160))
         for field, data in self.fields.items():
@@ -541,7 +539,7 @@ class Release(HexDigests):
         """Sign the root Release into the layout's `InRelease` and `Release.gpg`.
 
         Args:
-            enc_data (bytes): The encoded root Release to sign.
+            enc_data: The encoded root Release to sign.
 
         Raises:
             ReleaseWriteException: GnuPG sign error
@@ -593,7 +591,7 @@ class Release(HexDigests):
         signed.
 
         Returns:
-            Dict[str, str] | None: The digests of the saved file.
+            The digests of the saved file, or None when nothing was written.
         """
         if self.filename is None:
             return None
@@ -624,11 +622,11 @@ class Release(HexDigests):
         """Dump Release object to a dict.
 
         Args:
-            brief (bool): Whether to dump a brief version output. Defaults to False.
+            brief: Whether to dump a brief version output. Defaults to False.
 
         Returns:
-            Dict[str, Any]: A dict representation of the Release object. The dictionary includes the
-                indices filenames, attributes, and digests (if not brief).
+            A dict representation of the Release object. The dictionary includes the indices
+            filenames, attributes, and digests (if not brief).
         """
         return {
             "files": self.found_indices_files,
@@ -640,7 +638,7 @@ class Release(HexDigests):
         """Get list of all found indices filenames.
 
         Returns:
-            List[str]: A list of filenames.
+            A list of filenames.
         """
         return self.found_indices_files
 
@@ -652,7 +650,7 @@ class Release(HexDigests):
         path listed but not published by the repository is still returned.
 
         Returns:
-            List[IndexEntry]: One entry per digest block record, sorted by key.
+            One entry per digest block record, sorted by key.
         """
         return [
             IndexEntry(key, self.params.indices_path(key), digests)
@@ -663,13 +661,13 @@ class Release(HexDigests):
         """Get a date field of the Release.
 
         Args:
-            field (str): Field name, `Date` or `Valid-Until`.
+            field: Field name, `Date` or `Valid-Until`.
 
         Raises:
             ValueError: If the field is present but malformed.
 
         Returns:
-            datetime | None: The zone-aware date, or None when the field is absent.
+            The zone-aware date, or None when the field is absent.
         """
         value = self.fields.get(field)
         return None if value is None else parse_release_date(value)
@@ -689,8 +687,8 @@ class Release(HexDigests):
         newer object -> [CRYPTO.md](CRYPTO.md#release-freshness).
 
         Args:
-            target (Release): The loaded target Release; an unloaded one has no fields.
-            now (datetime): Zone-aware current time.
+            target: The loaded target Release; an unloaded one has no fields.
+            now: Zone-aware current time.
 
         Raises:
             ReleaseFreshnessException: This Release is expired, has no `Date` while the
@@ -726,7 +724,7 @@ class Release(HexDigests):
         """Check if Release object is empty.
 
         Returns:
-            bool: True if the Release object is empty, False otherwise.
+            True if the Release object is empty, False otherwise.
         """
         return bool(len(self.fields) == 0)
 
@@ -734,8 +732,8 @@ class Release(HexDigests):
         """Start a new root Release.
 
         Args:
-            fields (Optional[Dict[str, str]]): Initial fields, copied; the generated
-                identity fields are added to them. Defaults to None (keep the current ones).
+            fields: Initial fields, copied; the generated identity fields are added to them.
+                Defaults to None (keep the current ones).
         """
         if fields is not None:
             self.fields = dict(fields)
@@ -755,8 +753,8 @@ class Release(HexDigests):
         """Start a new per-component Release of one architecture.
 
         Args:
-            comp (str): The component.
-            arch (str): The architecture.
+            comp: The component.
+            arch: The architecture.
 
         Raises:
             ValueError: `comp` or `arch` is empty.

@@ -12,10 +12,10 @@ class RepoDiff:
     """Class containing repository diff data.
 
     Attributes:
-        added_pkgs (Dict[str, Dict[str, List[Package]]]): added packages
-        removed_pkgs (Dict[str, Dict[str, List[Package]]]): removed packages
-        updated_pkgs (Dict[str, Dict[str, List[Package]]]): updated packages
-        old_versions_pkgs (Dict[str, Dict[str, List[Package]]]): old versions packages
+        added_pkgs: added packages
+        removed_pkgs: removed packages
+        updated_pkgs: updated packages
+        old_versions_pkgs: old versions packages
 
     Example:
         >>> from debkit.repo.repo_diff import RepoDiff
@@ -37,7 +37,7 @@ class RepoDiff:
         """Dump RepoDiff to dict.
 
         Returns:
-            Dict[str, Dict[str, Dict[str, List[Package]]]]: RepoDiff output dict
+            RepoDiff output dict
         """
         return {
             "added": self.added_pkgs,
@@ -58,12 +58,12 @@ class RepoDiff:
         """Update RepoDiff with new data.
 
         Args:
-            component (str): component name
-            arch (str): architecture
-            added (Dict[str, Package]): added packages
-            removed (Dict[str, Package]): removed packages
-            updated (Dict[str, Package]): updated packages
-            old_versions (Dict[str, Package]): old versions packages
+            component: component name
+            arch: architecture
+            added: added packages
+            removed: removed packages
+            updated: updated packages
+            old_versions: old versions packages
         """
         self.added_pkgs.setdefault(component, {})[arch] = list(added.values())
         self.removed_pkgs.setdefault(component, {})[arch] = list(removed.values())
@@ -74,7 +74,7 @@ class RepoDiff:
         """Get list of packages to copy.
 
         Returns:
-            List[Package]: list of packages to copy
+            List of packages to copy
         """
         pkgs: list[Package] = []
         for component in self.added_pkgs.values():
@@ -89,7 +89,7 @@ class RepoDiff:
         """Get count of distinct payloads to copy; an `all` package in several arches counts once.
 
         Returns:
-            int: count of packages to copy
+            Count of packages to copy
         """
         return len(self.get_filenames_to_copy())
 
@@ -97,7 +97,7 @@ class RepoDiff:
         """Get list of filenames to copy.
 
         Returns:
-            Set[str]: list of filenames to copy
+            List of filenames to copy
         """
         return {str(pkg) for pkg in self.get_pkgs_to_copy()}
 
@@ -105,7 +105,7 @@ class RepoDiff:
         """Get list of packages to remove.
 
         Returns:
-            List[Package]: list of packages to remove
+            List of packages to remove
         """
         pkgs: list[Package] = []
         for component in self.removed_pkgs.values():
@@ -118,7 +118,7 @@ class RepoDiff:
         """Get count of distinct payloads to remove; an `all` package in several arches counts once.
 
         Returns:
-            int: count of packages to remove
+            Count of packages to remove
         """
         return len(self.get_filenames_to_remove())
 
@@ -126,7 +126,7 @@ class RepoDiff:
         """Get list of filenames to remove.
 
         Returns:
-            Set[str]: list of filenames to remove
+            List of filenames to remove
         """
         return {str(pkg) for pkg in self.get_pkgs_to_remove()}
 
@@ -137,7 +137,7 @@ class RepoDiff:
         empty lists and counts as empty.
 
         Returns:
-            bool: True if no slot lists a package, False otherwise
+            True if no slot lists a package, False otherwise
         """
         return not any(
             pkgs

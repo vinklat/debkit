@@ -30,10 +30,10 @@ def parse_hash_block(text: str) -> list[tuple[str, str, str]]:
     not belong here -> [CRYPTO.md](CRYPTO.md#checksums).
 
     Args:
-        text (str): Field value, continuation indentation included.
+        text: Field value, continuation indentation included.
 
     Returns:
-        List[Tuple[str, str, str]]: One triple per complete run, in file order.
+        One triple per complete run, in file order.
     """
     parts = re.split(r"\s+", text.strip())
     return list(zip(*[iter(parts)] * 3, strict=False))
@@ -46,7 +46,7 @@ class ChecksumException(Exception):
         """Initialize the exception with a checksum error message.
 
         Args:
-            message (str): Explanation of the error.
+            message: Explanation of the error.
         """
         super().__init__(f"Checksum: {message}")
 
@@ -55,8 +55,8 @@ class HexDigests:
     """Class for managing checksums of files.
 
     Attributes:
-        digests (Dict[str, Dict[str, Any]]): The checksums of files.
-        modified (bool): Whether the release has been modified.
+        digests: The checksums of files.
+        modified: Whether the release has been modified.
     """
 
     def __init__(self) -> None:
@@ -68,11 +68,11 @@ class HexDigests:
         """Verify checksum of a file.
 
         Args:
-            filename (str): The filename to verify.
-            incoming_digests (Dict[str,str]): The checksums to verify.
+            filename: The filename to verify.
+            incoming_digests: The checksums to verify.
 
         Returns:
-            bool: True if the checksum is valid, False otherwise.
+            True if the checksum is valid, False otherwise.
         """
         if filename not in self.digests:
             return False
@@ -86,8 +86,8 @@ class HexDigests:
         """Update checksums of a file.
 
         Args:
-            filename (str): The filename to update.
-            incoming_digests (Dict[str,str]): The checksums to update.
+            filename: The filename to update.
+            incoming_digests: The checksums to update.
         """
         if filename not in self.digests:
             self.digests[filename] = {}

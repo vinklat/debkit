@@ -45,10 +45,10 @@ def is_safe_name(name: str) -> bool:
     its directory -> [VALIDATION.md](VALIDATION.md#debian-source-strings).
 
     Args:
-        name (str): A dist or component name.
+        name: A dist or component name.
 
     Returns:
-        bool: True when the name is non-empty, not `.`, and passes the unsafe-key rule.
+        True when the name is non-empty, not `.`, and passes the unsafe-key rule.
     """
     return name not in ("", ".") and not is_unsafe_path(name)
 
@@ -62,13 +62,12 @@ def pool_path(comp: str | None, source: str, filename: str) -> str:
     -> [VALIDATION.md](VALIDATION.md#filename-safety).
 
     Args:
-        comp (str | None): Component name, or None for a pool without one.
-        source (str): The source package name, a Debian Policy name.
-        filename (str): The upload path inside the incoming storage; only its file name is
-            kept.
+        comp: Component name, or None for a pool without one.
+        source: The source package name, a Debian Policy name.
+        filename: The upload path inside the incoming storage; only its file name is kept.
 
     Returns:
-        str: The pool key, e.g. `pool/main/libf/libfoo/libfoo1_1.0_amd64.deb`.
+        The pool key, e.g. `pool/main/libf/libfoo/libfoo1_1.0_amd64.deb`.
     """
     head = f"pool/{comp}" if comp is not None else "pool"
     prefix = source[:4] if source.startswith("lib") and len(source) > 3 else source[0]
@@ -79,11 +78,11 @@ def remove_prefix_from_path(path: str, prefix: str) -> str:
     """Return `path` without the leading `prefix` directory, or unchanged when it lacks it.
 
     Args:
-        path (str): Storage path.
-        prefix (str): Directory to strip, without a trailing slash.
+        path: Storage path.
+        prefix: Directory to strip, without a trailing slash.
 
     Returns:
-        str: The path relative to `prefix`.
+        The path relative to `prefix`.
     """
     return path.removeprefix(f"{prefix}/")
 
@@ -92,10 +91,10 @@ def is_valid_arch(token: str) -> bool:
     """Report whether a token is a well-formed Debian architecture name.
 
     Args:
-        token (str): Architecture token from a flag, a Release, or an upload.
+        token: Architecture token from a flag, a Release, or an upload.
 
     Returns:
-        bool: True for lower-case letters, digits, and `-`, not starting with `-`.
+        True for lower-case letters, digits, and `-`, not starting with `-`.
     """
     return _ARCH_TOKEN.fullmatch(token) is not None
 
@@ -104,14 +103,14 @@ class RepoParams:
     """Debian Repo input parameters.
 
     Attributes:
-        dist (str): The distribution name.
-        components (List[str]): The list of components.
-        archs (List[str]): The list of architectures to limit the repo to.
-        indices_exclude (List[str]): Globs of Release-listed index paths to skip.
-        verify_gpg (bool): Whether to verify GPG signature of root Release file.
-        verify_digests (bool): Whether to verify hex digests like SHA256, SHA512,...
-        url (str): The URL of the repository.
-        is_flat (bool): Whether the repository is flat. Default: False (repo with components).
+        dist: The distribution name.
+        components: The list of components.
+        archs: The list of architectures to limit the repo to.
+        indices_exclude: Globs of Release-listed index paths to skip.
+        verify_gpg: Whether to verify GPG signature of root Release file.
+        verify_digests: Whether to verify hex digests like SHA256, SHA512,...
+        url: The URL of the repository.
+        is_flat: Whether the repository is flat. Default: False (repo with components).
     """
 
     def __init__(
@@ -126,13 +125,13 @@ class RepoParams:
         """Initialize RepoParams.
 
         Args:
-            dist (Optional[str]): The distribution name. Defaults to None.
-            components (Optional[List[str]]): The list of components. Defaults to None.
-            archs (Optional[List[str]]): The list of architectures. Defaults to None.
-            indices_exclude (Optional[List[str]]): Globs of Release-listed index paths to
-                skip. Defaults to None (mirror every listed index).
-            verify_gpg (bool): Whether to verify GPG signature. Defaults to True.
-            verify_digests (bool): Whether to verify hex digests. Defaults to True.
+            dist: The distribution name. Defaults to None.
+            components: The list of components. Defaults to None.
+            archs: The list of architectures. Defaults to None.
+            indices_exclude: Globs of Release-listed index paths to skip. Defaults to None (mirror
+                every listed index).
+            verify_gpg: Whether to verify GPG signature. Defaults to True.
+            verify_digests: Whether to verify hex digests. Defaults to True.
         """
         self.dist = dist
         self.components = components
@@ -148,7 +147,7 @@ class RepoParams:
         """Extract debian repo attributes from a deb source string.
 
         Args:
-            deb_source (str | None): The deb source string to extract attributes from.
+            deb_source: The deb source string to extract attributes from; None is refused.
 
         Raises:
             RepoParamsException: If the deb source string is invalid.
@@ -196,11 +195,10 @@ class RepoParams:
         """Check if this RepoParams is equal to another RepoParams.
 
         Args:
-            other (object): The object to compare with.
+            other: The object to compare with.
 
         Returns:
-            bool: True if equal, False otherwise; NotImplemented for an object that is not
-                a RepoParams.
+            True if equal, False otherwise; NotImplemented for an object that is not a RepoParams.
         """
         if not isinstance(other, RepoParams):
             return NotImplemented
@@ -214,10 +212,10 @@ class RepoParams:
         -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
         Args:
-            arch (str): Architecture name, or `SOURCE_ARCH`.
+            arch: Architecture name, or `SOURCE_ARCH`.
 
         Returns:
-            str: Directory segment, without a trailing slash.
+            Directory segment, without a trailing slash.
         """
         return SOURCE_ARCH if arch == SOURCE_ARCH else f"binary-{arch}"
 
@@ -226,10 +224,10 @@ class RepoParams:
         """Name the package index of an architecture.
 
         Args:
-            arch (str): Architecture name, or `SOURCE_ARCH`.
+            arch: Architecture name, or `SOURCE_ARCH`.
 
         Returns:
-            str: `Sources` for the source architecture, `Packages` otherwise.
+            `Sources` for the source architecture, `Packages` otherwise.
         """
         return "Sources" if arch == SOURCE_ARCH else "Packages"
 
@@ -247,11 +245,11 @@ class RepoParams:
         relative to the layout prefix, for ``digests`` lookups.
 
         Args:
-            inner (str): Path under ``<comp>/`` (or bare filename for flat repos).
-            comp (Optional[str]): Component name; ``None`` is treated as flat-like.
+            inner: Path under ``<comp>/`` (or bare filename for flat repos).
+            comp: Component name; ``None`` is treated as flat-like.
 
         Returns:
-            str: The full storage path.
+            The full storage path.
         """
         if self.is_flat:
             if self.is_real_dist() and self.dist:
@@ -270,10 +268,10 @@ class RepoParams:
         the prefix is returned unchanged, so an already-relative key round-trips.
 
         Args:
-            path (str): Full storage path of an index file.
+            path: Full storage path of an index file.
 
         Returns:
-            str: Path relative to the layout prefix, as the Release lists it.
+            Path relative to the layout prefix, as the Release lists it.
         """
         if self.is_flat:
             if self.is_real_dist() and self.dist:
@@ -288,6 +286,6 @@ class RepoParams:
         """Check if this RepoParams has a real distribution name.
 
         Returns:
-            bool: True if the distribution name is not None, or emty or slash (/),....
+            True if the distribution name is not None, or emty or slash (/),....
         """
         return bool(re.match("^[A-Za-z0-9]*$", self.dist)) if isinstance(self.dist, str) else False

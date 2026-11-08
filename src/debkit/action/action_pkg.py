@@ -48,8 +48,8 @@ class ActionPkg(Action):
         """Initialize ActionPkg.
 
         Args:
-            pars (Namespace): Command line arguments from argparser.
-            create_path (bool): Create path or bucket if True.
+            pars: Command line arguments from argparser.
+            create_path: Create path or bucket if True.
         """
         super().__init__(pars, create_path=create_path)
         self.pkg_pattern: dict[str, re.Pattern[str]] | None = getattr(pars, "pkg_pattern", None)
@@ -77,7 +77,7 @@ class ActionPkg(Action):
         """Print a brief summary of the dump to stdout.
 
         Args:
-            dump (Dict[str, Any]): A dictionary containing the dump data.
+            dump: A dictionary containing the dump data.
         """
         print("Release:")
         for key, value in dump["release"]["data"].items():
@@ -99,7 +99,7 @@ class ActionPkg(Action):
         """Print the dump in JSON format.
 
         Args:
-            dump (Dict[str, Any]): A dictionary containing the dump data.
+            dump: A dictionary containing the dump data.
         """
         print(dump_json(dump))
 
@@ -117,8 +117,7 @@ class ActionPkg(Action):
         """Print brief naturalized statistics to stdout.
 
         Args:
-            stats (Dict[str, Dict[str, Dict[str, int]]]): A dictionary containing
-                the stats data.
+            stats: A dictionary containing the stats data.
         """
         print("Packages:")
         for component, arch in stats.items():
@@ -138,8 +137,7 @@ class ActionPkg(Action):
         """Print JSON statistics to stdout.
 
         Args:
-            stats (Dict[str, Dict[str, Dict[str, int]]]): A dictionary containing
-                the stats data.
+            stats: A dictionary containing the stats data.
         """
         ret = {
             "packages": stats,
@@ -171,7 +169,7 @@ class ActionPkg(Action):
         -> [VALIDATION.md](VALIDATION.md#architectures).
 
         Returns:
-            List[str]: The repository architectures without the source one.
+            The repository architectures without the source one.
         """
         is_flat = self.target_repo.params.is_flat
         return [
@@ -184,15 +182,15 @@ class ActionPkg(Action):
         """Load and check a `.changes` upload, whose digests each listed `.deb` must match.
 
         Args:
-            incoming_storage (Storage): The storage holding the upload.
-            changes_filename (str): The `.changes` file in it.
+            incoming_storage: The storage holding the upload.
+            changes_filename: The `.changes` file in it.
 
         Raises:
             ActionException: An architecture token is not an architecture name.
             ActionException: An architecture token names the source one.
 
         Returns:
-            Changes: The upload; `get_deb_files()` lists its `.deb` files.
+            The upload; `get_deb_files()` lists its `.deb` files.
         """
         changes = Changes(incoming_storage)
         changes.load(changes_filename, digest_expected=self.changes_sha256)
@@ -291,10 +289,9 @@ class ActionPkg(Action):
         nor its file order picks the arches -> [VALIDATION.md](VALIDATION.md#architectures).
 
         Args:
-            filename (str): The `.deb` file, for messages.
-            package (Package): Its control data.
-            binary_archs (List[str]): The target's binary architectures, for `all` or an
-                arch-less package.
+            filename: The `.deb` file, for messages.
+            package: Its control data.
+            binary_archs: The target's binary architectures, for `all` or an arch-less package.
 
         Raises:
             ActionException: If the control `Architecture` is not an architecture name.
@@ -302,7 +299,7 @@ class ActionPkg(Action):
             ActionException: If an `all` or arch-less package finds no binary architecture.
 
         Returns:
-            List[str]: The architectures to insert into.
+            The architectures to insert into.
         """
         pkg_arch = package.get_arch()
         if pkg_arch is not None and not is_valid_arch(pkg_arch):
@@ -327,10 +324,10 @@ class ActionPkg(Action):
         Called inside the command's transaction, so the save is staged with the payloads.
 
         Args:
-            prev_repo (Repo): The target as loaded before the command.
+            prev_repo: The target as loaded before the command.
 
         Returns:
-            RepoDiff: The diff, for the command's output.
+            The diff, for the command's output.
         """
         ret_diff = self.target_repo.diff(prev_repo)
         if not ret_diff.is_empty():
@@ -341,7 +338,7 @@ class ActionPkg(Action):
         """Print an insert or remove diff in the selected output format.
 
         Args:
-            diff (RepoDiff): Repository diff object.
+            diff: Repository diff object.
         """
         if self.output == OutputType.brief:
             self._print_pkg_brief(diff)
@@ -372,7 +369,7 @@ class ActionPkg(Action):
         """Print package operation brief output.
 
         Args:
-            diff (RepoDiff): Repository diff object.
+            diff: Repository diff object.
         """
         if diff.count_pkgs_to_copy() > 0:
             print(f"Inserted {diff.count_pkgs_to_copy()} packages.")
@@ -388,7 +385,7 @@ class ActionPkg(Action):
         """Print package operation json output.
 
         Args:
-            diff (RepoDiff): Repository diff object.
+            diff: Repository diff object.
         """
         json_dict: dict[str, Any] = {
             "packages": diff.dump(),
@@ -403,8 +400,7 @@ class ActionPkg(Action):
         """Add arguments for insert.
 
         Args:
-            parser (EnvArgumentParser): The argument parser to which the arguments should
-                be added.
+            parser: The argument parser to which the arguments should be added.
         """
         parser.add_env_argument(
             "--changes-filename",
@@ -445,8 +441,7 @@ class ActionPkg(Action):
         """Add arguments for delete.
 
         Args:
-            parser (EnvArgumentParser): The argument parser to which the arguments should
-                be added.
+            parser: The argument parser to which the arguments should be added.
         """
         parser.add_env_argument(
             "--pkg-pattern",

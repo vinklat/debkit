@@ -44,14 +44,13 @@ def _split_component(key: str, components: set[str] | None) -> tuple[str | None,
     disagree on where a component ends -> [VALIDATION.md](VALIDATION.md#index-selection).
 
     Args:
-        key (str): Path as the Release lists it, relative to the layout prefix.
-        components (Optional[Set[str]]): Selected components, or `None` for a flat
-            repo whose paths carry no component segment.
+        key: Path as the Release lists it, relative to the layout prefix.
+        components: Selected components, or `None` for a flat repo whose paths carry no component
+            segment.
 
     Returns:
-        Tuple[Optional[str], str]: The component and the key below it, or `None` and
-            the whole key for a flat repo and for a key with no `/`, which belongs to
-            no component.
+        The component and the key below it, or `None` and the whole key for a flat repo and for a
+        key with no `/`, which belongs to no component.
     """
     component, sep, rest = key.partition("/")
     if components is None or not sep:
@@ -71,13 +70,13 @@ def _unselected_arch_token(key: str, archs: set[str], arch_universe: set[str]) -
     is also the longest at each token.
 
     Args:
-        key (str): Release key below its component segment -> `_split_component`.
-        archs (Set[str]): Selected architectures.
-        arch_universe (Set[str]): Every architecture this repository knows about.
+        key: Release key below its component segment -> `_split_component`.
+        archs: Selected architectures.
+        arch_universe: Every architecture this repository knows about.
 
     Returns:
-        Optional[str]: The unselected architecture owning a token, or `None` when every
-            token in the key belongs to a selected architecture.
+        The unselected architecture owning a token, or `None` when every token in the key belongs to
+        a selected architecture.
     """
     if not arch_universe:
         return None
@@ -108,11 +107,11 @@ def _is_unparsed_index(key: str, arch_universe: set[str]) -> bool:
     file name -> [VALIDATION.md](VALIDATION.md#index-selection).
 
     Args:
-        key (str): Release key below its component segment -> `_split_component`.
-        arch_universe (Set[str]): Every architecture this repository knows about.
+        key: Release key below its component segment -> `_split_component`.
+        arch_universe: Every architecture this repository knows about.
 
     Returns:
-        bool: True when the key names an index nothing parses.
+        True when the key names an index nothing parses.
     """
     parts = key.split("/")
     installer_dirs = {f"{UNPARSED_INDEX_DIR_PREFIX}{arch}" for arch in arch_universe}
@@ -130,10 +129,10 @@ def _is_source_index(key: str) -> bool:
     to know the source architecture -> [VALIDATION.md](VALIDATION.md#index-selection).
 
     Args:
-        key (str): Release key below its component segment -> `_split_component`.
+        key: Release key below its component segment -> `_split_component`.
 
     Returns:
-        bool: True when the key belongs to the source architecture.
+        True when the key belongs to the source architecture.
     """
     stems = [part.partition(".")[0] for part in key.split("/")]
     return any(stem in SOURCE_INDEX_NAMES or stem.endswith(f"-{SOURCE_ARCH}") for stem in stems)
@@ -161,15 +160,15 @@ def select_index_entry(
     passes the component rule.
 
     Args:
-        key (str): Path as the Release lists it, relative to the layout prefix.
-        components (Optional[Set[str]]): Selected components, or `None` for a flat
-            repo where paths carry no component segment.
-        archs (Set[str]): Selected architectures.
-        arch_universe (Set[str]): Every architecture this repository knows about.
-        excludes (List[str]): fnmatch globs matched against `key`.
+        key: Path as the Release lists it, relative to the layout prefix.
+        components: Selected components, or `None` for a flat repo where paths carry no component
+            segment.
+        archs: Selected architectures.
+        arch_universe: Every architecture this repository knows about.
+        excludes: fnmatch globs matched against `key`.
 
     Returns:
-        bool: True when the entry belongs in the sync set.
+        True when the entry belongs in the sync set.
     """
     for pattern in excludes:
         if fnmatch.fnmatchcase(key, pattern):

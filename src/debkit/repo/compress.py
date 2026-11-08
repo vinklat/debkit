@@ -19,10 +19,9 @@ class Codec(NamedTuple):
     """How an index file named with `suffix` is encoded and decoded.
 
     Attributes:
-        suffix (str): File name suffix, empty for the uncompressed index.
-        compress (Callable[[bytes], bytes]): Encoder.
-        decompress (Callable[[bytes, int], bytes]): Decoder; refuses output larger than
-            its second argument with `SizeLimitError`.
+        suffix: File name suffix, empty for the uncompressed index.
+        compress: Encoder.
+        decompress: Decoder; refuses output larger than its second argument with `SizeLimitError`.
     """
 
     suffix: str
@@ -53,16 +52,16 @@ def _bounded(new_decoder: Callable[[], _Decoder], data: bytes, max_size: int) ->
     skipped, as xz stream padding and the one-shot `gzip.decompress` allow.
 
     Args:
-        new_decoder (Callable[[], _Decoder]): Factory of a fresh decoder per stream.
-        data (bytes): The encoded data.
-        max_size (int): The largest decoded size accepted.
+        new_decoder: Factory of a fresh decoder per stream.
+        data: The encoded data.
+        max_size: The largest decoded size accepted.
 
     Raises:
         SizeLimitError: The decoded data exceeds `max_size`.
         EOFError: A stream ends before its end-of-stream marker.
 
     Returns:
-        bytes: The decoded data of every stream, concatenated.
+        The decoded data of every stream, concatenated.
     """
     out = bytearray()
     while data:
@@ -109,9 +108,9 @@ def codec_for(path: str) -> Codec:
     """Return the codec an index path's suffix names.
 
     Args:
-        path (str): Index file path.
+        path: Index file path.
 
     Returns:
-        Codec: The matching codec; the uncompressed one when no suffix matches.
+        The matching codec; the uncompressed one when no suffix matches.
     """
     return next(codec for codec in CODECS if path.endswith(codec.suffix))

@@ -29,14 +29,14 @@ class Package:
     """Object containing fields data from Debian package.
 
     Attributes:
-        fields (Dict[str, Any]): The package fields.
+        fields: The package fields.
     """
 
     def __init__(self, fields: dict[str, Any] | None = None) -> None:
         """Initialize Package with optional pre-populated fields.
 
         Args:
-            fields (dict[str, Any] | None): Initial field values. Defaults to None.
+            fields: Initial field values. Defaults to None.
         """
         self.fields: dict[str, Any] = fields if fields else {}
 
@@ -44,7 +44,7 @@ class Package:
         """Return a string representation of the Package.
 
         Returns:
-            str: A string representation of the Package.
+            A string representation of the Package.
         """
         return f"{self.fields.get(FILENAME_FIELD_KEY, '<empty package>')}"
 
@@ -52,8 +52,8 @@ class Package:
         """Parse fields of one package from headers format string.
 
         Args:
-            headers (str): Lines in string to parse.
-            controls_only (bool): If True, only parse controls fields. Defaults to False.
+            headers: Lines in string to parse.
+            controls_only: If True, only parse controls fields. Defaults to False.
 
         Multi-line values (`Description`, `Conffiles`) keep their continuation lines, so a
         rewritten index carries them unchanged -> [VALIDATION.md](VALIDATION.md#package-stanzas).
@@ -63,7 +63,7 @@ class Package:
                 line break.
 
         Returns:
-            str | None: The package name. None if data not parsed.
+            The package name. None if data not parsed.
         """
         parsed = Deb822(headers)
 
@@ -100,7 +100,7 @@ class Package:
             PackageException: If the filename is missing or empty.
 
         Returns:
-            str: The pool-relative filename.
+            The pool-relative filename.
         """
         filename = self.fields.get(FILENAME_FIELD_KEY)
         if not filename:
@@ -111,7 +111,7 @@ class Package:
         """Set the Filename field.
 
         Args:
-            filename (str): The new filename.
+            filename: The new filename.
 
         Raises:
             PackageException: If the filename is empty.
@@ -124,7 +124,7 @@ class Package:
         """Get the architecture of the package.
 
         Returns:
-            str | None: The architecture. None if the field is not present.
+            The architecture. None if the field is not present.
         """
         return self.fields.get("Architecture", None)
 
@@ -135,7 +135,7 @@ class Package:
         non-ASCII text stays UTF-8.
 
         Returns:
-            str: The serialized stanza, ending with the blank line that separates stanzas.
+            The serialized stanza, ending with the blank line that separates stanzas.
         """
         return Deb822({field: str(data) for field, data in self.fields.items()}).dump() + "\n"
 
@@ -143,7 +143,7 @@ class Package:
         """Return dump of package fields in dict.
 
         Returns:
-            Dict[str, Any]: The package fields.
+            The package fields.
         """
         return self.fields
 
@@ -151,7 +151,7 @@ class Package:
         """Return all hexdigests from fields.
 
         Returns:
-            Dict[str, str]: The hexdigests.
+            The hexdigests.
         """
         return {alg: self.fields[alg] for alg in SUPPORT_HASH_LIST if alg in self.fields}
 
@@ -159,7 +159,7 @@ class Package:
         """Set all hexdigests to fields.
 
         Args:
-            digests (Dict[str, str]): The hexdigests.
+            digests: The hexdigests.
         """
         for alg, value in digests.items():
             self.fields[alg] = value
@@ -168,11 +168,11 @@ class Package:
         """Check if this Package is equal to another Package.
 
         Args:
-            other (object): The object to compare with.
+            other: The object to compare with.
 
         Returns:
-            bool: True if the fields of the two Packages are equal, False otherwise;
-                NotImplemented for an object that is not a Package.
+            True if the fields of the two Packages are equal, False otherwise; NotImplemented for an
+            object that is not a Package.
         """
         if not isinstance(other, Package):
             return NotImplemented

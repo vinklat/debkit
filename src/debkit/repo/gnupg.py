@@ -36,15 +36,14 @@ def cleartext_body(data: bytes) -> bytes:
     caller and nothing may follow the signature -> [CRYPTO.md](CRYPTO.md#gpg).
 
     Args:
-        data (bytes): Signed message
+        data: Signed message
 
     Raises:
         GPGVerifyException: Signed message is not in correct format, has invalid
             armor headers, an unescaped dash line, or data after the signature.
 
     Returns:
-        bytes: The canonical signed body, dash-escaping undone, each line ending in a
-            newline.
+        The canonical signed body, dash-escaping undone, each line ending in a newline.
     """
     lines = [line.rstrip(" \t\r") for line in data.decode("utf-8").split("\n")]
     if lines[0] != CLEARSIGN_BEGIN:
@@ -82,10 +81,10 @@ def canonical_text(data: bytes) -> bytes:
     any ASCII-compatible encoding compares alike.
 
     Args:
-        data (bytes): Text to canonicalize.
+        data: Text to canonicalize.
 
     Returns:
-        bytes: The canonical text, each line ending in a newline.
+        The canonical text, each line ending in a newline.
     """
     lines = [line.rstrip(b" \t\r") for line in data.split(b"\n")]
     if lines[-1] == b"":
@@ -97,17 +96,17 @@ class GnuPG:
     """Object for GPG signatures operations.
 
     Attributes:
-        gpg (gnupg.GPG): The GPG object.
-        passphrase (str | None): The passphrase for the signing key; None when empty.
+        gpg: The GPG object.
+        passphrase: The passphrase for the signing key; None when empty.
     """
 
     def __init__(self, home: str, keyring: str, passphrase: str | None) -> None:
         """Open the keyring `keyring` in the GnuPG home `home`.
 
         Args:
-            home (str): GnuPG home directory.
-            keyring (str): Keyring file, relative to `home`.
-            passphrase (str | None): Passphrase of the signing key; empty or None sends none.
+            home: GnuPG home directory.
+            keyring: Keyring file, relative to `home`.
+            passphrase: Passphrase of the signing key; empty or None sends none.
 
         Raises:
             GPGVerifyException: If the keyring cannot be opened or the gpg binary cannot be run.
@@ -127,15 +126,15 @@ class GnuPG:
         """Verifying GPG signature.
 
         Args:
-            data (bytes): Signed message
-            detach_sign (Optional[bytes], optional): Detached signature.
-                If None, data should be from InRelease file. Defaults to None.
+            data: Signed message
+            detach_sign: Detached signature. If None, data should be from InRelease file. Defaults
+                to None.
 
         Raises:
             GPGVerifyException: GPG not valid signature!
 
         Returns:
-            bytes: Original text
+            Original text
         """
         if detach_sign is None:
             # data should be from InRelease
@@ -169,11 +168,11 @@ class GnuPG:
         """Create GPG signature.
 
         Args:
-            data (bytes): Data to sign.
-            detach (bool, optional): Detach signature. Defaults to False.
+            data: Data to sign.
+            detach: Detach signature. Defaults to False.
 
         Returns:
-            str: GPG signature; empty when gpg created none, e.g. on a wrong passphrase.
+            GPG signature; empty when gpg created none, e.g. on a wrong passphrase.
         """
         if detach:
             logger.info("Generate detached GPG signature.")

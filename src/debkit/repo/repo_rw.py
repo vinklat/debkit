@@ -29,16 +29,16 @@ class RepoRW(Repo):
     """Class that extens Repo with modificaton functionality.
 
     Attributes:
-        modified (bool): Whether the repo has been modified.
+        modified: Whether the repo has been modified.
     """
 
     def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Initialize RepoRW.
 
         Args:
-            storage (Storage): storage
-            params (RepoParams): repository parameters
-            gpg (Optional[GnuPG]): GnuPG object. Defaults to None.
+            storage: Storage backend of the repository.
+            params: Repository parameters.
+            gpg: Verifies and signs Release files. Defaults to None.
         """
         super().__init__(storage, params, gpg=gpg)
         self.modified = False
@@ -50,7 +50,7 @@ class RepoRW(Repo):
         `Components` field is dropped -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
         Args:
-            fields (Optional[Dict[str, str]]): The fields to set. Defaults to None.
+            fields: The fields to set. Defaults to None.
         """
         logger.info("Setting up a new repository.")
         if fields is not None and self.params.is_flat:
@@ -62,7 +62,7 @@ class RepoRW(Repo):
         """Save the repository.
 
         Returns:
-            bool: True if the repository was saved, False otherwise.
+            True if the repository was saved, False otherwise.
         """
         if not self.modified:
             return False
@@ -91,13 +91,13 @@ class RepoRW(Repo):
         Several arch indices list one `all` payload, so each payload is deleted once.
 
         Args:
-            fields_patterns (Dict[str, re.Pattern[str]]): Compiled pattern per package field.
+            fields_patterns: Compiled pattern per package field.
 
         Raises:
             StorageException: If the backend fails to delete a payload.
 
         Returns:
-            bool: True iff at least one package was removed.
+            True iff at least one package was removed.
         """
         logger.info(
             "Removing packages with fields patterns: %s",
@@ -122,9 +122,9 @@ class RepoRW(Repo):
         -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
         Args:
-            component_name (str): The name of the component.
-            arch (str): The architecture.
-            package (Package): The Package object to insert.
+            component_name: The name of the component.
+            arch: The architecture.
+            package: The Package object to insert.
         """
         if self.params.is_flat:
             component_name = next(iter(self.components), FLAT_COMPONENT)

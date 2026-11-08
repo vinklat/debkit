@@ -49,22 +49,22 @@ class Packages:
     """Container to store packages (Package objects).
 
     Attributes:
-        storage (Storage): The storage object.
-        params (RepoParams): The parameters for the Packages object.
-        release (Release): The release object.
-        packages (Dict[str, Package]): The packages objects from Packages indices file.
-        used_indices_path (str): The Packages file used for self.packages.
-        found_indices_files (List[str]): The list of all Package* files from Release.
-        size (int): The number of packages.
-        modified (bool): Whether the Packages object has been modified.
+        storage: The storage object.
+        params: The parameters for the Packages object.
+        release: The release object.
+        packages: The packages objects from Packages indices file.
+        used_indices_path: The Packages file used for self.packages.
+        found_indices_files: The list of all Package* files from Release.
+        size: The number of packages.
+        modified: Whether the Packages object has been modified.
     """
 
     def __init__(self, storage: Storage, params: RepoParams) -> None:
         """Initialize a Packages object.
 
         Args:
-            storage (Storage): The storage object of repo.
-            params (RepoParams): The parameters of related repo.
+            storage: The storage object of repo.
+            params: The parameters of related repo.
         """
         self.storage = storage
         self.params = params
@@ -78,7 +78,7 @@ class Packages:
         """Create a shallow copy of this Packages object.
 
         Returns:
-            Packages: A shallow copy of this Packages object.
+            A shallow copy of this Packages object.
         """
         ret = type(self)(self.storage, self.params)
         ret.release = copy(self.release)
@@ -102,11 +102,11 @@ class Packages:
         nests it under the architecture directory.
 
         Args:
-            arch (str): The architecture name, or the source architecture.
-            suffix (str): The compression suffix; empty for the uncompressed index.
+            arch: The architecture name, or the source architecture.
+            suffix: The compression suffix; empty for the uncompressed index.
 
         Returns:
-            str: The path under `<comp>/`, or the bare filename for a flat repo.
+            The path under `<comp>/`, or the bare filename for a flat repo.
         """
         name = f"{self.params.index_name(arch)}{suffix}"
         return name if self.params.is_flat else f"{self.params.arch_dir(arch)}/{name}"
@@ -117,8 +117,8 @@ class Packages:
         A flat repo carries no per-component Release, as its loader reads none.
 
         Args:
-            comp (str): The component name.
-            arch (str): The architecture name.
+            comp: The component name.
+            arch: The architecture name.
         """
         self.used_indices_path = self.params.indices_path(self._index_inner(arch, ".gz"), comp)
         plain_path = self.params.indices_path(self._index_inner(arch), comp)
@@ -131,10 +131,10 @@ class Packages:
         """Split a decoded index into its stanzas, CRLF line ends read as LF.
 
         Args:
-            data (str): The decoded index.
+            data: The decoded index.
 
         Returns:
-            List[str]: Every stanza holding more than whitespace, in index order.
+            Every stanza holding more than whitespace, in index order.
         """
         blocks = _STANZA_SEPARATOR.split(data.replace("\r\n", "\n"))
         return [block for block in blocks if block.strip()]
@@ -145,10 +145,10 @@ class Packages:
         Use decompress function for unpack, parse data from headers format.
 
         Args:
-            data (str): The data from the Packages file.
+            data: The data from the Packages file.
 
         Returns:
-            int: The number of packages parsed.
+            The number of packages parsed.
         """
         for block in self._stanzas(data):
             package = Package()
@@ -172,7 +172,7 @@ class Packages:
         """Serialize the content of the Packages file to headers format.
 
         Returns:
-            str: The serialized packages indices.
+            The serialized packages indices.
         """
         return "".join(package.serialize() for package in self.packages.values())
 
@@ -185,15 +185,15 @@ class Packages:
         This function finds all and choose best one for use.
 
         Args:
-            root_release (Release): The root release object.
-            comp (str): The component name.
-            arch (str): The architecture name.
+            root_release: The root release object.
+            comp: The component name.
+            arch: The architecture name.
 
         Raises:
             PackagesException: There is no Packages* file.
 
         Returns:
-            Tuple[str, Callable]: The path of the file to read and its decompression function.
+            The path of the file to read and its decompression function.
         """
         ret: None | tuple[str, Callable[[bytes, int], bytes]] = None
 
@@ -240,12 +240,12 @@ class Packages:
         """Verify checksum of Packages file.
 
         Args:
-            root_release (Release): The root release object.
-            path (str): The path of the Packages file.
-            digests (Dict[str, str]): The checksums to verify.
+            root_release: The root release object.
+            path: The path of the Packages file.
+            digests: The checksums to verify.
 
         Returns:
-            bool: True if the checksum is valid, False otherwise.
+            True if the checksum is valid, False otherwise.
         """
         # map the full path back to the key the Release lists it under
         path = self.params.release_key(path)
@@ -267,16 +267,16 @@ class Packages:
         """Load 'Packages' indices file from repo.
 
         Args:
-            root_release (Release): The root release object.
-            comp (str): The component name.
-            arch (str): The architecture name.
+            root_release: The root release object.
+            comp: The component name.
+            arch: The architecture name.
 
         Raises:
             ChecksumException: Checksum mismatch for Packages file.
             PackagesException: The decompressed index exceeds `MAX_INDICES_BYTES`.
 
         Returns:
-            bool: True if the packages indices file is successfully loaded, False otherwise.
+            True if the packages indices file is successfully loaded, False otherwise.
         """
         indices_path, decompress_fun = self._find_packages_file(root_release, comp, arch)
 
@@ -318,8 +318,8 @@ class Packages:
         """Write serialized content to every Packages indices file, each in its own codec.
 
         Returns:
-            Dict[Dict[str, str]]: The filename and digests of the encoded data.
-              If the Packages object has not been modified, return None.
+            The filename and digests of the encoded data. If the Packages object has not been
+            modified, return None.
         """
         if not self.modified:
             return None
@@ -346,10 +346,10 @@ class Packages:
         """Dump packages object to a dict.
 
         Args:
-            brief (bool): If False, also includes packages list.
+            brief: If False, also includes packages list.
 
         Returns:
-            Dict[str, Dict[str,Any]]: The dictionary representation of the packages object.
+            The dictionary representation of the packages object.
         """
         ret: dict[str, dict[str, Any]] = {"packages": {"files": self.found_indices_paths}}
 
@@ -369,7 +369,7 @@ class Packages:
         """Add package to the Packages object.
 
         Args:
-            package (Package): The package to add.
+            package: The package to add.
         """
         self.packages[str(package)] = package
         self.modified = True
@@ -381,15 +381,14 @@ class Packages:
         payload once → `RepoRW.remove_pkg`.
 
         Args:
-            fields (Dict[str, re.Pattern[str]]): Compiled pattern per package field; a package
-                matches when every pattern finds a match in its field →
-                [VALIDATION.md](VALIDATION.md#package-pattern-matching).
+            fields: Compiled pattern per package field; a package matches when every pattern finds a
+                match in its field → [VALIDATION.md](VALIDATION.md#package-pattern-matching).
 
         Raises:
             PackagesException: If a matched package has an unsafe Filename; nothing is dropped.
 
         Returns:
-            Set[str]: Filenames of the dropped packages; empty when nothing matched.
+            Filenames of the dropped packages; empty when nothing matched.
         """
         removed: set[str] = set()
         for pkg_name, package in self.packages.items():
@@ -411,7 +410,7 @@ class Packages:
         """Get list of all indices files.
 
         Returns:
-            List[str]: List of all indices file paths.
+            List of all indices file paths.
         """
         ret: list[str] = []
         ret.extend(self.found_indices_paths)
@@ -423,11 +422,11 @@ class Packages:
         """Verify checksum of a package.
 
         Args:
-            filename (str): The filename to verify.
-            incoming_digests (Dict[str,str]): The checksums to verify.
+            filename: The filename to verify.
+            incoming_digests: The checksums to verify.
 
         Returns:
-            bool: True if the checksum is valid, False otherwise.
+            True if the checksum is valid, False otherwise.
         """
         # every container keys by the `Filename` field itself, so the index is the lookup
         package = self.packages.get(filename)
@@ -442,12 +441,11 @@ class Packages:
         """Compare two sets of packages.
 
         Args:
-            second (Packages): The second set of packages to compare with.
+            second: The second set of packages to compare with.
 
         Returns:
-            Tuple[Dict[str, 'Package'], Dict[str, 'Package'], Dict[str, 'Package'],
-            Dict[str, 'Package']]:
-            A tuple containing dictionaries of added, removed, and updated packages.
+            Packages by name: added, removed, and updated in `second`, and the old versions the
+            updated ones replace.
         """
         added_packages = {
             pkg_name: package
@@ -476,7 +474,7 @@ class Packages:
         """Check if the Packages object is empty.
 
         Returns:
-            bool: True if the Packages object is empty, False otherwise.
+            True if the Packages object is empty, False otherwise.
         """
         return not bool(self.packages)
 
@@ -484,6 +482,6 @@ class Packages:
         """Return the number of packages.
 
         Returns:
-            int: The number of packages.
+            The number of packages.
         """
         return len(self.packages)

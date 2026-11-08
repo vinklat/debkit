@@ -37,12 +37,10 @@ class ActionHistory:
     """Actions for transaction history: log, revert, and prune.
 
     Attributes:
-        output (OutputType): Output format.
-        dry_run (bool): If True, revert and prune print what would happen
-            without applying.
-        orphans (bool): If True, prune also sweeps footmark objects that belong
-            to no recorded transaction.
-        history_retention (HistoryRetention): Policy prune applies.
+        output: Output format.
+        dry_run: If True, revert and prune print what would happen without applying.
+        orphans: If True, prune also sweeps footmark objects that belong to no recorded transaction.
+        history_retention: Policy prune applies.
     """
 
     def __init__(self, pars: Namespace) -> None:

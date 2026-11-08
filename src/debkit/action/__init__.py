@@ -49,7 +49,7 @@ def storage_url(url: str) -> str:
         url: Storage URL or filesystem path.
 
     Returns:
-        str: A URL `make_storage` accepts.
+        A URL `make_storage` accepts.
     """
     if "://" in url:
         return url
@@ -67,7 +67,7 @@ def open_storage(pars: Namespace, url: str, create_path: bool = False) -> Storag
         create_path: Create the destination bucket or directory if missing.
 
     Returns:
-        Storage: A backend instance routed by the URL scheme.
+        A backend instance routed by the URL scheme.
     """
     return make_storage(
         storage_url(url),
@@ -87,7 +87,7 @@ def history_retention(pars: Namespace) -> HistoryRetention:
         pars: Parsed CLI namespace.
 
     Returns:
-        HistoryRetention: Policy for `maybe_transaction` and `prune`.
+        Policy for `maybe_transaction` and `prune`.
     """
     return HistoryRetention.from_env(keep=pars.history_keep, max_age_days=pars.history_max_age)
 
@@ -110,7 +110,7 @@ def verify_policy(pars: Namespace) -> VerifyPolicy:
         pars: Parsed CLI namespace.
 
     Returns:
-        VerifyPolicy: Which of TLS, GPG, and digest verification stay on.
+        Which of TLS, GPG, and digest verification stay on.
     """
     return VerifyPolicy(
         verify_ssl=not (pars.skip_verify or pars.skip_verify_ssl),
@@ -170,7 +170,7 @@ def attach_storage_plain(pars: Namespace, url: str, create_path: bool = False) -
         create_path: Create the destination bucket/directory if missing.
 
     Returns:
-        Storage: A backend instance routed by the URL scheme.
+        A backend instance routed by the URL scheme.
     """
     return open_storage(pars, url, create_path=create_path)
 
@@ -190,7 +190,7 @@ def attach_storage_root(pars: Namespace, url: str, create_path: bool = False) ->
         StorageException: If the URL is blank.
 
     Returns:
-        Storage: A backend instance routed by the URL scheme.
+        A backend instance routed by the URL scheme.
     """
     if not url.strip():
         raise StorageException("Empty storage URL.")
@@ -204,7 +204,7 @@ class ActionException(Exception):
         """Initialize ActionException.
 
         Args:
-            message (str): Human-readable description of the failure.
+            message: Human-readable description of the failure.
         """
         super().__init__(f"Action: {message}")
 
@@ -228,7 +228,7 @@ def add_output_cli_args(parser: EnvArgumentParser) -> None:
     """Register ``--output`` on a subcommand parser.
 
     Args:
-        parser (EnvArgumentParser): The subcommand parser.
+        parser: The subcommand parser.
     """
     parser.add_env_argument(
         "-o",
@@ -246,11 +246,11 @@ class Action:
     """Base class for repo actions.
 
     Attributes:
-        output (OutputType): Output format.
-        gpg (GnuPG | None): Verifies and signs Release files; None when GPG verification is off.
-        target_repo (RepoRW): Target repository.
-        history_retention (HistoryRetention): Policy the write paths hand to
-            `maybe_transaction`; a `max_age_days` of `0` records without pruning.
+        output: Output format.
+        gpg: Verifies and signs Release files; None when GPG verification is off.
+        target_repo: Target repository.
+        history_retention: Policy the write paths hand to `maybe_transaction`; a `max_age_days` of
+            `0` records without pruning.
     """
 
     target_repo: RepoRW
@@ -259,8 +259,8 @@ class Action:
         """Initialize repo objects and storages.
 
         Args:
-            pars (Namespace): Parsed command line arguments.
-            create_path (bool): Create path or bucket if True.
+            pars: Parsed command line arguments.
+            create_path: Create path or bucket if True.
         """
         self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
         self.gpg: GnuPG | None = None
@@ -290,8 +290,8 @@ class Action:
         A subclass that opens more repositories or narrows their selection overrides it.
 
         Args:
-            pars (Namespace): Parsed command line arguments.
-            create_path (bool): Create the target path or bucket if True.
+            pars: Parsed command line arguments.
+            create_path: Create the target path or bucket if True.
         """
         # `--target-url` is required, so every action has a target
         logger.debug("Prepare target URL: %s", redact_url(pars.target_url))

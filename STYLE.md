@@ -7,6 +7,8 @@ style conflicts. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 - Use the [SETUP.md prerequisites](SETUP.md#prerequisites-and-install) Python floor. Apply PEP 8
   where Ruff is silent, strict type hints, and Google-style docstrings for public symbols.
+  Docstring `Args:`, `Attributes:`, `Returns:`, and `Yields:` entries do not repeat the annotated
+  types.
 - Ruff owns formatting, lint, and import order at line length 100: standard library, third-party
   (`txstore` among them), then `debkit`. Commands → [SETUP.md](SETUP.md#quality-gates).
 - Every module starts with `from __future__ import annotations` (Ruff `I002`); annotations use the

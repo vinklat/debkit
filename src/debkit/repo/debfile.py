@@ -49,19 +49,19 @@ class DebFile:
     constructor returns, whether it succeeds or fails.
 
     Attributes:
-        storage (Storage): Storage backend the file lives on.
-        path (str): Path of the ``.deb`` file inside ``storage``.
-        comp (Optional[str]): Component name the package belongs to.
-        control (bytes | str | None): Content of the ``control`` file in ``control.tar``.
+        storage: Storage backend the file lives on.
+        path: Path of the ``.deb`` file inside ``storage``.
+        comp: Component name the package belongs to, or None for a pool without one.
+        control: Content of the ``control`` file in ``control.tar``.
     """
 
     def __init__(self, storage: Storage, path: str, comp: str | None = None) -> None:
         """Initialize DebFile object.
 
         Args:
-            storage (Storage): Storage backend.
-            path (str): Path to the Debian package file.
-            comp (Optional[str]): Component name. Defaults to None.
+            storage: Storage backend.
+            path: Path to the Debian package file.
+            comp: Component name. Defaults to None.
 
         Raises:
             DebFileException: If the underlying ``.deb`` cannot be read or parsed.
@@ -82,7 +82,7 @@ class DebFile:
         """Read the ``control`` file, streaming when the backend can seek.
 
         Returns:
-            bytes | str | None: The ``control`` file content.
+            The ``control`` file content.
         """
         try:
             with self.storage.get_stream(self.path) as fp:
@@ -105,7 +105,7 @@ class DebFile:
             DebFileException: If the pool key would be an unsafe storage path.
 
         Returns:
-            Package: Package object with control data.
+            Package object with control data.
         """
         control_lines = self.control
         if not isinstance(control_lines, bytes):

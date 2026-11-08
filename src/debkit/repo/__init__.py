@@ -50,21 +50,21 @@ class Repo:
     """Object containing Debian repository indices and data.
 
     Attributes:
-        storage (Storage): The storage for the repo.
-        params (RepoParams): The input parameters.
-        gpg (GnuPG): The GnuPG object.
-        release (Release): The root Release file of repo.
-        components (Dict[str, Component]): The components of the repo by its names
-        modified (bool): True if the repo has been modified, False otherwise.
+        storage: The storage for the repo.
+        params: The input parameters.
+        gpg: The GnuPG object.
+        release: The root Release file of repo.
+        components: The components of the repo by its names
+        modified: True if the repo has been modified, False otherwise.
     """
 
     def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Init repo object.
 
         Args:
-            storage (Storage): The storage for the repo.
-            params (RepoParams): The input parameters.
-            gpg (Optional[GnuPG]): The GnuPG object.
+            storage: The storage for the repo.
+            params: The input parameters.
+            gpg: The GnuPG object. Defaults to None.
         """
         self.storage = storage
         self.params = params
@@ -84,7 +84,7 @@ class Repo:
         """Create a shallow copy of this Repo.
 
         Returns:
-            Repo: A shallow copy of this Repo.
+            A shallow copy of this Repo.
         """
         ret = Repo(self.storage, self.params, gpg=self.gpg)
         ret.release = copy(self.release)
@@ -99,7 +99,7 @@ class Repo:
         """Get the components of the repo.
 
         Yields:
-            Generator[str, None, None]: The name of a component.
+            The name of a component.
         """
         # try get from params
         if isinstance(self.params.components, list):
@@ -127,7 +127,7 @@ class Repo:
         -> [VALIDATION.md](VALIDATION.md#architectures).
 
         Yields:
-            List[str]: The name of an arch.
+            The name of an arch.
         """
         if isinstance(self.params.archs, list) and len(self.params.archs) > 0:
             yield from self.params.archs
@@ -148,7 +148,7 @@ class Repo:
         token, or `all`, is skipped like a Release token.
 
         Returns:
-            List[str]: Sorted architecture names, without duplicates.
+            Sorted architecture names, without duplicates.
         """
         archs: set[str] = set()
         for comp in self.get_components():
@@ -177,7 +177,7 @@ class Repo:
         -> [VALIDATION.md](VALIDATION.md#architectures).
 
         Yields:
-            str: The name of an arch.
+            The name of an arch.
         """
         if "Architectures" in self.release.fields:
             field = "Architectures"
@@ -200,9 +200,9 @@ class Repo:
         This method does a similar thing to `apt-get update` command.
 
         Args:
-            strict_arch (bool): Whether to use strict architecture. Defaults to False.
-                If True, it will raise an exception if the architecture is not available.
-                If False, it will skip the architecture and continue loading other architectures.
+            strict_arch: Whether to use strict architecture. Defaults to False. If True, it will
+                raise an exception if the architecture is not available. If False, it will skip the
+                architecture and continue loading other architectures.
 
         Raises:
             RepoReadException: Error in reading the repository.
@@ -236,9 +236,8 @@ class Repo:
             brief (bool): Whether to dump a brief version of output. Defaults to False.
 
         Returns:
-            Dict[str, Dict[str,Any]]: A dict representation of the repository.
-                The dictionary includes the release,
-                components of the repository.
+            A dict representation of the repository. The dictionary includes the release, components
+            of the repository.
         """
         # add Release (mandatory)
         ret: dict[str, dict[str, Any]] = {
@@ -258,8 +257,7 @@ class Repo:
         """Get statistics of the repository.
 
         Returns:
-            Dict[str, Dict[str, Dict[str, int]]]: A dict representation of the
-                repository statistics.
+            A dict representation of the repository statistics.
         """
         ret: dict[str, dict[str, dict[str, int]]] = {}
 
@@ -280,7 +278,7 @@ class Repo:
         """Get all filenames of packeges in repository.
 
         Yields:
-            Generator["Package", None, None]: The package.
+            The package.
         """
         for _, component in self.components.items():  # not used comp name
             for _, packages in component.packages.items():  # not used arch
@@ -291,10 +289,10 @@ class Repo:
         """Get the difference between this repo and another repo.
 
         Args:
-            other_repo (Repo): The other repo to diff with.
+            other_repo: The other repo to diff with.
 
         Returns:
-            RepoDiff: The object containing differences between the repos.
+            The object containing differences between the repos.
         """
         diff = RepoDiff()
 
@@ -322,7 +320,7 @@ class Repo:
         this one iterator -> [CRYPTO.md](CRYPTO.md#verification-order).
 
         Yields:
-            Generator[Release]: The root Release, then every component Release.
+            The root Release, then every component Release.
         """
         yield self.release
 
@@ -339,10 +337,10 @@ class Repo:
         -> [CRYPTO.md](CRYPTO.md#verification-order).
 
         Args:
-            release_key (str): Path as the Release lists it, from `release_key()`.
+            release_key: Path as the Release lists it, from `release_key()`.
 
         Returns:
-            bool: True when a Release digest block names the key.
+            True when a Release digest block names the key.
         """
         return any(release_key in release.digests for release in self._release_blocks())
 
@@ -353,7 +351,7 @@ class Repo:
         the same blocks, so both answer alike -> [CRYPTO.md](CRYPTO.md#verification-order).
 
         Returns:
-            Set[str]: Every key a Release digest block lists.
+            Every key a Release digest block lists.
         """
         return {key for release in self._release_blocks() for key in release.digests}
 
@@ -361,11 +359,11 @@ class Repo:
         """Verify file checksum in all available indices files.
 
         Args:
-            filename (str): The name of the file to verify.
-            digests_incoming (Dict[str, str]): The digests of the file.
+            filename: The name of the file to verify.
+            digests_incoming: The digests of the file.
 
         Returns:
-            bool: Whether the file checksum was verified.
+            Whether the file checksum was verified.
         """
         release_key = self.params.release_key(filename)
 

@@ -42,7 +42,7 @@ def _int_type(value: str, minimum: int, maximum: int | None = None) -> int:
         ArgumentTypeError: If `value` is not an integer in range.
 
     Returns:
-        int: The parsed value.
+        The parsed value.
     """
     stripped = str(value).strip()
     if not stripped.isascii() or not stripped.lstrip("+-").isdigit():
@@ -112,7 +112,7 @@ def pkg_pattern_type(value: str) -> dict[str, re.Pattern[str]]:
             too long or does not compile.
 
     Returns:
-        dict[str, re.Pattern[str]]: Compiled pattern per field.
+        Compiled pattern per field.
     """
     try:
         fields = json.loads(value)

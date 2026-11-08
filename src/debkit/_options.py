@@ -75,7 +75,7 @@ class EnvArgumentParser(ArgumentParser):
             **kwargs: Passed to `add_argument` (``type``, ``choices``, ``action``, ``dest``).
 
         Returns:
-            Action: The registered argparse action.
+            The registered argparse action.
         """
         details = [f"env: {env}"]
         if default not in (None, ""):

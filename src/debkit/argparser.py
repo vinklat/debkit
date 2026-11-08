@@ -171,7 +171,7 @@ def build_parser() -> EnvArgumentParser:
     """Build the root parser with every subcommand.
 
     Returns:
-        EnvArgumentParser: Root parser.
+        Root parser.
     """
     root_parser = EnvArgumentParser(
         prog="debkit",
@@ -233,6 +233,6 @@ def parse_cli(argv: list[str] | None = None) -> Namespace:
         argv: Arguments without the program name; None reads ``sys.argv``.
 
     Returns:
-        Namespace: Parsed and resolved options.
+        Parsed and resolved options.
     """
     return build_parser().parse_args(argv)

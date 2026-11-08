@@ -35,10 +35,10 @@ def container_for(arch: str) -> type[Packages]:
     -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
 
     Args:
-        arch (str): The architecture name.
+        arch: The architecture name.
 
     Returns:
-        type[Packages]: `Sources` for the source architecture, `Packages` otherwise.
+        `Sources` for the source architecture, `Packages` otherwise.
     """
     return Sources if arch == SOURCE_ARCH else Packages
 
@@ -55,22 +55,22 @@ class Component:
     """Container to store sets of Debian packages for each architecture.
 
     Attributes:
-        name (str): The name of the component.
-        storage (Storage): The storage object.
-        params (RepoParams): The parameters for the Component object.
-        packages (Dict[str, Packages]): 'Packages' objects by architecture.
-        root_release (Release): The release object.
-        is_flat (bool): Read-only; delegates to ``params.is_flat``.
+        name: The name of the component.
+        storage: The storage object.
+        params: The parameters for the Component object.
+        packages: 'Packages' objects by architecture.
+        root_release: The release object.
+        is_flat: Read-only; delegates to ``params.is_flat``.
     """
 
     def __init__(self, storage: Storage, params: RepoParams, release: Release, name: str) -> None:
         """Initialize a Component object.
 
         Args:
-            storage (Storage): The storage object.
-            params (RepoParams): The parameters for the Component object.
-            release (Release): The release object.
-            name (str): The name of the component.
+            storage: The storage object.
+            params: The parameters for the Component object.
+            release: The release object.
+            name: The name of the component.
         """
         self.storage = storage
         self.params = params
@@ -87,7 +87,7 @@ class Component:
         """Create a shallow copy of this Component object on the same root Release.
 
         Returns:
-            Component: A shallow copy of this Component object.
+            A shallow copy of this Component object.
         """
         return self.copy_onto(self.root_release)
 
@@ -98,10 +98,10 @@ class Component:
         components kept the original Release would write into it.
 
         Args:
-            root_release (Release): The root Release of the repo the copy belongs to.
+            root_release: The root Release of the repo the copy belongs to.
 
         Returns:
-            Component: A copy whose package sets are copied too.
+            A copy whose package sets are copied too.
         """
         ret = Component(self.storage, self.params, root_release, self.name)
         # slots sharing one container in a flat layout share its copy too
@@ -120,11 +120,11 @@ class Component:
         and the last save would win -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
         Args:
-            arch (str): The architecture of the slot.
+            arch: The architecture of the slot.
 
         Returns:
-            Packages | None: The shared container, or None when the layout is componented
-                or no slot holds that index file yet.
+            The shared container, or None when the layout is componented or no slot holds that index
+            file yet.
         """
         if not self.is_flat:
             return None
@@ -135,15 +135,14 @@ class Component:
         """Load package sets (Packages objects) for all architectures.
 
         Args:
-            archs (List[str]): The list of architectures.
-            strict_arch (bool): If True, strict architecture check is performed.
-                Defaults to False.
+            archs: The list of architectures.
+            strict_arch: If True, strict architecture check is performed. Defaults to False.
 
         Raises:
             ComponentException: If the architecture check fails.
 
         Returns:
-            int: The total number of packages loaded.
+            The total number of packages loaded.
         """
         npkgs = 0
         for arch in archs:
@@ -197,7 +196,7 @@ class Component:
         """Save all package sets (Packages objects) for all architectures.
 
         Returns:
-            bool: True if any package was saved, False otherwise.
+            True if any package was saved, False otherwise.
         """
         ret: bool = False
         digests: dict[str, dict[str, str]] | None = {}
@@ -218,11 +217,10 @@ class Component:
         """Dump architectures containing Packages objects to a dict.
 
         Args:
-            brief (bool): If True, dump brief output. Defaults to False.
+            brief: If True, dump brief output. Defaults to False.
 
         Returns:
-            Dict[str, Dict]: A dictionary where the keys are architectures and the values
-                are the dumped packages.
+            A dictionary where the keys are architectures and the values are the dumped packages.
         """
         return {arch: packages.dump(brief=brief) for arch, packages in self.packages.items()}
 
@@ -230,7 +228,7 @@ class Component:
         """Get list of indices files paths.
 
         Returns:
-            List[str]: A list of indices paths for each package in the component.
+            A list of indices paths for each package in the component.
         """
         paths = (
             path for packages in self.packages.values() for path in packages.get_indices_paths()
@@ -242,7 +240,7 @@ class Component:
         """Setup the component.
 
         Args:
-            archs (List[str]): The list of architectures.
+            archs: The list of architectures.
         """
         for arch in archs:
             self.packages[arch] = self._new_slot(arch)
@@ -251,10 +249,10 @@ class Component:
         """Get a fresh container for `arch`, or the one a flat layout already holds.
 
         Args:
-            arch (str): The architecture of the slot.
+            arch: The architecture of the slot.
 
         Returns:
-            Packages: The container the slot holds.
+            The container the slot holds.
         """
         shared = self._flat_container(arch)
         if shared is not None:
@@ -267,8 +265,8 @@ class Component:
         """Add deb package object to the component.
 
         Args:
-            arch (str): The architecture.
-            package (Package): The Package object to insert.
+            arch: The architecture.
+            package: The Package object to insert.
 
         Raises:
             ComponentException: If ``arch`` is neither empty nor an architecture name.
@@ -291,10 +289,10 @@ class Component:
         [VALIDATION.md](VALIDATION.md#sources-stanzas).
 
         Args:
-            fields_patterns (Dict[str, re.Pattern[str]]): Compiled pattern per package field.
+            fields_patterns: Compiled pattern per package field.
 
         Returns:
-            Set[str]: Filenames dropped from any arch, each once.
+            Filenames dropped from any arch, each once.
         """
         removed: set[str] = set()
         for packages in self.packages.values():

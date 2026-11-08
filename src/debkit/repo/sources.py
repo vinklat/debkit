@@ -45,14 +45,14 @@ class Sources(Packages):
         """Expand every stanza into one `Package` per payload file.
 
         Args:
-            data (str): Decoded `Sources` index.
+            data: Decoded `Sources` index.
 
         Raises:
             PackagesException: If a stanza names no usable `Directory`, an unsafe file
                 name, disagreeing sizes, or a payload without a SHA digest.
 
         Returns:
-            int: The number of payload files known after parsing.
+            The number of payload files known after parsing.
         """
         for block in self._stanzas(data):
             for package in self._expand_stanza(block):
@@ -71,7 +71,7 @@ class Sources(Packages):
         destroys the hash blocks, and it demands a `Filename` no stanza carries.
 
         Args:
-            block (str): One stanza, without its trailing blank line.
+            block: One stanza, without its trailing blank line.
 
         Raises:
             PackagesException: On a missing or unsafe `Directory`, a file name with a
@@ -79,7 +79,7 @@ class Sources(Packages):
                 carrying no SHA digest.
 
         Returns:
-            List[Package]: One record per payload file, in first-seen order.
+            One record per payload file, in first-seen order.
         """
         fields = dict(Parser().parsestr(block).items())
 
@@ -121,8 +121,7 @@ class Sources(Packages):
         """Write nothing: the mirrored `Sources` object is the only source of truth.
 
         Returns:
-            Optional[Dict[str, Dict[str, str]]]: Always `None`, the value `Component.save`
-                reads as "nothing was written".
+            Always `None`, the value `Component.save` reads as "nothing was written".
         """
         return None
 
@@ -130,7 +129,7 @@ class Sources(Packages):
         """Refuse: a `Sources` index is mirrored, never composed.
 
         Args:
-            package (Package): Ignored.
+            package: Ignored.
 
         Raises:
             PackagesException: Always.
@@ -144,9 +143,9 @@ class Sources(Packages):
         container without knowing which one is read-only.
 
         Args:
-            fields (Dict[str, re.Pattern[str]]): Ignored.
+            fields: Ignored.
 
         Returns:
-            Set[str]: Always empty.
+            Always empty.
         """
         return set()

@@ -58,10 +58,10 @@ class SyncPlan(NamedTuple):
     """One pass of a sync, as `RepoSync.build_sync_lists` plans it.
 
     Attributes:
-        copy (List[str]): Paths to copy from the source, payloads before indices.
-        delete (List[str]): Paths to delete from the target.
-        unproven (Set[str]): Paths in `copy` no load or parse proved the source
-            publishes, which `sync` skips when the source lacks them.
+        copy: Paths to copy from the source, payloads before indices.
+        delete: Paths to delete from the target.
+        unproven: Paths in `copy` no load or parse proved the source publishes, which `sync` skips
+            when the source lacks them.
     """
 
     copy: list[str]
@@ -72,7 +72,7 @@ class SyncPlan(NamedTuple):
         """Report whether the pass has nothing to copy or delete.
 
         Returns:
-            bool: True when both `copy` and `delete` are empty.
+            True when both `copy` and `delete` are empty.
         """
         return not self.copy and not self.delete
 
@@ -92,9 +92,9 @@ class RepoSync(Repo):
         """Initialize RepoSync.
 
         Args:
-            storage (Storage): storage
-            params (RepoParams): repository parameters
-            gpg (Optional[GnuPG], optional): GnuPG object. Defaults to None.
+            storage: Storage backend of the repository.
+            params: Repository parameters.
+            gpg: Verifies Release signatures. Defaults to None.
         """
         super().__init__(storage, params, gpg=gpg)
         # payloads reported as Release-owned. `build_sync_lists` and `check` each build
@@ -110,10 +110,10 @@ class RepoSync(Repo):
         through it read the indices as loaded and must not mutate them.
 
         Args:
-            repo (Repo): The loaded repository to check.
+            repo: The loaded repository to check.
 
         Returns:
-            RepoSync: A repository over `repo.storage` holding `repo`'s indices.
+            A repository over `repo.storage` holding `repo`'s indices.
         """
         ret = cls(repo.storage, repo.params, gpg=repo.gpg)
         ret.release = repo.release
@@ -136,8 +136,8 @@ class RepoSync(Repo):
         -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Returns:
-            Dict[str, IndexTarget]: Index path → the digests recorded for it and
-                whether the source is already known to publish it.
+            Index path → the digests recorded for it and whether the source is already known to
+            publish it.
         """
         ret: dict[str, IndexTarget] = {}
 
@@ -191,7 +191,7 @@ class RepoSync(Repo):
         """Collect the parsed payload paths, dropping any the Release owns.
 
         Returns:
-            Set[str]: Paths of every parsed package the Release does not own.
+            Paths of every parsed package the Release does not own.
         """
         return self._drop_release_owned(str(pkg) for pkg in self.get_packages())
 
@@ -204,10 +204,10 @@ class RepoSync(Repo):
         -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
-            paths (Iterable[str]): Stanza paths, as `str(Package)` gives them.
+            paths: Stanza paths, as `str(Package)` gives them.
 
         Returns:
-            Set[str]: The paths no Release digest block lists.
+            The paths no Release digest block lists.
         """
         ret: set[str] = set()
         # one walk of the Release blocks, not one per package
@@ -231,13 +231,13 @@ class RepoSync(Repo):
         Process some optimizations for reduce copy and remove lists.
 
         Args:
-            target_repo (Repo): The target repo to sync with.
-            indices_only (bool): Force the index pass and plan no payload copy or
-                deletion. Defaults to False.
+            target_repo: The target repo to sync with.
+            indices_only: Force the index pass and plan no payload copy or deletion. Defaults to
+                False.
 
         Returns:
-            SyncPlan: The paths to copy, the paths to delete, and the copied index paths
-                no load or parse proved the source publishes.
+            The paths to copy, the paths to delete, and the copied index paths no load or parse
+            proved the source publishes.
         """
         try:
             existing_files = set(target_repo.storage.list())
@@ -287,15 +287,15 @@ class RepoSync(Repo):
         """Plan the payload copies and deletions a package diff and the target listing call for.
 
         Args:
-            diff (RepoDiff): This repo against the target.
-            indices (Collection[str]): Every index path the index set holds.
-            target_repo (RepoRW): The target repo to sync with.
-            existing_files (Set[str]): Paths the target listing returned.
-            can_list (bool): Whether `existing_files` is a real listing of the target.
+            diff: This repo against the target.
+            indices: Every index path the index set holds.
+            target_repo: The target repo to sync with.
+            existing_files: Paths the target listing returned.
+            can_list: Whether `existing_files` is a real listing of the target.
 
         Returns:
-            Tuple[List[str], List[str]]: Payloads to copy, repairs included, and
-                payloads to delete, orphans included; both sorted.
+            Payloads to copy, repairs included, and payloads to delete, orphans included; both
+            sorted.
         """
         all_pkg_files = self._payload_files()
         copy_pkg_files = diff.get_filenames_to_copy() & all_pkg_files
@@ -337,13 +337,13 @@ class RepoSync(Repo):
         """Drop the payloads the target already holds unchanged, as a terminated sync leaves them.
 
         Args:
-            packages (List[Package]): Packages the diff copies, one per index naming them.
-            copy_files (Set[str]): Payload paths to copy.
-            target_repo (RepoRW): The target repo to sync with.
-            existing_files (Set[str]): Paths the target listing returned.
+            packages: Packages the diff copies, one per index naming them.
+            copy_files: Payload paths to copy.
+            target_repo: The target repo to sync with.
+            existing_files: Paths the target listing returned.
 
         Returns:
-            Set[str]: `copy_files` without the payloads the target already holds.
+            `copy_files` without the payloads the target already holds.
         """
         ret = set(copy_files)
         seen: dict[str, dict[str, str]] = {}
@@ -379,15 +379,14 @@ class RepoSync(Repo):
         """Compare a target listing with the package and index sets.
 
         Args:
-            payloads (Set[str]): Every payload path the package set holds.
-            indices (Collection[str]): Every index path the index set holds.
-            existing_files (Set[str]): Paths the target listing returned.
-            planned (Optional[Set[str]]): Paths a package diff already copies or
-                removes, left out of both results.
+            payloads: Every payload path the package set holds.
+            indices: Every index path the index set holds.
+            existing_files: Paths the target listing returned.
+            planned: Paths a package diff already copies or removes, left out of both results.
+                Defaults to None (nothing planned).
 
         Returns:
-            Tuple[Set[str], Set[str]]: The payloads the listing lacks, and the listed
-                paths neither set holds.
+            The payloads the listing lacks, and the listed paths neither set holds.
         """
         planned = planned or set()
         repair = payloads - planned - existing_files
@@ -404,8 +403,7 @@ class RepoSync(Repo):
         -> [CONFIG.md](CONFIG.md#check).
 
         Returns:
-            Tuple[List[str], List[str]]: Missing and orphan paths, sorted; both empty
-                when the storage cannot list.
+            Missing and orphan paths, sorted; both empty when the storage cannot list.
         """
         try:
             existing_files = set(self.storage.list())
@@ -433,14 +431,14 @@ class RepoSync(Repo):
         """Decide which indices this sync copies -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
-            indices (Dict[str, IndexTarget]): The sync index set, from `_get_indices()`.
-            target_repo (RepoRW): The target repo to sync with.
-            existing_files (Set[str]): Paths the target listing returned.
-            forced (bool): Whether a package or Release change already forces the index pass.
-            can_list (bool): Whether `existing_files` is a real listing of the target.
+            indices: The sync index set, from `_get_indices()`.
+            target_repo: The target repo to sync with.
+            existing_files: Paths the target listing returned.
+            forced: Whether a package or Release change already forces the index pass.
+            can_list: Whether `existing_files` is a real listing of the target.
 
         Returns:
-            List[str]: Index paths to copy, empty when nothing forces the pass.
+            Index paths to copy, empty when nothing forces the pass.
         """
         # an absent entry no load or parse proved is expected absent, so it never forces
         if can_list and not forced:
@@ -467,12 +465,12 @@ class RepoSync(Repo):
         digest verification is on.
 
         Args:
-            file (str): object path, identical in both repositories.
-            digests (Dict[str, str]): digests the source records for the object.
-            target_repo (RepoRW): The target repo to sync with.
+            file: object path, identical in both repositories.
+            digests: digests the source records for the object.
+            target_repo: The target repo to sync with.
 
         Returns:
-            bool: True when the target copy matches and need not be transferred.
+            True when the target copy matches and need not be transferred.
         """
         return compare_digests(digests, normalize_digests(target_repo.storage.get_metadata(file)))
 
@@ -485,10 +483,10 @@ class RepoSync(Repo):
         mirror -> [VALIDATION.md](VALIDATION.md#filename-safety).
 
         Args:
-            entry (IndexEntry): candidate index from the root Release digest block.
+            entry: candidate index from the root Release digest block.
 
         Returns:
-            bool: True when the path is safe to mirror.
+            True when the path is safe to mirror.
         """
         if is_unsafe_path(entry.key) or is_unsafe_path(entry.path):
             logger.warning("%s listed in Release is an unsafe index path. Skipped.", entry.key)
@@ -510,12 +508,12 @@ class RepoSync(Repo):
         `_reduce_indices`.
 
         Args:
-            file (str): object path, identical in both repositories.
-            digests (Dict[str, str]): digests the source Release records for the index.
-            target_repo (RepoRW): The target repo to sync with.
+            file: object path, identical in both repositories.
+            digests: digests the source Release records for the index.
+            target_repo: The target repo to sync with.
 
         Returns:
-            bool: True when the target Release records matching digests for the key.
+            True when the target Release records matching digests for the key.
         """
         target_digests = target_repo.release.digests.get(target_repo.params.release_key(file))
         if not target_digests:
@@ -535,13 +533,12 @@ class RepoSync(Repo):
         source is never probed -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
-            indices (Dict[str, IndexTarget]): Index path → expected digests and
-                whether the source is known to publish it.
-            target_repo (RepoRW): The target repo to sync with.
-            existing_files (Set[str]): Objects already present in the target.
+            indices: Index path → expected digests and whether the source is known to publish it.
+            target_repo: The target repo to sync with.
+            existing_files: Objects already present in the target.
 
         Returns:
-            List[str]: Index paths still to copy.
+            Index paths still to copy.
         """
         target_loaded = bool(target_repo.release.hash)
         ret: list[str] = []
@@ -575,20 +572,18 @@ class RepoSync(Repo):
         Save digests of the file in metadata.
 
         Args:
-            file (str): The file to transfer.
-            target_repo (Repo): The target repo to transfer to.
-            progress (Optional[Tuple[int, int]], optional): Progress of transfer - current of
-                total objects.
-                Defaults to None.
-            missing_ok (bool): Skip the file when the source lacks it, as for an index
-                nothing proved published -> [VALIDATION.md](VALIDATION.md#index-selection).
+            file: The file to transfer.
+            target_repo: The target repo to transfer to.
+            progress: Progress of transfer - current of total objects. Defaults to None.
+            missing_ok: Skip the file when the source lacks it, as for an index nothing proved
+                published -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Raises:
             ChecksumException: If the checksum verification fails.
 
         Returns:
-            bool: True when the file needs no retry: it was transferred, or `missing_ok`
-                is set and the source lacks it. False otherwise.
+            True when the file needs no retry: it was transferred, or `missing_ok` is set and the
+            source lacks it. False otherwise.
         """
         if progress is None:
             logger.info("Copy: %s", file)
@@ -624,8 +619,8 @@ class RepoSync(Repo):
         """Delete `file` from `target_repo`.
 
         Args:
-            file (str): Object path to delete.
-            target_repo (Repo): Repository whose storage holds the file.
+            file: Object path to delete.
+            target_repo: Repository whose storage holds the file.
         """
         logger.info("Delete: %s", file)
         target_repo.storage.delete(file)
@@ -636,14 +631,12 @@ class RepoSync(Repo):
         """Transfer a file and verify checksums.
 
         Args:
-            file (str): The file to transfer.
-            progress (Optional[Tuple[int, int]], optional): Progress of transfer - current of
-                total objects.
-                Defaults to None.
-            fix (Optional[bool], optional): Fix inconsistencies if True. Defaults to False.
+            file: The file to transfer.
+            progress: Progress of transfer - current of total objects. Defaults to None.
+            fix: Fix inconsistencies if True. Defaults to False.
 
         Returns:
-            bool: True if the file is valid, False otherwise.
+            True if the file is valid, False otherwise.
         """
         dev_null = StorageNull()
 
@@ -682,11 +675,11 @@ class RepoSync(Repo):
         -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
-            target_repo (Repo): The target repo to sync with.
-            copy_list (List[str]): The list of files to copy.
-            delete_list (List[str]): The list of files to delete.
-            unproven (Collection[str]): Paths in `copy_list` skipped when the source
-                lacks them, from `build_sync_lists`.
+            target_repo: The target repo to sync with.
+            copy_list: The list of files to copy.
+            delete_list: The list of files to delete.
+            unproven: Paths in `copy_list` skipped when the source lacks them, from
+                `build_sync_lists`.
 
         Raises:
             RepoSyncException: If any object still fails after the retries.
@@ -721,12 +714,12 @@ class RepoSync(Repo):
         """Check repository for consistency.
 
         Args:
-            missing_list (List[str]): List of missing packages.
-            orphan_list (List[str]): List of orphan files to delete.
-            fix (bool): Delete inconsistencies if True
+            missing_list: List of missing packages.
+            orphan_list: List of orphan files to delete.
+            fix: Delete inconsistencies if True
 
         Returns:
-            Tuple[int, int]: A tuple containing the number of errors and the number of errors fixed.
+            A tuple containing the number of errors and the number of errors fixed.
         """
         all_pkg_files = sorted(self._payload_files())
 
