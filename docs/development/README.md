@@ -2,7 +2,7 @@
 
 Non-canonical explanations for contributors: behavior diagrams of the actions and the reasoning
 behind the rules. Storage internals are explained in txstore's
-[developer guidance](https://github.com/vinklat/txstore/blob/v0.1.1/docs/development/README.md).
+[developer guidance](https://github.com/vinklat/txstore/blob/v0.1.2/docs/development/README.md).
 Root contract documents remain authoritative; when a page here conflicts with a root contract,
 update or remove the page. The reader-facing guides are in [docs/guides/](../guides/README.md).
 

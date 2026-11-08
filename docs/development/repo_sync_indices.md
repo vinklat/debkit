@@ -7,7 +7,7 @@ rebuilt by name. Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 [VALIDATION.md](../../VALIDATION.md#index-selection) (selection and skip rules),
 [VALIDATION.md](../../VALIDATION.md#index-exclude-globs) (exclude globs),
 [CRYPTO.md](../../CRYPTO.md#verification-order) (checksum sources), and
-[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#storage-abi)
+[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#storage-abi)
 (`exists` and `get_metadata`). The surrounding subcommand flow is in
 [action_sync.md](action_sync.md); the user-facing walkthrough is in
 [examples.md](../guides/examples.md#mirror-a-repository).
@@ -128,7 +128,7 @@ filtered by selection rules and by what the source actually publishes.
 `tests/test_release.py` covers `listed_indices` across the three layouts; `tests/test_params.py`
 covers the `indices_path` / `release_key` round trip; `is_unsafe_path` is txstore's and tested there
 →
-[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety);
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#filename-safety);
 `tests/test_sources.py` covers the `Sources` expansion; `tests/test_index_selection.py` covers
 `select_index_entry`; `tests/test_repo_sync.py` covers the index set, skip, purge, and flat-layout
 behavior in `build_sync_lists`, and the transfer skip in `sync`; `tests/test_argparser.py` and
@@ -141,7 +141,7 @@ behavior in `build_sync_lists`, and the transfer skip in `sync`; `tests/test_arg
   [VALIDATION.md](../../VALIDATION.md#index-selection),
   [VALIDATION.md](../../VALIDATION.md#index-exclude-globs),
   [CRYPTO.md](../../CRYPTO.md#verification-order),
-  [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#storage-abi).
+  [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#storage-abi).
 - Sibling pages: [action_sync.md](action_sync.md), [action_pkg_insert.md](action_pkg_insert.md),
   [action_pkg_remove.md](action_pkg_remove.md),
-  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.1/docs/development/class.md).
+  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.2/docs/development/class.md).

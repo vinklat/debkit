@@ -44,13 +44,13 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 ## Checksums
 
 Digest helpers and the algorithm-name lists are txstore's →
-[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#digests); the Debian
+[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#digests); the Debian
 hash-block layer over them is `repo/hashes.py`.
 
 | Item | Rule |
 | -- | -- |
 | Algorithms | `MD5Sum`, `SHA1`, `SHA256`, `SHA512`; `MD5Sum` exists for Debian compatibility and new behavior never relies on it alone. |
-| `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#digests). |
+| `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#digests). |
 | Non-overlapping, unknown, or mismatched digests | Verification failure. |
 | Hash blocks | `parse_hash_block()` in `repo/hashes.py` splits a `Release` hash field, a `Checksums-<algorithm>` field, or a `Sources` `Files` field into `(digest, size, filename)` triples; a trailing partial run is dropped. |
 | Index skip during sync | The target `Release` digest block is compared before the stored object metadata; which entries that settles → [VALIDATION.md](VALIDATION.md#index-selection). |
@@ -97,7 +97,7 @@ older Release no longer lists.
 | Source `Date` missing while the loaded target has a `Date` | → `ReleaseFreshnessException` (Distrustful) |
 | Source `Date` or `Valid-Until` malformed → [VALIDATION.md](VALIDATION.md#release-dates) | → `ReleaseFreshnessException` (Distrustful) |
 | Target trust | The operator owns the target, so its Release sets the floor unverified: whoever can write the target can roll it back directly, and `--allow-release-rollback` recovers from a bad floor. |
-| Target compared | The target as read under txstore's `history_lock` → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking), so a peer commit that lands before the lock is granted is the floor; `--verify-existing` checks that same read |
+| Target compared | The target as read under txstore's `history_lock` → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking), so a peer commit that lands before the lock is granted is the floor; `--verify-existing` checks that same read |
 | Target reset as corrupt | Its indices are ignored → [Verification failures](#verification-failures), but the `Date` its Release carried before the reset stays the floor |
 | Later pass | The source is compared with the staged target and with the target as the run found it, so a staged target cannot lower the floor |
 | Target loaded from `InRelease` | Its `Date` is read from the signed body → [GPG](#gpg), even though the target is not verified |

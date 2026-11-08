@@ -17,7 +17,7 @@ skips, or recopies. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 Implemented by `storage_url()` in `action/__init__.py` for `--target-url`, `--source-url`, and
 `--incoming-url`; txstore validates what it receives →
-[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#storage-urls),
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#storage-urls),
 including HTTP joins and the S3 path split.
 
 | Rule | Constraint | Failure |
@@ -194,7 +194,7 @@ checks below constrain both; unsafe names fail before any storage mutation.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | — |
+| Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#filename-safety). | — |
 | `Packages.remove()` | Matched package filename passes the unsafe-key rule. | → `PackagesException` (Read) |
 | `RepoSync` index set | Release-listed index key and path pass the unsafe-key rule. | Entry dropped from the index set and logged |
 | `Packages` index parse | Stanza `Filename`, POSIX-normalized, is not `.` and passes the unsafe-key rule. | Stanza dropped from the container and logged |
@@ -204,7 +204,7 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | Insert pool path | The Debian source pool key `pool/[<component>/]<prefix>/<source>/<upload file name>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool prefix | `lib` and the next letter for a source name longer than 3 starting with `lib`, else its first letter. | — |
 | `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Read) |
-| Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
+| Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
 
 ## Control file encoding
 
@@ -297,7 +297,7 @@ path.
 
 Implemented by `object_acl_type()` and `bucket_acl_type()` in `argtypes.py` over txstore's
 `parse_object_acl()` and `parse_bucket_acl()`; values →
-[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#s3-canned-acls).
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#s3-canned-acls).
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |

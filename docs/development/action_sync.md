@@ -22,7 +22,7 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
   concurrent writer on the same root waits and — on S3 — fails after txstore's lock acquire timeout
-  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
+  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The target is loaded inside that body, so a peer that commits while this run waits for the lock is
@@ -73,4 +73,4 @@ freshness rule; `tests/test_repo_sync.py` covers list building and transfer →
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [repo_sync_indices.md](repo_sync_indices.md),
   [action_pkg_insert.md](action_pkg_insert.md), [action_pkg_remove.md](action_pkg_remove.md),
-  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.1/docs/development/class.md).
+  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.2/docs/development/class.md).

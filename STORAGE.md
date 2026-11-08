@@ -6,7 +6,7 @@ commands. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 Storage is the [txstore](https://github.com/vinklat/txstore) package; its contracts own the
 `Storage` interface, backends, transactions, footmarks, history files, retention rules, locking, S3
 ACL handling, and digests →
-[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md). This file states
+[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md). This file states
 only what debkit chooses.
 
 ## Construction

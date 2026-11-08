@@ -22,7 +22,7 @@ in [examples.md](../guides/examples.md#remove-packages).
 
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
   concurrent writer on the same root waits and — on S3 — fails after txstore's lock acquire timeout
-  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A
+  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed pattern exits 2
@@ -52,4 +52,4 @@ from a real `StorageFS` → [TESTING.md](../../TESTING.md#required-coverage).
   [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [action_pkg_insert.md](action_pkg_insert.md), [action_sync.md](action_sync.md),
   [repo_sync_indices.md](repo_sync_indices.md),
-  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.1/docs/development/class.md).
+  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.2/docs/development/class.md).
