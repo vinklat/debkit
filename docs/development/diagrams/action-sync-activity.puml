@@ -21,7 +21,8 @@ partition "with maybe_transaction(target.storage)" {
   (taken before any reset);
   :target_before = copy(target);
   if (verify_existing?) then (yes)
-    :checker = RepoSync over target.storage, copy_from(target);
+    :checker = RepoSync.over(target)
+    (aliases the loaded target);
     :missing = checker.consistency_lists();
     :err, fixed = checker.check(missing, [], fix=True);
     note right
@@ -53,12 +54,12 @@ partition "with maybe_transaction(target.storage)" {
         out of the maybe_transaction CM
       end note
     endif
-    :copy_list, delete_list, unproven = source.build_sync_lists(target, indices_only);
-    if (copy_list and delete_list both empty?) then (yes)
+    :plan = source.build_sync_lists(target, indices_only);
+    if (plan.is_empty()?) then (yes)
       :log "Nothing to sync";
       break
     endif
-    :source.sync(target, copy_list, delete_list, unproven);
+    :source.sync(target, plan.copy, plan.delete, plan.unproven);
     note right
       ChecksumException propagates (cli.py logs it)
       out of the loop and

@@ -7,7 +7,7 @@ which Release-listed indices it carries is decided in `index_selection`.
 import logging
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from txstore import (
     StorageException,
@@ -52,6 +52,29 @@ class IndexTarget:
     known_published: bool
 
 
+class SyncPlan(NamedTuple):
+    """One pass of a sync, as `RepoSync.build_sync_lists` plans it.
+
+    Attributes:
+        copy (List[str]): Paths to copy from the source, payloads before indices.
+        delete (List[str]): Paths to delete from the target.
+        unproven (Set[str]): Paths in `copy` no load or parse proved the source
+            publishes, which `sync` skips when the source lacks them.
+    """
+
+    copy: list[str]
+    delete: list[str]
+    unproven: set[str]
+
+    def is_empty(self) -> bool:
+        """Report whether the pass has nothing to copy or delete.
+
+        Returns:
+            bool: True when both `copy` and `delete` are empty.
+        """
+        return not self.copy and not self.delete
+
+
 class RepoSyncException(Exception):
     """Exception raised for errors in sync to the repository."""
 
@@ -77,6 +100,26 @@ class RepoSync(Repo):
         # payloads reported as Release-owned. `build_sync_lists` and `check` each build
         # the package set, so the report is per run, not per pass
         self._owned_payloads_warned: set[str] = set()
+
+    @classmethod
+    def over(cls, repo: Repo) -> "RepoSync":
+        """Wrap a loaded `repo` in a `RepoSync` that checks the repo's own storage.
+
+        The result aliases the repo's state: it shares `storage`, `params`, `release`,
+        and `components` rather than copying them, so `consistency_lists` and `check`
+        through it read the indices as loaded and must not mutate them.
+
+        Args:
+            repo (Repo): The loaded repository to check.
+
+        Returns:
+            RepoSync: A repository over `repo.storage` holding `repo`'s indices.
+        """
+        ret = cls(repo.storage, repo.params, gpg=repo.gpg)
+        ret.release = repo.release
+        ret.components = repo.components
+        ret.modified = repo.modified
+        return ret
 
     def _get_indices(self) -> dict[str, IndexTarget]:
         """Get every repository index file to mirror, with its expected digests.
@@ -182,9 +225,7 @@ class RepoSync(Repo):
 
         return ret
 
-    def build_sync_lists(
-        self, target_repo: "RepoRW", indices_only: bool = False
-    ) -> tuple[list[str], list[str], set[str]]:
+    def build_sync_lists(self, target_repo: "RepoRW", indices_only: bool = False) -> SyncPlan:
         """Build filelists for sync.
 
         Process some optimizations for reduce copy and remove lists.
@@ -195,9 +236,8 @@ class RepoSync(Repo):
                 deletion. Defaults to False.
 
         Returns:
-            tuple: The paths to copy, the paths to delete, and the copied index paths
-                no load or parse proved the source publishes, which `sync` skips when
-                the source lacks them.
+            SyncPlan: The paths to copy, the paths to delete, and the copied index paths
+                no load or parse proved the source publishes.
         """
         try:
             existing_files = set(target_repo.storage.list())
@@ -233,7 +273,7 @@ class RepoSync(Repo):
             if not indices[file].known_published and file not in existing_files
         }
 
-        return copy_list + index_copies, delete_list, unproven
+        return SyncPlan(copy_list + index_copies, delete_list, unproven)
 
     def _plan_payloads(
         self,

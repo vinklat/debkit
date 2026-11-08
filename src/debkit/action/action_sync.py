@@ -51,20 +51,6 @@ def _split_csv(value: str) -> list[str]:
     return [token for token in value.split(",") if token]
 
 
-def _checker_for(target: "RepoRW") -> RepoSync:
-    """Wrap a loaded target in a `RepoSync` that checks the target's own storage.
-
-    Args:
-        target (RepoRW): The loaded target repository.
-
-    Returns:
-        RepoSync: A repository over the target storage holding the target's indices.
-    """
-    checker = RepoSync(target.storage, target.params)
-    checker.copy_from(target)
-    return checker
-
-
 class ActionSync(Action):
     """Sync debian repo from source repository.
 
@@ -211,16 +197,18 @@ class ActionSync(Action):
                         self.source_repo.release.check_fresh_against(run_floor, now)
 
                 logger.info("Building filelists...")
-                copy_list, delete_list, unproven = self.source_repo.build_sync_lists(
+                plan = self.source_repo.build_sync_lists(
                     self.target_repo, indices_only=self.indices_only
                 )
 
-                if len(copy_list) == 0 and len(delete_list) == 0:
+                if plan.is_empty():
                     logger.info("Nothing to sync.")
                     break
 
                 # a ChecksumException propagates to discard the transaction; cli.py logs it
-                self.source_repo.sync(self.target_repo, copy_list, delete_list, unproven=unproven)
+                self.source_repo.sync(
+                    self.target_repo, plan.copy, plan.delete, unproven=plan.unproven
+                )
 
                 prev_hash = self.source_repo.release.hash
             else:
@@ -270,7 +258,7 @@ class ActionSync(Action):
             target (RepoRW): The loaded target repository.
         """
         logger.info("---------- Verify target repo packages...")
-        checker = _checker_for(target)
+        checker = RepoSync.over(target)
         missing_list, _ = checker.consistency_lists()
         err_total, err_fixed_total = checker.check(missing_list, [], fix=True)
         if err_total > err_fixed_total:
@@ -334,7 +322,7 @@ class ActionSync(Action):
         Returns:
             Dict[str, int]: The error and fixed-error totals.
         """
-        dup_repo = _checker_for(target)
+        dup_repo = RepoSync.over(target)
         missing_list, orphan_list = dup_repo.consistency_lists()
 
         list_err_total: int = 0

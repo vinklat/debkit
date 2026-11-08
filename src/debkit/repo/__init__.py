@@ -95,17 +95,6 @@ class Repo:
         ret.modified = self.modified
         return ret
 
-    def copy_from(self, source_repo: "Repo") -> None:
-        """Init repo from another repo.
-
-        Args:
-            source_repo (Repo): The source repo to copy from.
-        """
-        copy_repo = copy(source_repo)
-        self.release = copy_repo.release
-        self.components = copy_repo.components
-        self.modified = copy_repo.modified
-
     def get_components(self) -> Generator[str]:
         """Get the components of the repo.
 

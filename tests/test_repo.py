@@ -371,15 +371,6 @@ def test_copy_rebinds_each_component_to_the_copied_release() -> None:
     assert repo.components["main"].root_release is repo.release
 
 
-def test_copy_from_rebinds_each_component_to_the_receiving_release() -> None:
-    source = _loaded_repo()
-    target = _repo()
-
-    target.copy_from(source)
-
-    assert target.components["main"].root_release is target.release
-
-
 def test_copied_release_digest_records_are_independent() -> None:
     """`update_digests` mutates a record in place, so a shared one would change both."""
     repo = _loaded_repo()

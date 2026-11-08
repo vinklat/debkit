@@ -41,15 +41,15 @@ group _reduce_indices
   end
 end
 
-Src --> ActionSync: copy_list, delete_list, unproven
+Src --> ActionSync: SyncPlan(copy, delete, unproven)
 note right: unproven: copied indices the target lacks\nthat no load or parse proved published
 
-ActionSync -> Src: sync(target, copy_list, delete_list, unproven)
-loop each path in copy_list
+ActionSync -> Src: sync(target, plan.copy, plan.delete, plan.unproven)
+loop each path in plan.copy
   Src -> SStor: transfer(path, target storage)
   alt transferred
     SStor --> Src: digests
-  else StorageNotFoundException, path in unproven
+  else StorageNotFoundException, path in plan.unproven
     note right of Src: skipped, logged at debug,\nnever retried
   else any other StorageException
     note right of Src: retried; still failing after the\nretries raises RepoSyncException

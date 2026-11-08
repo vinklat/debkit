@@ -28,7 +28,7 @@ from debkit.repo.packages import Packages
 from debkit.repo.params import RepoParams
 from debkit.repo.release import IndexEntry
 from debkit.repo.repo_rw import RepoRW
-from debkit.repo.repo_sync import RepoSync, RepoSyncException
+from debkit.repo.repo_sync import RepoSync, RepoSyncException, SyncPlan
 
 INDICES = ["dists/bookworm/Release", "dists/bookworm/main/binary-amd64/Packages"]
 FLAT_INDICES = ["bookworm/Release"]
@@ -150,6 +150,32 @@ def _two_repos(
 # =========================================================================
 # § 3a. build_sync_lists
 # =========================================================================
+
+
+@pytest.mark.parametrize(
+    ("copy", "delete", "empty"),
+    [([], [], True), (["a.deb"], [], False), ([], ["b.deb"], False)],
+    ids=["nothing", "copy", "delete"],
+)
+def test_sync_plan_is_empty_only_without_copies_or_deletions(
+    copy: list[str], delete: list[str], empty: bool
+) -> None:
+    assert SyncPlan(copy, delete, set()).is_empty() is empty
+
+
+def test_build_sync_lists_returns_a_sync_plan() -> None:
+    pkg = make_package("p1.deb")
+    src, tgt = _two_repos(
+        src_components={"main": {"amd64": [pkg]}},
+        tgt_components={},
+        tgt_list=[],
+    )
+
+    plan = src.build_sync_lists(tgt)
+
+    assert isinstance(plan, SyncPlan)
+    assert "p1.deb" in plan.copy
+    assert not plan.is_empty()
 
 
 def test_build_sync_lists_no_diff_no_changes() -> None:
@@ -872,6 +898,30 @@ def test_consistency_lists_proves_nothing_on_a_storage_that_cannot_list() -> Non
     _mock_storage(src).list.side_effect = NotImplementedError
 
     assert src.consistency_lists() == ([], [])
+
+
+def test_over_shares_the_loaded_state_of_the_repo_it_wraps() -> None:
+    """The checker aliases the target, so a check reads the indices as loaded."""
+    _, tgt = _two_repos(
+        src_components={}, tgt_components={"main": {"amd64": [make_package("p1.deb")]}}
+    )
+
+    checker = RepoSync.over(tgt)
+
+    assert isinstance(checker, RepoSync)
+    assert checker.storage is tgt.storage
+    assert checker.params is tgt.params
+    assert checker.release is tgt.release
+    assert checker.components is tgt.components
+
+
+def test_over_checks_the_wrapped_repo_storage() -> None:
+    _, tgt = _two_repos(
+        src_components={}, tgt_components={"main": {"amd64": [make_package("p1.deb")]}}
+    )
+    _mock_storage(tgt).list.return_value = ["junk.deb", *INDICES]
+
+    assert RepoSync.over(tgt).consistency_lists() == (["p1.deb"], ["junk.deb"])
 
 
 # =========================================================================

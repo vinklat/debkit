@@ -30,6 +30,7 @@ from debkit.action import ActionException, OutputType
 from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionSync
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
+from debkit.repo.repo_sync import SyncPlan
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,7 +60,7 @@ def _make_action(*, storage: object = None) -> ActionSync:
     source.params.url = "fs:///src"
     source.params.verify_gpg = True
     source.release.hash = "hash1"
-    source.build_sync_lists.return_value = (["pkg.deb"], [], set())
+    source.build_sync_lists.return_value = SyncPlan(["pkg.deb"], [], set())
     source.sync.return_value = []
     source.diff.return_value = MagicMock(is_empty=MagicMock(return_value=True))
     action.source_repo = source
@@ -620,13 +621,13 @@ def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction
         return 0, 0
 
     with patch("debkit.action.action_sync.RepoSync") as checker:
-        checker.return_value.consistency_lists.return_value = (["gone.deb"], ["junk"])
-        checker.return_value.check.side_effect = check
+        checker.over.return_value.consistency_lists.return_value = (["gone.deb"], ["junk"])
+        checker.over.return_value.check.side_effect = check
         action.sync()
 
     assert began_at_load == [True]
     assert began_at_check == [True]
-    checker.return_value.check.assert_called_once_with(["gone.deb"], [], fix=True)
+    checker.over.return_value.check.assert_called_once_with(["gone.deb"], [], fix=True)
 
 
 def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
@@ -636,8 +637,8 @@ def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
     action.verify_existing = True
 
     with patch("debkit.action.action_sync.RepoSync") as checker:
-        checker.return_value.consistency_lists.return_value = ([], [])
-        checker.return_value.check.return_value = (3, 1)
+        checker.over.return_value.consistency_lists.return_value = ([], [])
+        checker.over.return_value.check.return_value = (3, 1)
         with caplog.at_level(logging.WARNING):
             action.sync()
 

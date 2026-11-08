@@ -22,7 +22,7 @@ Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
 note over ActionSync: target_floor = run_floor = copy(target.release), before any reset\ntarget_before = copy(target)
 
 opt verify_existing
-  ActionSync -> TStor: list()\n[checker.consistency_lists()]
+  ActionSync -> TStor: list()\n[RepoSync.over(target).consistency_lists()]
   ActionSync -> TStor: read, delete the failing payloads\n[checker.check(missing, [], fix=True);\nstaged in the transaction]
 end
 
@@ -49,12 +49,12 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
   end
 
   ActionSync -> Src: build_sync_lists(target, indices_only)
-  Src --> ActionSync: copy_list, delete_list, unproven
-  break copy_list and delete_list empty
+  Src --> ActionSync: SyncPlan(copy, delete, unproven)
+  break plan.is_empty()
     note over ActionSync: nothing to sync
   end
 
-  ActionSync -> Src: sync(target, copy_list, delete_list, unproven)
+  ActionSync -> Src: sync(target, plan.copy, plan.delete, plan.unproven)
   Src --> ActionSync: returns, or raises RepoSyncException
 end
 
