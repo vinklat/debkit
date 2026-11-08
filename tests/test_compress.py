@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import lzma
+import random
 import struct
 import tracemalloc
 import zlib
@@ -70,8 +71,8 @@ def test_decompress_skips_nul_padding_between_many_streams(codec: Codec) -> None
     assert codec.decompress(encoded, 50) == b"x" * 50
 
 
-def test_many_streams_are_fed_to_the_decoders_in_linear_total() -> None:
-    """Many tiny gzip members are not each handed the whole remaining input."""
+def _fed(members: int) -> int:
+    """Decode `members` tiny gzip members; return how many input bytes the decoders were fed."""
     fed: list[int] = []
 
     class _Counting:
@@ -90,10 +91,46 @@ def test_many_streams_are_fed_to_the_decoders_in_linear_total() -> None:
             fed.append(len(memoryview(data)))
             return self._inner.decompress(data, max_length)
 
-    encoded = gzip.compress(b"x", mtime=0) * 2000
-    assert _bounded(_Counting, encoded, 2000) == b"x" * 2000
-    # handing each member the rest of the input totals about 1000x the input
-    assert sum(fed) <= 16 * len(encoded)
+    encoded = gzip.compress(b"x", mtime=0) * members
+    assert _bounded(_Counting, encoded, members) == b"x" * members
+    return sum(fed)
+
+
+def test_many_streams_are_fed_to_the_decoders_in_linear_total() -> None:
+    """Many tiny gzip members are not each handed the whole remaining input."""
+    # doubling the members doubles a linear total and quadruples a quadratic one;
+    # below about 1000 members the per-member constant hides the difference
+    assert _fed(2000) < 2.5 * _fed(1000)
+
+
+# incompressible, so its stream spans several doubling chunks
+_NOISE = random.Random(0).randbytes(4096)
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_reads_a_stream_spanning_many_chunks(codec: Codec) -> None:
+    encoded = codec.compress(_NOISE) + codec.compress(b"tail")
+    assert codec.decompress(encoded, len(_NOISE) + 4) == _NOISE + b"tail"
+
+
+def test_decompress_reads_a_stream_ending_on_a_chunk_boundary() -> None:
+    first = gzip.compress(bytes(233), compresslevel=0, mtime=0)
+    assert len(first) == 256  # exactly the first chunk
+    encoded = first + gzip.compress(b"tail", mtime=0)
+    assert codec_for(".gz").decompress(encoded, 237) == bytes(233) + b"tail"
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_counts_the_limit_across_streams(codec: Codec) -> None:
+    encoded = codec.compress(_NOISE) + codec.compress(b"tail")
+    with pytest.raises(SizeLimitError):
+        codec.decompress(encoded, len(_NOISE) + 3)
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_refuses_junk_after_a_valid_stream(codec: Codec) -> None:
+    with pytest.raises(CorruptStreamError):
+        codec.decompress(codec.compress(_DATA) + b"junk", len(_DATA) + 4)
 
 
 @pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
