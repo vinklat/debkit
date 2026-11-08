@@ -4,7 +4,7 @@ Explains how [`RepoSync`](../../src/debkit/repo/repo_sync.py) decides which inde
 copies, and why that set is now read from the signed root `Release` instead of rebuilt by name.
 Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 [VALIDATION.md](../../VALIDATION.md#repository-index-paths) (index paths),
-[VALIDATION.md](../../VALIDATION.md#index-selection) (selection, probe, and skip rules),
+[VALIDATION.md](../../VALIDATION.md#index-selection) (selection and skip rules),
 [VALIDATION.md](../../VALIDATION.md#index-exclude-globs) (exclude globs),
 [CRYPTO.md](../../CRYPTO.md#verification-order) (checksum sources), and
 [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#storage-abi)
@@ -23,7 +23,8 @@ Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 | Manifest | `repo/release.py` | `IndexEntry`, `Release.listed_indices()` over the digest block |
 | Selection | `repo/repo_sync.py` | `select_index_entry()` applies exclude, component, source, unparsed-index, and architecture rules; the last three read the key below its component |
 | Index set | `repo/repo_sync.py` | `RepoSync._get_indices()` builds path → `IndexTarget` (expected digests, and whether a parse proved the path) |
-| Copy reduction | `repo/repo_sync.py` | `RepoSync._reduce_indices()` drops indices the target already holds and probes what is left |
+| Copy reduction | `repo/repo_sync.py` | `RepoSync._reduce_indices()` drops indices the target already holds unchanged |
+| Transfer skip | `repo/repo_sync.py` | `RepoSync.sync()` skips an unproven index whose transfer finds it missing at the source |
 | Flag wiring | `action/action_sync.py` | `--architectures` and `--indices-exclude` reach both repo params |
 
 ## Activity diagram
@@ -43,33 +44,31 @@ filtered by selection rules and by what the source actually publishes.
 
 ## Details that matter
 
-- Existence is probed at transfer, not at discovery. A Release lists paths the repository never
-  publishes, so a path handed to the transfer unprobed would fail it and, after the retries, raise
-  `RepoSyncException` (Sync), aborting the whole mirror →
-  [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups). The probe is one `exists()` per entry:
-  `list()` takes no prefix, so resolving the same question from a listing would enumerate the whole
-  pool. Probing every listed entry while building the set cost that round trip on every run, against
-  a source that is usually HTTP and answers each with a fresh connection; `_reduce_indices` pays it
-  only for an entry it is about to copy and the target lacks, so a point release that changes
-  hundreds of held indices pays none: an earlier transfer proved the source publishes them, so a
-  changed digest is a republish. Indices discovered while parsing are already known to exist and are
-  never probed.
+- Publication is settled by the transfer itself; the source is never probed. A Release lists paths
+  the repository never publishes, and an `exists()` per absent entry cost about a hundred round
+  trips on every no-op run against a source that is usually HTTP. `build_sync_lists` instead returns
+  the copied entries no load or parse proved, and `RepoSync.sync` skips one whose transfer raises
+  `StorageNotFoundException`, at debug level and without a retry. Any other object missing at the
+  source still fails the run after the retries → `RepoSyncException` (Sync) →
+  [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups). A held entry is never skippable: an earlier
+  transfer proved the source publishes it, so a changed digest is a republish. Indices discovered
+  while parsing are already known to exist.
 - Agreeing Release blocks settle only an entry the target holds, and save it the metadata round
   trip. They do not settle an absent one: the last sync copies the Release whether or not it copied
-  the object, so a source that 404s once records the digest anyway and agreement would keep skipping
-  the probe until that digest changed → [VALIDATION.md](../../VALIDATION.md#index-selection). The
-  price is one `exists()` per absent key on every run, which the uncompressed variants an archive
-  lists and never ships pay in full, dozens per Release. A later pass of the same sync compares
-  against the Release the previous pass staged, because `ActionSync` reloads the target through the
-  transaction before it.
+  the object, so a source that 404s once records the digest anyway →
+  [VALIDATION.md](../../VALIDATION.md#index-selection). A forced pass therefore attempts every
+  absent entry, and the uncompressed variants an archive lists and never ships cost one failed read
+  each, dozens per Release, only on a pass that copies something anyway. A later pass of the same
+  sync compares against the Release the previous pass staged, because `ActionSync` reloads the
+  target through the transaction before it.
 - A target reset after a checksum failure settles nothing: its stored metadata was written with the
   bytes the failed check distrusts, so every index it holds is copied again →
   [VALIDATION.md](../../VALIDATION.md#index-selection).
 - A listed path stays in the set whether or not the source publishes it, so the orphan pass cannot
   delete a target object the source Release truthfully lists. Its absence from the target is
-  expected and does not force the index pass; only a path a parse proved can do that. With nothing
-  else to sync those absent entries are still reduced on their own, which recovers one the source
-  404ed once; that pass copies no root Release file, so a run recovering nothing writes nothing →
+  expected and does not force the index pass; only a path a parse proved can do that. A run with
+  nothing else to sync therefore copies and writes nothing, and an entry the source 404ed once is
+  recovered by the next forced pass or by `--indices-only` →
   [VALIDATION.md](../../VALIDATION.md#index-selection).
 - The root `Release`, `Release.gpg`, and `InRelease` files are not listed in their own digest block,
   so they map to no digests and always copy when the index pass runs →
@@ -125,9 +124,10 @@ filtered by selection rules and by what the source actually publishes.
 `tests/test_release.py` covers `listed_indices` across the three layouts; `tests/test_params.py`
 covers the `indices_path` / `release_key` round trip; `tests/test_storage_url.py` covers
 `is_unsafe_path`; `tests/test_sources.py` covers the `Sources` expansion; `tests/test_repo_sync.py`
-covers `select_index_entry`, the index set, skip, purge, source-probing, and flat-layout behavior in
-`build_sync_lists`; `tests/test_argparser.py` and `tests/test_action_sync.py` cover the flag and its
-hand-off to both repo params → [TESTING.md](../../TESTING.md#required-coverage).
+covers `select_index_entry`, the index set, skip, purge, and flat-layout behavior in
+`build_sync_lists`, and the transfer skip in `sync`; `tests/test_argparser.py` and
+`tests/test_action_sync.py` cover the flag and its hand-off to both repo params →
+[TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 

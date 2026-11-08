@@ -20,7 +20,7 @@ from helpers.factories import (
     make_repo_sync,
     make_storage_mock,
 )
-from txstore import StorageException, StorageType
+from txstore import StorageException, StorageNotFoundException, StorageType
 
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
@@ -65,7 +65,6 @@ def _two_repos(
     verify_digests: bool = True,
     listed: list[IndexEntry] | None = None,
     tgt_listed: list[IndexEntry] | None = None,
-    src_exists: set[str] | None = None,
     src_archs: list[str] | None = None,
     release_fields: dict[str, str] | None = None,
     indices_exclude: list[str] | None = None,
@@ -85,7 +84,6 @@ def _two_repos(
         verify_digests: Passed to ``RepoParams``.
         listed: Index entries the source root Release lists in its digest block.
         tgt_listed: Index entries the target root Release lists in its digest block.
-        src_exists: Paths that exist in the source storage (default: all).
         src_archs: Architectures selected on the source params.
         release_fields: Fields of the source root Release (e.g. ``Architectures``).
         indices_exclude: Exclude globs set on both repo params.
@@ -102,7 +100,7 @@ def _two_repos(
         verify_gpg=False,
         verify_digests=verify_digests,
     )
-    src_storage = make_storage_mock(exists_paths=src_exists)
+    src_storage = make_storage_mock()
     src_comp_map: dict[str, dict[str, Packages]] = {
         comp: {arch: make_packages(src_storage, src_params, pkgs) for arch, pkgs in archs.items()}
         for comp, archs in src_components.items()
@@ -167,7 +165,7 @@ def test_build_sync_lists_no_diff_no_changes() -> None:
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert copy_list == []
     assert delete_list == []
@@ -182,7 +180,7 @@ def test_build_sync_lists_added_package_triggers_force_indices_copy() -> None:
         tgt_list=["p1.deb", *INDICES],
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert "p2.deb" in copy_list
     for ix in INDICES:
@@ -199,7 +197,7 @@ def test_build_sync_lists_orphan_in_target_goes_to_delete_list() -> None:
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert delete_list == ["junk.deb"]
     assert copy_list == []
@@ -214,7 +212,7 @@ def test_build_sync_lists_missing_index_forces_indices_copy() -> None:
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert INDICES[1] in copy_list
     assert INDICES[0] in copy_list
@@ -230,7 +228,7 @@ def test_build_sync_lists_missing_package_goes_to_repair() -> None:
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert "p1.deb" in copy_list
     assert delete_list == []
@@ -247,7 +245,7 @@ def test_build_sync_lists_existing_target_pkg_with_matching_digest_is_skipped() 
         verify_digests=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert "p1.deb" not in copy_list
 
@@ -266,7 +264,7 @@ def test_build_sync_lists_existing_target_pkg_with_bad_digest_is_kept_and_warns(
     )
 
     with caplog.at_level(logging.WARNING):
-        copy_list, _ = src.build_sync_lists(tgt)
+        copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert "p1.deb" in copy_list
     assert any("have not valid checksums" in r.message for r in caplog.records)
@@ -282,7 +280,7 @@ def test_build_sync_lists_existing_target_pkg_dropped_without_metadata_when_veri
         verify_digests=False,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert "p1.deb" not in copy_list
     _mock_storage(tgt).get_metadata.assert_not_called()
@@ -297,7 +295,7 @@ def test_build_sync_lists_non_listable_target_skips_orphan_and_repair() -> None:
         tgt_list_raises=NotImplementedError,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     # Only diff-derived copy + forced indices, no repair / no orphan deletion.
     assert "p2.deb" in copy_list
@@ -315,7 +313,7 @@ def test_build_sync_lists_indices_only_forces_indices_and_skips_packages() -> No
         tgt_list=["p1.deb", *INDICES],
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt, indices_only=True)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt, indices_only=True)
 
     assert sorted(copy_list) == sorted(INDICES)
     assert "p2.deb" not in copy_list
@@ -341,7 +339,7 @@ def test_build_sync_lists_duplicate_all_deb_across_archs() -> None:
         tgt_metadata={"SHA256": "aaa"},
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert "pool/main/c/ca-certs/ca-certs_1.0_all.deb" not in copy_list
     assert delete_list == []
@@ -376,7 +374,7 @@ def test_build_sync_lists_remove_pkg_reduced_when_not_in_target_existing() -> No
         tgt_list=["p1.deb", *INDICES],  # p_old.deb intentionally not listed
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert "p_old.deb" not in delete_list
 
@@ -409,31 +407,10 @@ def test_build_sync_lists_release_listed_index_present_at_source_is_copied() -> 
         listed=[dep11, i18n],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path in copy_list
     assert i18n.path in copy_list
-
-
-def test_build_sync_lists_release_listed_index_absent_at_source_is_skipped() -> None:
-    """A Release lists the uncompressed Packages that Debian does not publish."""
-    pkg = make_package("p1.deb")
-    missing = _entry("main/binary-amd64/Packages")
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": [pkg]}},
-        tgt_components={"main": {"amd64": [pkg]}},
-        tgt_list=["p1.deb", *INDICES],
-        listed=[missing],
-        src_exists=set(INDICES),
-        same_hash=True,
-    )
-
-    copy_list, delete_list = src.build_sync_lists(tgt)
-
-    assert missing.path not in copy_list
-    # the target is fully synced, so nothing is forced and nothing is copied
-    assert copy_list == []
-    assert delete_list == []
 
 
 def test_build_sync_lists_release_listed_index_in_target_is_not_purged() -> None:
@@ -448,7 +425,7 @@ def test_build_sync_lists_release_listed_index_in_target_is_not_purged() -> None
         same_hash=True,
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert dep11.path not in delete_list
 
@@ -464,7 +441,7 @@ def test_build_sync_lists_release_listed_index_filtered_by_component() -> None:
         same_hash=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert contrib.path not in copy_list
 
@@ -483,7 +460,7 @@ def test_build_sync_lists_release_listed_index_filtered_by_arch() -> None:
         release_fields={"Architectures": "amd64 i386"},
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert i386.path not in copy_list
     assert every.path in copy_list
@@ -502,7 +479,7 @@ def test_build_sync_lists_release_listed_index_filtered_by_the_singular_arch_fie
         release_fields={"Architecture": "i386"},
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert i386.path not in copy_list
 
@@ -519,7 +496,7 @@ def test_build_sync_lists_release_listed_index_filtered_by_exclude_glob() -> Non
         indices_exclude=["*/i18n/*"],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert i18n.path not in copy_list
     assert dep11.path in copy_list
@@ -536,7 +513,7 @@ def test_build_sync_lists_root_release_files_always_included() -> None:
         same_hash=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert set(INDICES) <= set(copy_list)
 
@@ -554,7 +531,7 @@ def test_build_sync_lists_unchanged_index_with_matching_digest_is_skipped() -> N
         listed=[dep11],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path not in copy_list
     assert "p2.deb" in copy_list
@@ -572,7 +549,7 @@ def test_build_sync_lists_index_with_stale_digest_is_recopied() -> None:
         listed=[dep11],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path in copy_list
 
@@ -588,7 +565,7 @@ def test_build_sync_lists_root_release_files_copied_without_digests() -> None:
         tgt_metadata={"SHA256": "whatever", "Size": "1"},
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert set(INDICES) <= set(copy_list)
 
@@ -606,7 +583,7 @@ def test_build_sync_lists_index_skip_disabled_when_verify_digests_off() -> None:
         verify_digests=False,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path in copy_list
 
@@ -623,7 +600,7 @@ def test_build_sync_lists_release_hash_change_forces_indices_without_package_dif
         listed=[i18n],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert i18n.path in copy_list
 
@@ -1077,7 +1054,7 @@ def test_build_sync_lists_exclude_glob_drops_component_discovered_index() -> Non
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert discovered not in copy_list
     assert discovered in delete_list
@@ -1093,7 +1070,7 @@ def test_build_sync_lists_root_release_files_survive_exclude_glob() -> None:
         indices_exclude=["*"],
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert set(INDICES) <= set(copy_list)
     assert not set(INDICES) & set(delete_list)
@@ -1112,7 +1089,7 @@ def test_build_sync_lists_excluded_index_is_purged_from_target() -> None:
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert i18n.path not in copy_list
     assert i18n.path in delete_list
@@ -1136,7 +1113,7 @@ def test_build_sync_lists_unsafe_release_listed_index_is_skipped(
     )
 
     with caplog.at_level(logging.WARNING):
-        copy_list, _ = src.build_sync_lists(tgt)
+        copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert evil.path not in copy_list
     assert safe.path in copy_list
@@ -1171,17 +1148,17 @@ def test_build_sync_lists_scheme_form_release_key_is_skipped(
     )
 
     with caplog.at_level(logging.WARNING):
-        copy_list, _ = src.build_sync_lists(tgt)
+        copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert evil.path not in copy_list
     assert "unsafe index path" in caplog.text
 
 
-# --- source existence probing -------------------------------------------------------------------
+# --- source publication -------------------------------------------------------------------------
 
 
-def test_build_sync_lists_source_index_existence_never_lists_the_source() -> None:
-    """One probe per entry entering the copy list; `list()` would walk the whole pool."""
+def test_build_sync_lists_never_lists_or_probes_the_source() -> None:
+    """A forced pass copies each absent listed entry unprobed and marks it unproven."""
     pkg = make_package("p1.deb")
     entries = [
         _entry("main/dep11/Components-amd64.yml.gz"),
@@ -1195,49 +1172,70 @@ def test_build_sync_lists_source_index_existence_never_lists_the_source() -> Non
         listed=entries,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, unproven = src.build_sync_lists(tgt)
 
-    cast(MagicMock, src.storage).list.assert_not_called()
-    assert cast(MagicMock, src.storage).exists.call_count == len(entries)
+    _mock_storage(src).list.assert_not_called()
+    _mock_storage(src).exists.assert_not_called()
     assert all(entry.path in copy_list for entry in entries)
+    assert unproven == {entry.path for entry in entries}
 
 
-def test_build_sync_lists_source_probe_keeps_only_published_indices() -> None:
-    """Each listed entry is probed: the published one is mirrored, the other dropped."""
+def _serve_all_but(src: RepoSync, missing: str) -> MagicMock:
+    """Make the source transfer every object except `missing`, which it 404s."""
+
+    def transfer(path: str, *_a: object, **_k: object) -> dict[str, str]:
+        if path == missing:
+            raise StorageNotFoundException(f"not found: {path}")
+        return {}
+
+    src_storage = _mock_storage(src)
+    src_storage.transfer.side_effect = transfer
+    src.verify_checksum = MagicMock(return_value=True)  # type: ignore[method-assign]
+    return src_storage
+
+
+def test_sync_skips_an_unproven_index_the_source_does_not_publish() -> None:
+    """A forced pass meets a listed index the source never publishes at transfer, and moves on."""
     pkg = make_package("p1.deb")
-    present = _entry("main/dep11/Components-amd64.yml.gz")
     absent = _entry("main/i18n/Translation-en")
     src, tgt = _two_repos(
         src_components={"main": {"amd64": [pkg]}},
         tgt_components={"main": {"amd64": [pkg]}},
         tgt_list=["p1.deb", *INDICES],
-        listed=[present, absent],
-        src_exists={present.path, *INDICES},
+        listed=[absent],
     )
+    copy_list, delete_list, unproven = src.build_sync_lists(tgt)
+    src_storage = _serve_all_but(src, absent.path)
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    src.sync(tgt, copy_list, delete_list, unproven=unproven)
 
-    assert present.path in copy_list
-    assert absent.path not in copy_list
-    assert cast(MagicMock, src.storage).exists.call_count == 2
+    transferred = [call.args[0] for call in src_storage.transfer.call_args_list]
+    assert transferred.count(absent.path) == 1
+    written = {call.args[0] for call in _mock_storage(tgt).add_metadata.call_args_list}
+    assert absent.path not in written
+    assert set(INDICES) <= written
 
 
-def test_build_sync_lists_component_discovered_index_is_not_probed() -> None:
-    """Parsing proved these indices exist, so they are mirrored without a probe."""
+@pytest.mark.parametrize("held", [True, False], ids=["held", "parse-proven"])
+def test_sync_fails_on_a_proven_index_the_source_stops_serving(held: bool) -> None:
+    """Only an unproven index may be missing: a held or parse-proven one fails the run."""
     pkg = make_package("p1.deb")
-    discovered = "dists/bookworm/main/binary-amd64/Packages.xz"
+    index = _entry("main/binary-amd64/Packages.xz")
     src, tgt = _two_repos(
         src_components={"main": {"amd64": [pkg]}},
         tgt_components={"main": {"amd64": [pkg]}},
-        tgt_list=["p1.deb", *INDICES],
-        src_component_indices={"main": [discovered]},
-        src_exists=set(),
+        tgt_list=["p1.deb", *INDICES, *([index.path] if held else [])],
+        tgt_metadata={"SHA256": "cccc", "Size": "1"},
+        listed=[index],
+        tgt_listed=[_entry("main/binary-amd64/Packages.xz", digest="bbbb")],
+        src_component_indices=None if held else {"main": [index.path]},
     )
+    copy_list, delete_list, unproven = src.build_sync_lists(tgt)
+    _serve_all_but(src, index.path)
 
-    copy_list, _ = src.build_sync_lists(tgt)
-
-    assert discovered in copy_list
-    cast(MagicMock, src.storage).exists.assert_not_called()
+    assert index.path in copy_list
+    with pytest.raises(RepoSyncException, match="Max retries reached"):
+        src.sync(tgt, copy_list, delete_list, unproven=unproven)
 
 
 def test_build_sync_lists_unpublished_listed_index_in_target_is_not_purged() -> None:
@@ -1250,11 +1248,10 @@ def test_build_sync_lists_unpublished_listed_index_in_target_is_not_purged() -> 
         tgt_components={"main": {"amd64": [pkg]}},
         tgt_list=["p1.deb", absent.path, *INDICES],
         listed=[absent],
-        src_exists=set(INDICES),
         same_hash=True,
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert absent.path not in delete_list
 
@@ -1262,8 +1259,8 @@ def test_build_sync_lists_unpublished_listed_index_in_target_is_not_purged() -> 
 def test_build_sync_lists_unpublished_index_does_not_force_the_index_pass() -> None:
     """Absent at the target is expected for a path the source never publishes.
 
-    The probe still runs -- only it can tell that path from one the source 404ed
-    once -- but nothing is copied and the root Release files stay out of the pass.
+    A run with nothing else to sync neither copies nor probes it: the root Release
+    files stay out of the pass, and recovery waits for a forced one.
     """
     pkg = make_package("p1.deb")
     absent = _entry("main/dep11/Components-amd64.yml")
@@ -1272,15 +1269,35 @@ def test_build_sync_lists_unpublished_index_does_not_force_the_index_pass() -> N
         tgt_components={"main": {"amd64": [pkg]}},
         tgt_list=["p1.deb", *INDICES],
         listed=[absent],
-        src_exists=set(INDICES),
+        tgt_listed=[absent],
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert copy_list == []
     assert delete_list == []
-    cast(MagicMock, src.storage).exists.assert_any_call(absent.path)
+    _mock_storage(src).exists.assert_not_called()
+
+
+def test_build_sync_lists_indices_only_recovers_an_absent_index() -> None:
+    """`--indices-only` forces the pass that recovers a key the source 404ed once."""
+    pkg = make_package("p1.deb")
+    recovered = _entry("main/i18n/Translation-en")
+    src, tgt = _two_repos(
+        src_components={"main": {"amd64": [pkg]}},
+        tgt_components={"main": {"amd64": [pkg]}},
+        tgt_list=["p1.deb", *INDICES],
+        listed=[recovered],
+        tgt_listed=[recovered],
+        same_hash=True,
+    )
+
+    copy_list, delete_list, unproven = src.build_sync_lists(tgt, indices_only=True)
+
+    assert recovered.path in copy_list
+    assert recovered.path in unproven
+    assert delete_list == []
 
 
 def test_build_sync_lists_component_index_digest_matches_release_key() -> None:
@@ -1297,7 +1314,7 @@ def test_build_sync_lists_component_index_digest_matches_release_key() -> None:
         src_component_indices={"main": [packages.path]},
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert packages.path not in copy_list
     assert "p2.deb" in copy_list
@@ -1318,7 +1335,7 @@ def test_build_sync_lists_flat_repo_mirrors_dist_prefixed_indices() -> None:
         flat=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert packages.path == "bookworm/Packages.xz"
     assert packages.path not in copy_list
@@ -1340,7 +1357,7 @@ def test_build_sync_lists_flat_repo_recopies_stale_index() -> None:
         flat=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert packages.path in copy_list
 
@@ -1361,7 +1378,7 @@ def test_build_sync_lists_rootless_flat_repo_mirrors_bare_indices() -> None:
         rootless=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert packages.path == "Packages.xz"
     assert packages.path not in copy_list
@@ -1422,7 +1439,7 @@ def test_build_sync_lists_hyphenated_arch_index_is_not_purged_as_an_orphan() -> 
         same_hash=True,
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert packages.path not in delete_list
 
@@ -1466,7 +1483,7 @@ def test_build_sync_lists_component_named_for_an_arch_is_not_purged() -> None:
         same_hash=True,
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert packages.path not in delete_list
 
@@ -1487,7 +1504,7 @@ def test_build_sync_lists_agreeing_release_manifests_skip_the_metadata_probe() -
         tgt_listed=[dep11],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path not in copy_list
     cast(MagicMock, tgt.storage).get_metadata.assert_not_called()
@@ -1509,7 +1526,7 @@ def test_build_sync_lists_disagreeing_release_manifests_fall_back_to_metadata() 
         tgt_listed=[stale],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path not in copy_list
     cast(MagicMock, tgt.storage).get_metadata.assert_called()
@@ -1529,7 +1546,7 @@ def test_build_sync_lists_index_absent_from_target_release_is_probed() -> None:
         tgt_listed=[],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path not in copy_list
     cast(MagicMock, tgt.storage).get_metadata.assert_called()
@@ -1550,7 +1567,7 @@ def test_build_sync_lists_stale_index_is_recopied_when_neither_source_agrees() -
         tgt_listed=[stale],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert dep11.path in copy_list
 
@@ -1568,108 +1585,42 @@ def test_build_sync_lists_held_index_with_changed_digests_is_not_probed() -> Non
         tgt_metadata={"SHA256": "cccc", "Size": "1"},
         listed=[dep11],
         tgt_listed=[stale],
-        src_exists=set(INDICES),
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, unproven = src.build_sync_lists(tgt)
 
     assert dep11.path in copy_list
-    cast(MagicMock, src.storage).exists.assert_not_called()
+    assert dep11.path not in unproven
 
 
-def test_build_sync_lists_absent_index_both_releases_agree_is_still_probed() -> None:
-    """Agreement does not settle an absent key: the last skip may have been a 404.
+@pytest.mark.parametrize(
+    "tgt_digest", ["aaaa", "bbbb", None], ids=["agreeing", "changed", "unrecorded"]
+)
+def test_build_sync_lists_forced_pass_copies_an_absent_index_unproven(
+    tgt_digest: str | None,
+) -> None:
+    """Nothing settles an absent entry: a forced pass copies it unprobed and marks it unproven.
 
     The last sync copies the Release whether or not it copied the object, so a source
-    that 404s once records the digest anyway. Skipping the probe on agreement would
-    keep skipping it on every later run, leaving a published object missing until its
-    digest changed.
+    that 404s once records the digest anyway; agreement cannot prove the key absent.
     """
     p1 = make_package("p1.deb")
     p2 = make_package("p2.deb")
-    unpublished = _entry("main/i18n/Translation-en")
+    absent = _entry("main/i18n/Translation-en")
+    tgt_listed = [] if tgt_digest is None else [_entry(absent.key, digest=tgt_digest)]
     src, tgt = _two_repos(
         src_components={"main": {"amd64": [p1, p2]}},
         tgt_components={"main": {"amd64": [p1]}},
         tgt_list=["p1.deb", *INDICES],
-        listed=[unpublished],
-        tgt_listed=[unpublished],
-        src_exists=set(INDICES),
+        listed=[absent],
+        tgt_listed=tgt_listed,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, unproven = src.build_sync_lists(tgt)
 
-    assert unpublished.path not in copy_list
-    cast(MagicMock, src.storage).exists.assert_any_call(unpublished.path)
-
-
-def test_build_sync_lists_absent_index_published_later_recovers() -> None:
-    """A key the source starts publishing under the recorded digest is copied."""
-    p1 = make_package("p1.deb")
-    p2 = make_package("p2.deb")
-    recovered = _entry("main/i18n/Translation-en")
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": [p1, p2]}},
-        tgt_components={"main": {"amd64": [p1]}},
-        tgt_list=["p1.deb", *INDICES],
-        listed=[recovered],
-        tgt_listed=[recovered],
-        src_exists={*INDICES, recovered.path},
-    )
-
-    copy_list, _ = src.build_sync_lists(tgt)
-
-    assert recovered.path in copy_list
-
-
-def test_build_sync_lists_absent_index_is_probed_with_no_other_reason_to_sync() -> None:
-    """A one-time source 404 is recovered on the next run, not on the next republish.
-
-    Both root Releases record the entry and the package diff is empty, so nothing
-    forces the index pass. The target still lacks the object, and the source now
-    serves it, so the probe that recovers it has to run anyway.
-    """
-    pkg = make_package("p1.deb")
-    recovered = _entry("main/i18n/Translation-en")
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": [pkg]}},
-        tgt_components={"main": {"amd64": [pkg]}},
-        tgt_list=["p1.deb", *INDICES],
-        listed=[recovered],
-        tgt_listed=[recovered],
-        src_exists={*INDICES, recovered.path},
-        same_hash=True,
-    )
-
-    copy_list, delete_list = src.build_sync_lists(tgt)
-
-    assert copy_list == [recovered.path]
-    assert delete_list == []
-
-
-@pytest.mark.parametrize("package_diff", [False, True], ids=["nothing-to-sync", "package-diff"])
-def test_build_sync_lists_held_index_is_never_probed(package_diff: bool) -> None:
-    """A held entry costs no source probe, whether the recovery sweep or a forced pass sees it.
-
-    The source does not publish the entry, so a probe would drop it and show up in the list.
-    """
-    p1 = make_package("p1.deb")
-    held = _entry("main/i18n/Translation-en")
-    src_pkgs = [p1, make_package("p2.deb")] if package_diff else [p1]
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": src_pkgs}},
-        tgt_components={"main": {"amd64": [p1]}},
-        tgt_list=["p1.deb", *INDICES, held.path],
-        listed=[held],
-        tgt_listed=[held],
-        src_exists=set(INDICES),
-        same_hash=not package_diff,
-    )
-
-    copy_list, _ = src.build_sync_lists(tgt)
-
-    assert held.path not in copy_list
-    cast(MagicMock, src.storage).exists.assert_not_called()
+    assert absent.path in copy_list
+    assert absent.path in unproven
+    _mock_storage(src).exists.assert_not_called()
 
 
 def test_build_sync_lists_changed_packages_do_not_recopy_an_unchanged_translation() -> None:
@@ -1688,33 +1639,12 @@ def test_build_sync_lists_changed_packages_do_not_recopy_an_unchanged_translatio
         tgt_listed=[old_packages, translation],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert packages.path in copy_list
     assert translation.path not in copy_list
     probed = [call.args[0] for call in cast(MagicMock, tgt.storage).get_metadata.call_args_list]
     assert translation.path not in probed
-
-
-def test_build_sync_lists_absent_index_with_a_new_digest_is_still_probed() -> None:
-    """A changed digest for an absent key may be a first publication, so it is probed."""
-    p1 = make_package("p1.deb")
-    p2 = make_package("p2.deb")
-    published = _entry("main/i18n/Translation-en")
-    stale = _entry("main/i18n/Translation-en", digest="bbbb")
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": [p1, p2]}},
-        tgt_components={"main": {"amd64": [p1]}},
-        tgt_list=["p1.deb", *INDICES],
-        listed=[published],
-        tgt_listed=[stale],
-        src_exists={*INDICES, published.path},
-    )
-
-    copy_list, _ = src.build_sync_lists(tgt)
-
-    assert published.path in copy_list
-    cast(MagicMock, src.storage).exists.assert_any_call(published.path)
 
 
 def test_build_sync_lists_reset_target_recopies_every_held_index() -> None:
@@ -1735,7 +1665,7 @@ def test_build_sync_lists_reset_target_recopies_every_held_index() -> None:
     )
     tgt.release.hash = ""
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert packages.path in copy_list
     assert dep11.path in copy_list
@@ -1756,7 +1686,7 @@ def test_build_sync_lists_same_hash_unlistable_target_copies_no_index() -> None:
         same_hash=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert copy_list == []
     cast(MagicMock, src.storage).exists.assert_not_called()
@@ -1776,7 +1706,7 @@ def test_build_sync_lists_same_hash_without_digest_verification_copies_no_index(
         verify_digests=False,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert copy_list == []
 
@@ -1837,7 +1767,7 @@ def test_build_sync_lists_treats_source_payloads_as_ordinary_package_set_members
         src_archs=["amd64", "source"],
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert {str(pkg) for pkg in sources} <= set(copy_list)
     assert not {str(pkg) for pkg in sources} & set(delete_list)
@@ -1859,7 +1789,7 @@ def test_build_sync_lists_omits_source_payloads_when_source_is_unselected() -> N
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert dsc not in copy_list
     assert dsc in delete_list
@@ -1877,7 +1807,7 @@ def test_build_sync_lists_keeps_source_payloads_already_on_the_target() -> None:
         same_hash=True,
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert delete_list == []
 
@@ -1997,7 +1927,7 @@ def test_build_sync_lists_drops_contents_source_when_the_release_omits_source() 
         same_hash=True,
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert contents.path not in copy_list
 
@@ -2017,7 +1947,7 @@ def test_build_sync_lists_purges_source_objects_when_source_is_unselected() -> N
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert sources_index.path not in copy_list
     assert {sources_index.path, source_release.path, dsc} <= set(delete_list)
@@ -2036,7 +1966,7 @@ def test_build_sync_lists_purges_debian_installer_objects_from_the_target() -> N
         same_hash=True,
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert di_index.path not in copy_list
     assert {di_index.path, udeb} <= set(delete_list)
@@ -2053,7 +1983,7 @@ def test_build_sync_lists_skips_a_payload_the_release_owns() -> None:
         listed=[di_index],
     )
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert di_index.path not in copy_list
 
@@ -2071,7 +2001,7 @@ def test_build_sync_lists_skips_a_payload_a_component_release_owns() -> None:
         di_index.key: dict(di_index.digests)
     }
 
-    copy_list, _ = src.build_sync_lists(tgt)
+    copy_list, _, _ = src.build_sync_lists(tgt)
 
     assert di_index.path not in copy_list
 
@@ -2088,7 +2018,7 @@ def test_build_sync_lists_purges_a_payload_the_release_owns() -> None:
         same_hash=True,
     )
 
-    _, delete_list = src.build_sync_lists(tgt)
+    _, delete_list, _ = src.build_sync_lists(tgt)
 
     assert di_index.path in delete_list
 
@@ -2104,7 +2034,7 @@ def test_build_sync_lists_keeps_a_selected_index_a_vanished_target_stanza_named(
         listed=[index],
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert index.path in copy_list
     assert index.path not in delete_list
@@ -2121,7 +2051,7 @@ def test_build_sync_lists_purges_a_dropped_index_a_vanished_target_stanza_named(
         listed=[di_index],
     )
 
-    copy_list, delete_list = src.build_sync_lists(tgt)
+    copy_list, delete_list, _ = src.build_sync_lists(tgt)
 
     assert di_index.path not in copy_list
     assert di_index.path in delete_list

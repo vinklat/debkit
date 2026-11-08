@@ -183,7 +183,7 @@ class ActionSync(Action):
                         self.source_repo.release.check_fresh_against(run_floor, now)
 
                 logging.info("Building filelists...")
-                copy_list, delete_list = self.source_repo.build_sync_lists(
+                copy_list, delete_list, unproven = self.source_repo.build_sync_lists(
                     self.target_repo, indices_only=self.indices_only
                 )
 
@@ -192,7 +192,9 @@ class ActionSync(Action):
                     break
 
                 try:
-                    self.source_repo.sync(self.target_repo, copy_list, delete_list)
+                    self.source_repo.sync(
+                        self.target_repo, copy_list, delete_list, unproven=unproven
+                    )
                 except ChecksumException as exc:
                     logging.error("Checksum error: %s", exc)
                     raise

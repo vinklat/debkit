@@ -6,7 +6,7 @@ start
 (Release, Release.gpg, InRelease are not self-listed);
 :add component.get_indices_paths() that pass
 the selection rules (Packages files, already
-parsed, so never probed again);
+parsed, so known published);
 
 partition "release.listed_indices()" {
   repeat :entry = next digest block record;

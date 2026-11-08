@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from txstore import (
     StorageException,
+    StorageNotFoundException,
     StorageNull,
     compare_digests,
     is_unsafe_path,
@@ -40,17 +41,11 @@ TRANSFER_MAX_ERR_RETRIES = 3
 
 @dataclass(frozen=True)
 class IndexTarget:
-    """One index in the mirror set.
+    """One index in the mirror set -> [VALIDATION.md](VALIDATION.md#index-selection).
 
     `digests` are what the source root Release records for the path, or `None` for
     the root Release files, which are not listed in their own digest block.
-
-    `known_published` says the source is already known to publish the object: the
-    Release load found it, or a parse fetched it. A Release lists paths the repository
-    never publishes, so an entry that is only listed carries `known_published=False`
-    and is probed just before it enters the copy list. It stays in the set either way,
-    because the orphan pass must not delete a target object the source Release
-    truthfully lists -> [VALIDATION.md](VALIDATION.md#index-selection).
+    `known_published` says the Release load or a parse already fetched the object.
     """
 
     digests: dict[str, str] | None
@@ -280,13 +275,8 @@ class RepoSync(Repo):
         The root `Release`, `Release.gpg`, and `InRelease` files are not listed in
         the digest block, carry no digests, and are never filtered. A listed key that
         would escape the storage root is dropped
-        -> [VALIDATION.md](VALIDATION.md#filename-safety).
-
-        Nothing is probed here. A Release lists paths the repository does not publish,
-        and proving which is which costs one round trip per entry against a source
-        that is usually HTTP; `_reduce_indices` pays that only for an entry it is
-        about to copy or an entry the target lacks
-        → [VALIDATION.md](VALIDATION.md#index-selection).
+        -> [VALIDATION.md](VALIDATION.md#filename-safety). Nothing is probed
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Returns:
             Dict[str, IndexTarget]: Index path → the digests recorded for it and
@@ -335,10 +325,7 @@ class RepoSync(Repo):
             if not self._index_path_is_safe(entry):
                 continue
 
-            # Listed is not published: the uncompressed Packages is listed by archives
-            # that publish only the compressed one. The path stays in the set so the
-            # orphan pass keeps its hands off a target object the source lists, and
-            # `_reduce_indices` settles publication if it comes to a transfer.
+            # listed is not published; the transfer settles it
             ret[entry.path] = IndexTarget(entry.digests, known_published=False)
 
         return ret
@@ -383,7 +370,7 @@ class RepoSync(Repo):
 
     def build_sync_lists(
         self, target_repo: "RepoRW", indices_only: bool = False
-    ) -> tuple[list[str], list[str]]:
+    ) -> tuple[list[str], list[str], set[str]]:
         """Build filelists for sync.
 
         Process some optimizations for reduce copy and remove lists.
@@ -393,7 +380,9 @@ class RepoSync(Repo):
             indices_only (bool): Sync only indices. Defaults to False.
 
         Returns:
-            tuple: A tuple containing the packages to copy and remove.
+            tuple: The paths to copy, the paths to delete, and the copied index paths
+                no load or parse proved the source publishes, which `sync` skips when
+                the source lacks them.
         """
         force_indices_copy = False
         copy_pkgs: list[Package] = []
@@ -485,13 +474,17 @@ class RepoSync(Repo):
         else:
             force_indices_copy = True
 
-        copy_list.extend(
-            self._indices_to_copy(
-                indices, target_repo, existing_files, forced=force_indices_copy, can_list=can_list
-            )
+        index_copies = self._indices_to_copy(
+            indices, target_repo, existing_files, forced=force_indices_copy, can_list=can_list
         )
+        copy_list.extend(index_copies)
+        unproven = {
+            file
+            for file in index_copies
+            if not indices[file].known_published and file not in existing_files
+        }
 
-        return copy_list, delete_list
+        return copy_list, delete_list, unproven
 
     @staticmethod
     def _repair_and_purge(
@@ -564,36 +557,18 @@ class RepoSync(Repo):
             can_list (bool): Whether `existing_files` is a real listing of the target.
 
         Returns:
-            List[str]: Index paths to copy, empty when nothing forces or recovers one.
+            List[str]: Index paths to copy, empty when nothing forces the pass.
         """
-        # check indices is consitent in target repo. A candidate the source may not
-        # publish proves nothing about the target: it is expected to be absent there,
-        # so its absence is not an inconsistency and must not force the index pass.
+        # an absent entry no load or parse proved is expected absent, so it never forces
         if can_list and not forced:
             forced = any(
                 target.known_published and file not in existing_files
                 for file, target in indices.items()
             )
 
-        if forced:
-            return self._reduce_indices(indices, target_repo, existing_files)
-
-        if not can_list:
+        if not forced:
             return []
-
-        # nothing forced the pass, but a listed path the target lacks is either one
-        # the source never publishes or one it 404ed once, and only a probe tells
-        # them apart. Reducing that subset alone recovers the second without
-        # re-emitting the root Release files, so a run that recovers nothing still
-        # copies nothing and opens no transaction
-        unproven = {
-            file: target
-            for file, target in indices.items()
-            if not target.known_published and file not in existing_files
-        }
-        if not unproven:
-            return []
-        return self._reduce_indices(unproven, target_repo, existing_files)
+        return self._reduce_indices(indices, target_repo, existing_files)
 
     def _digest_unchanged(
         self,
@@ -672,27 +647,9 @@ class RepoSync(Repo):
     ) -> list[str]:
         """Drop indices the target already holds unchanged.
 
-        An entry the target holds is settled by the cheapest check that proves it
-        current, in order: agreeing root Release digest blocks (free), then the stored
-        object metadata (one round trip). The root `Release` files carry no digests of
-        their own and are always copied.
-
-        A held entry that neither settles is transferred without a source probe: it
-        was mirrored from this source once, so a changed digest is a republish, not a
-        delisting, and `Storage.exists` is one round trip per key while a point
-        release changes hundreds of listed indices at a time.
-
-        An entry the target lacks is never settled, whatever the blocks say: a source
-        404 is indistinguishable from a key the source never publishes, and the last
-        sync copies the Release whether or not it copied the object. It is probed
-        unless the source is already known to publish it, because a sync either
-        transfers every object or raises → [STORAGE.md](STORAGE.md#transactions),
-        so a path the source lists but does not publish is dropped here.
-
-        A target whose Release did not load, empty or reset after a checksum failure,
-        settles nothing: its stored metadata was written with the bytes a failed check
-        just distrusted, so every held entry is copied again
-        → [VALIDATION.md](VALIDATION.md#index-selection).
+        Agreeing root Release digest blocks settle a held entry first (free), then its
+        stored metadata (one round trip); nothing settles an absent entry, and the
+        source is never probed -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
             indices (Dict[str, IndexTarget]): Index path → expected digests and
@@ -717,17 +674,18 @@ class RepoSync(Repo):
                     "%s has different checksums in target repo. It will be copied again.", file
                 )
 
-            if not held and not target.known_published and not self.storage.exists(file):
-                logging.debug("%s listed in Release but missing in source.", file)
-                continue
-
             ret.append(file)
 
         logging.info("     indices: %d objects to copy", len(ret))
         return ret
 
     def _transfer_file(
-        self, file: str, target_repo: "Repo", progress: tuple[int, int] | None = None
+        self,
+        file: str,
+        target_repo: "Repo",
+        progress: tuple[int, int] | None = None,
+        *,
+        missing_ok: bool = False,
     ) -> bool:
         """Transfer a file from this repo to another repo.
 
@@ -739,12 +697,15 @@ class RepoSync(Repo):
             progress (Optional[Tuple[int, int]], optional): Progress of transfer - current of
                 total objects.
                 Defaults to None.
+            missing_ok (bool): Skip the file when the source lacks it, as for an index
+                nothing proved published -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Raises:
             ChecksumException: If the checksum verification fails.
 
         Returns:
-            bool: True if the file was transferred successfully, False otherwise.
+            bool: True when the file needs no retry: it was transferred, or `missing_ok`
+                is set and the source lacks it. False otherwise.
         """
         if progress is None:
             logging.info("Copy: %s", file)
@@ -757,6 +718,12 @@ class RepoSync(Repo):
                 target_repo.storage,
                 path_dst=file,
             )
+        except StorageNotFoundException as exc:
+            if missing_ok:
+                logging.debug("%s listed in Release but missing in source. Skipped.", file)
+                return True
+            logging.error("Error transfer file %s: %s", file, exc)
+            return False
         except StorageException as exc:
             logging.error("Error transfer file %s: %s", file, exc)
             return False
@@ -814,7 +781,13 @@ class RepoSync(Repo):
         return True
 
     def sync(
-        self, target_repo: "Repo", copy_list: list[str], delete_list: list[str], depth: int = 0
+        self,
+        target_repo: "Repo",
+        copy_list: list[str],
+        delete_list: list[str],
+        *,
+        unproven: Collection[str] = frozenset(),
+        depth: int = 0,
     ) -> None:
         """Sync this repo with another repo.
 
@@ -822,12 +795,16 @@ class RepoSync(Repo):
         root `Release` describing objects it never received would advertise content
         it cannot serve. The caller wraps the run in a transaction, so raising leaves
         the target at its previous consistent state
-        -> [STORAGE.md](STORAGE.md#transactions).
+        -> [STORAGE.md](STORAGE.md#transactions). An `unproven` path the source lacks
+        is the one exception: the source serves it no more than the target will
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
             target_repo (Repo): The target repo to sync with.
             copy_list (List[str]): The list of files to copy.
             delete_list (List[str]): The list of files to delete.
+            unproven (Collection[str]): Paths in `copy_list` skipped when the source
+                lacks them, from `build_sync_lists`.
             depth (int): The depth of the sync. Defaults to 0.
 
         Raises:
@@ -845,12 +822,16 @@ class RepoSync(Repo):
         cnt: int = 0
         for name in copy_list:
             cnt += 1
-            if not self._transfer_file(name, target_repo, progress=(cnt, total)):
+            if not self._transfer_file(
+                name, target_repo, progress=(cnt, total), missing_ok=name in unproven
+            ):
                 failed_list.append(name)
 
         # retry whatever failed; a transient error should not fail the whole run
         if len(failed_list) > 0:
-            return self.sync(target_repo, failed_list, delete_list, depth=depth + 1)
+            return self.sync(
+                target_repo, failed_list, delete_list, unproven=unproven, depth=depth + 1
+            )
 
         # delete objects
         for name in delete_list:

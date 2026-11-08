@@ -23,11 +23,10 @@ note over Src: every other entry select_index_entry keeps\nand _index_path_is_sa
 Src -> Src: purge and repair passes use the index set
 
 Src -> Src: _indices_to_copy(forced, can_list)
-alt a package or Release change, or a known published index the target lacks, forces the pass
+alt a package or Release change, --indices-only, or a known published index the target lacks, forces the pass
   Src -> Src: _reduce_indices(every index)
-else nothing forces it and the target can be listed
-  Src -> Src: _reduce_indices(indices not known published the target lacks)
-  note right: an empty subset copies nothing\nand opens no transaction
+else nothing forces it
+  note right of Src: no index is copied and the source\nis never probed; an absent entry\nwaits for the next forced pass
 end
 
 group _reduce_indices
@@ -39,13 +38,21 @@ group _reduce_indices
       TStor --> Src: stored digests
       note right: compare_digests match\nmeans the index is skipped
     end
-    opt unsettled, unproven by a parse, and absent from the target
-      Src -> SStor: exists(path)
-      SStor --> Src: True / False
-      note right: False drops the entry\ninstead of failing the sync
-    end
   end
 end
 
-Src --> ActionSync: copy_list, delete_list
+Src --> ActionSync: copy_list, delete_list, unproven
+note right: unproven: copied indices the target lacks\nthat no load or parse proved published
+
+ActionSync -> Src: sync(target, copy_list, delete_list, unproven)
+loop each path in copy_list
+  Src -> SStor: transfer(path, target storage)
+  alt transferred
+    SStor --> Src: digests
+  else StorageNotFoundException, path in unproven
+    note right of Src: skipped, logged at debug,\nnever retried
+  else any other StorageException
+    note right of Src: retried; still failing after the\nretries raises RepoSyncException
+  end
+end
 @enduml

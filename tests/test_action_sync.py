@@ -56,7 +56,7 @@ def _make_action(*, storage: object = None) -> ActionSync:
     source.params.url = "fs:///src"
     source.params.verify_gpg = True
     source.release.hash = "hash1"
-    source.build_sync_lists.return_value = (["pkg.deb"], [])
+    source.build_sync_lists.return_value = (["pkg.deb"], [], set())
     source.sync.return_value = []
     source.diff.return_value = MagicMock(is_empty=MagicMock(return_value=True))
     action.source_repo = source

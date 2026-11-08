@@ -49,7 +49,7 @@ Debian hash-block layer over them is `repo/hashes.py`.
 | `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#digests).                                            |
 | Non-overlapping, unknown, or mismatched digests                        | Verification failure.                                                                                                                                                                                             |
 | Hash blocks                                                            | `parse_hash_block()` in `repo/hashes.py` splits a `Release` hash field, a `Checksums-<algorithm>` field, or a `Sources` `Files` field into `(digest, size, filename)` triples; a trailing partial run is dropped. |
-| Index skip during sync                                                 | The target `Release` digest block is compared before the stored object metadata; which entries that settles, and when the source is probed instead → [VALIDATION.md](VALIDATION.md#index-selection).              |
+| Index skip during sync | The target `Release` digest block is compared before the stored object metadata; which entries that settles → [VALIDATION.md](VALIDATION.md#index-selection). |
 
 ## Verification order
 

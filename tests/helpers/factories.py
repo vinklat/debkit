@@ -111,7 +111,6 @@ def make_storage_mock(
     list_raises: type[BaseException] | None = None,
     storage_type: StorageType = StorageType.fs,
     transfer_digests: dict[str, str] | None = None,
-    exists_paths: set[str] | None = None,
 ) -> MagicMock:
     """Build a MagicMock spec'd to Storage with sensible defaults.
 
@@ -123,18 +122,13 @@ def make_storage_mock(
         storage_type: Returned by `.get_type()`. Must be a real
             `StorageType` member because production code uses `is` comparison.
         transfer_digests: Returned by `.transfer()`.
-        exists_paths: Paths for which `.exists()` returns True; every other path
-            returns False. Defaults to True for any path.
     """
     mock = MagicMock(spec=Storage)
     if list_raises is not None:
         mock.list.side_effect = list_raises
     else:
         mock.list.return_value = list_result if list_result is not None else []
-    if exists_paths is None:
-        mock.exists.return_value = True
-    else:
-        mock.exists.side_effect = lambda path: path in exists_paths
+    mock.exists.return_value = True
     mock.get_metadata.return_value = {}
     mock.get_type.return_value = storage_type
     mock.transfer.return_value = transfer_digests or {

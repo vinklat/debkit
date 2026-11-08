@@ -49,12 +49,12 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
   end
 
   ActionSync -> Src: build_sync_lists(target, indices_only)
-  Src --> ActionSync: copy_list, delete_list
+  Src --> ActionSync: copy_list, delete_list, unproven
   break copy_list and delete_list empty
     note over ActionSync: nothing to sync
   end
 
-  ActionSync -> Src: sync(target, copy_list, delete_list)
+  ActionSync -> Src: sync(target, copy_list, delete_list, unproven)
   Src --> ActionSync: returns, or raises RepoSyncException
 end
 

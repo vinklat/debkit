@@ -1,7 +1,7 @@
 # Validation contract
 
 Owns: input constraints at the CLI, environment, storage-URL, and `RepoParams` boundaries,
-path-safety rules, and the sync index selection, including which selected entries a sync probes,
+path-safety rules, and the sync index selection, including which selected entries a sync copies,
 skips, or recopies. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Principles
@@ -73,7 +73,7 @@ its Release-listed path rather than a built one.
 
 Implemented by `select_index_entry()` in `repo/repo_sync.py`. The sync index set is the
 Release-listed paths, filtered by these rules and by the exclude globs below. Publication is settled
-per entry only when it would be transferred, not when the set is built.
+per entry by its transfer; the source is never probed.
 
 | Rule                    | Constraint                                                                                                                                                                                                                                                                  | Failure                                                                           |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -85,10 +85,10 @@ per entry only when it would be transferred, not when the set is built.
 | Unparsed index          | A key under `debian-installer/` or an `installer-<arch>/` image tree whose `<arch>` is a known architecture, or one with a segment starting `Contents-udeb`, is dropped: nothing parses these, so a mirror would carry metadata for `.udeb` payloads it lacks               | —                                                                                 |
 | Unparsed index scope    | The unparsed-index rule is structural, so an exclude glob cannot switch it off                                                                                                                                                                                              | —                                                                                 |
 | Compression forms       | Every compression of an index the Release lists is its own entry, uncompressed included; the rules above never prefer one form, so the mirror serves every form its signed Release names                                                                                    | —                                                                                 |
-| Unpublished entry       | A selected path the source does not publish and the target lacks is dropped before transfer, not from the set: it is never copied and never purged from the target                                                                                                          | —                                                                                 |
-| Absent entry            | A selected path the target lacks and no parse proved is probed on every run, whatever forced the pass and even when both root Releases record its digest alike: the last sync copies the Release whether or not it copied the object                                        | —                                                                                 |
-| Absent entry probe      | Only the probe tells a key the source never publishes from one it 404ed once; the probe alone never adds the root Release files to the copy list                                                                                                                            | —                                                                                 |
-| Parse-proven entry      | A selected path a parse found, a root Release file or a component `Packages`, is copied without a source probe when the target lacks it: the parse already fetched it from the source                                                                                       | —                                                                                 |
+| Unpublished entry | A selected path the source does not publish stays in the set, so it is never purged from the target | — |
+| Absent entry | A selected path the target lacks and no parse proved is copied by a forced pass without a source probe, even when both root Releases record its digest alike: the last sync copies the Release whether or not it copied the object | Missing at the source → skipped at transfer, logged at debug, never retried |
+| Absent entry recovery | An absent entry never forces the index pass, so a run with nothing else to sync copies nothing; one the source 404ed once is recovered by the next forced pass or `--indices-only` | — |
+| Parse-proven entry | A selected path a parse found, a root Release file or a component `Packages`, is copied without a source probe when the target lacks it: the parse already fetched it from the source | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
 | Held entry              | A selected path the target already holds is transferred without a source probe: an earlier transfer proved the source publishes it, so a changed digest is a republish. Digests both root Releases record alike settle it without a digest round trip                       | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
 | Unloaded target         | A target whose Release did not load, empty or reset after a checksum failure, settles no entry: agreement and stored metadata are both skipped, so every selected path it holds is copied again                                                                             | —                                                                                 |
 | Later pass              | A pass after the source changed mid-sync reloads the target through the transaction first, so agreement compares against the Release the previous pass staged                                                                                                               | —                                                                                 |
