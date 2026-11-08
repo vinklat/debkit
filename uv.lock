@@ -500,7 +500,7 @@ requires-dist = [
     { name = "humanize", specifier = ">=4.14.0,<5" },
     { name = "python-debian", specifier = ">=1.0.1,<2" },
     { name = "python-gnupg", specifier = ">=0.5.5,<0.6" },
-    { name = "txstore", specifier = ">=0.1.1,<0.2" },
+    { name = "txstore", specifier = ">=0.1.2,<0.2" },
     { name = "urllib3", specifier = ">=2.7.0,<3" },
 ]
 
@@ -1682,7 +1682,7 @@ wheels = [
 
 [[package]]
 name = "txstore"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -1690,9 +1690,9 @@ dependencies = [
     { name = "pyxattr" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/83/6a/e190107f91332d0d0768076ded53114bd6e6c1321911b44110b3079f8a1c/txstore-0.1.1.tar.gz", hash = "sha256:34996b3cef710ec9b460d2a22a1357b5c1d5054aa7baa67e9076d7f3e430c024", size = 370028, upload-time = "2026-11-07T23:02:48.343Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/c4/5b702b96ca3f14cfe73417c9d6ed9e1455ad2e3a8837b111762cabf7e501/txstore-0.1.2.tar.gz", hash = "sha256:d443e9d964439a6b4f693fe323f8916bd5f9db5635390f9c0593f353fe3f9c19", size = 371459, upload-time = "2026-11-08T08:30:37.961Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/dc/37e87ffd3dd918921387f46e8f43ce8539d173adf3f5727ef37bc0114129/txstore-0.1.1-py3-none-any.whl", hash = "sha256:c64701f4d34feaa07ca3025cea2e9d51646b2b94d65b4b605948fec04b0f0583", size = 89856, upload-time = "2026-11-07T23:02:46.595Z" },
+    { url = "https://files.pythonhosted.org/packages/df/6b/3534d198775ffca4682c936dca9f92068aa1db1d4f049bc133d89a214300/txstore-0.1.2-py3-none-any.whl", hash = "sha256:7e79e6561c7ed5767a8f1ca85ab698ded4de0d33b6a8d5325f61b57b10ee3c3b", size = 90088, upload-time = "2026-11-08T08:30:36.271Z" },
 ]
 
 [[package]]
