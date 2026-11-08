@@ -131,12 +131,15 @@ class RepoDiff:
     def is_empty(self) -> bool:
         """Check if RepoDiff is empty.
 
+        `update` records every component and arch it compared, so an unchanged slot holds
+        empty lists and counts as empty.
+
         Returns:
-            bool: True if empty, False otherwise
+            bool: True if no slot lists a package, False otherwise
         """
-        return (
-            len(self.added_pkgs) == 0
-            and len(self.removed_pkgs) == 0
-            and len(self.updated_pkgs) == 0
-            and len(self.old_versions_pkgs) == 0
+        return not any(
+            pkgs
+            for by_comp in self.dump().values()
+            for by_arch in by_comp.values()
+            for pkgs in by_arch.values()
         )

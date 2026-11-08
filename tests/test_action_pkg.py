@@ -227,6 +227,22 @@ def test_insert_into_an_unsigned_repo_keeps_its_packages(
 
 
 @patch("debkit.action.action_pkg.DebFile")
+def test_insert_of_an_identical_package_leaves_the_indices_unchanged(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """Regression: an empty-list diff read as a change, so the Release was rewritten."""
+    release = tmp_path / "repo" / "dists" / "bookworm" / "Release"
+    dates = iter(["Sun, 01 Sep 2024 00:00:00 GMT", "Mon, 02 Sep 2024 00:00:00 GMT"])
+    with patch("debkit.repo.repo_rw.formatdate", side_effect=lambda **_: next(dates)):
+        _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo")
+        before = release.read_bytes()
+
+        _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo")
+
+    assert release.read_bytes() == before
+
+
+@patch("debkit.action.action_pkg.DebFile")
 def test_insert_refuses_an_unsigned_repo_without_setting_it_up_again(
     mock_debfile_cls: MagicMock, tmp_path: Path
 ) -> None:

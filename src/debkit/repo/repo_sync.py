@@ -212,7 +212,10 @@ class RepoSync(Repo):
         forced = True
         if not indices_only:
             diff = self.diff(target_repo)
-            # an index-only source change (i18n, dep11) leaves the package diff empty
+            # an index-only source change (i18n, dep11) leaves the package diff empty; the
+            # diff term is redundant while neither repo is `modified`, since `Repo.diff`
+            # compares packages only when the hashes differ, but it keeps the plan independent
+            # of that gate
             forced = self.release.hash != target_repo.release.hash or not diff.is_empty()
             copy_list, delete_list = self._plan_payloads(
                 diff, indices, target_repo, existing_files, can_list=can_list

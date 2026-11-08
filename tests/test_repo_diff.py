@@ -176,3 +176,13 @@ def test_repo_diff_update_preserves_other_arch_in_same_component() -> None:
         "pool/main/r/r_1_amd64.deb",
         "pool/main/r/r_1_arm64.deb",
     }
+
+
+def test_repo_diff_is_empty_when_every_compared_slot_is_unchanged() -> None:
+    """Regression: an identical re-insert recorded empty lists and read as a change."""
+    diff = RepoDiff()
+
+    diff.update("main", "amd64", {}, {}, {}, {})
+    diff.update("main", "arm64", {}, {}, {}, {})
+
+    assert diff.is_empty() is True
