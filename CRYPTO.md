@@ -8,13 +8,13 @@ Verification is on by default; skipping is explicit through the switches below.
 
 ## Verification switches
 
-| Flag                | Effect                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------- |
+| Flag | Effect |
+| -- | -- |
 | `--skip-verify` | Disables TLS, GPG, and digest verification; GPG as under `--skip-verify-gpg`. |
 | `--skip-verify-gpg` | No `GnuPG` instance is created by action setup; Release signatures are not checked, and a root Release without `Release.gpg` or `InRelease` reads as-is. |
 | `--skip-verify-gpg`, writing | Release signing is off too: `insert` and `remove` save the root `Release` unsigned and delete its old `InRelease` and `Release.gpg`, logging each, since both sign the previous content. |
 | `--skip-verify` or `--skip-verify-gpg` | Every command that reads a repository logs a warning once per run; `log`, `revert`, and `prune` verify nothing and do not. |
-| `--skip-verify-ssl` | `verify=False` on HTTP and S3 clients → [STORAGE.md](STORAGE.md#construction).      |
+| `--skip-verify-ssl` | `verify=False` on HTTP and S3 clients → [STORAGE.md](STORAGE.md#construction). |
 
 Flag names and variables → [CONFIG.md](CONFIG.md#global-flags).
 
@@ -23,33 +23,33 @@ Flag names and variables → [CONFIG.md](CONFIG.md#global-flags).
 Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py` over
 `python-gnupg`; home and keyring → [CONFIG.md](CONFIG.md#global-flags).
 
-| Operation                                                                                                                                                                   | Behavior                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cleartext_body(data)`                                                                                                                                                      | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else.         |
-| `canonical_text(data)`                                                                                                                                                      | `data` with the line canonicalization of `cleartext_body`, so a detached `Release` compares with an `InRelease` body.                                                                                                                                                        |
-| `verify(data)`                                                                                                                                                              | Inline `InRelease` verification; returns `cleartext_body(data)`.                                                                                                                                                                                                             |
-| `verify(data, detach_sign)`                                                                                                                                                 | Detached `Release` + `Release.gpg` verification; returns `data`. The signature is staged in a `tempfile.NamedTemporaryFile` removed in `finally`, because `python-gnupg` needs a path on disk.                                                                               |
-| Root Release load                                                                                                                                                           | Fetches every root `Release`, `Release.gpg`, and `InRelease` present once and records their digests → [Verification order](#verification-order); with GPG verification on, verifies the inline and the detached form alike when both are present, since `sync` mirrors both. |
-| Root Release load, `InRelease` and `Release` both present                                                                                                                   | With GPG verification on, the `InRelease` body differs from `canonical_text` of the `Release` → `ChecksumException` (Distrustful): freshness reads one form, `sync` mirrors both, and apt prefers `InRelease`.                                                               |
+| Operation | Behavior |
+| -- | -- |
+| `cleartext_body(data)` | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else. |
+| `canonical_text(data)` | `data` with the line canonicalization of `cleartext_body`, so a detached `Release` compares with an `InRelease` body. |
+| `verify(data)` | Inline `InRelease` verification; returns `cleartext_body(data)`. |
+| `verify(data, detach_sign)` | Detached `Release` + `Release.gpg` verification; returns `data`. The signature is staged in a `tempfile.NamedTemporaryFile` removed in `finally`, because `python-gnupg` needs a path on disk. |
+| Root Release load | Fetches every root `Release`, `Release.gpg`, and `InRelease` present once and records their digests → [Verification order](#verification-order); with GPG verification on, verifies the inline and the detached form alike when both are present, since `sync` mirrors both. |
+| Root Release load, `InRelease` and `Release` both present | With GPG verification on, the `InRelease` body differs from `canonical_text` of the `Release` → `ChecksumException` (Distrustful): freshness reads one form, `sync` mirrors both, and apt prefers `InRelease`. |
 | Root Release load without `GnuPG` or with GPG verification off | The `sync` target or `--skip-verify-gpg`: no signature file is required, and an `InRelease` it parses is read through `cleartext_body`, unverified. |
 | Root Release save | Writes the layout's root `Release` from `indices_path()` whichever form the load read, then signs it into `InRelease` and `Release.gpg` or removes both; a per-component Release is never signed. |
-| `sign(data, detach=False)`                                                                                                                                                  | Returns the signature (inline or detached) used when writing Release metadata; empty when gpg reports none created, as on a wrong passphrase, even though a failed clearsign prints its armor, and `Release.save` refuses an empty one → `ReleaseWriteException` (Write).                                                                                                                                                                                               |
-| Keyring cannot be loaded                                                                                                                                                    | → `GPGVerifyException` (Read).                                                                                                                                                                                                                                               |
+| `sign(data, detach=False)` | Returns the signature (inline or detached) used when writing Release metadata; empty when gpg reports none created, as on a wrong passphrase, even though a failed clearsign prints its armor, and `Release.save` refuses an empty one → `ReleaseWriteException` (Write). |
+| Keyring cannot be loaded | → `GPGVerifyException` (Read). |
 | The `gpg` binary cannot be run | python-gnupg raises `OSError` → `GPGVerifyException` (Read). |
-| Invalid signature or malformed signed message                                                                                                                               | → `GPGVerifyException` (Read).                                                                                                                                                                                                                                               |
-| Non-blank text after `-----END PGP SIGNATURE-----`, an unescaped `-` body line, or an armor header that is not `Name: value` with a letters-only name and a non-empty value | → `GPGVerifyException` (Read).                                                                                                                                                                                                                                               |
+| Invalid signature or malformed signed message | → `GPGVerifyException` (Read). |
+| Non-blank text after `-----END PGP SIGNATURE-----`, an unescaped `-` body line, or an armor header that is not `Name: value` with a letters-only name and a non-empty value | → `GPGVerifyException` (Read). |
 
 ## Checksums
 
 Digest helpers and the algorithm-name lists are txstore's → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#digests); the
 Debian hash-block layer over them is `repo/hashes.py`.
 
-| Item                                                                   | Rule                                                                                                                                                                                                              |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Algorithms                                                             | `MD5Sum`, `SHA1`, `SHA256`, `SHA512`; `MD5Sum` exists for Debian compatibility and new behavior never relies on it alone.                                                                                         |
-| `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#digests).                                            |
-| Non-overlapping, unknown, or mismatched digests                        | Verification failure.                                                                                                                                                                                             |
-| Hash blocks                                                            | `parse_hash_block()` in `repo/hashes.py` splits a `Release` hash field, a `Checksums-<algorithm>` field, or a `Sources` `Files` field into `(digest, size, filename)` triples; a trailing partial run is dropped. |
+| Item | Rule |
+| -- | -- |
+| Algorithms | `MD5Sum`, `SHA1`, `SHA256`, `SHA512`; `MD5Sum` exists for Debian compatibility and new behavior never relies on it alone. |
+| `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#digests). |
+| Non-overlapping, unknown, or mismatched digests | Verification failure. |
+| Hash blocks | `parse_hash_block()` in `repo/hashes.py` splits a `Release` hash field, a `Checksums-<algorithm>` field, or a `Sources` `Files` field into `(digest, size, filename)` triples; a trailing partial run is dropped. |
 | Index skip during sync | The target `Release` digest block is compared before the stored object metadata; which entries that settles → [VALIDATION.md](VALIDATION.md#index-selection). |
 
 ## Verification order
@@ -87,26 +87,26 @@ builds its transfer lists, when GPG verification is on and `--allow-release-roll
 signature proves who signed a Release, not that it is current, and the orphan pass purges what an
 older Release no longer lists.
 
-| Condition                                                                               | Result                                                                                                                                                                                                                                                                       |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Source `Valid-Until` earlier than now                                                   | → `ReleaseFreshnessException` (Distrustful)                                                                                                                                                                                                                                  |
-| Source `Date` earlier than the loaded target `Date`                                     | → `ReleaseFreshnessException` (Distrustful)                                                                                                                                                                                                                                  |
-| Source `Date` missing while the loaded target has a `Date`                              | → `ReleaseFreshnessException` (Distrustful)                                                                                                                                                                                                                                  |
-| Source `Date` or `Valid-Until` malformed → [VALIDATION.md](VALIDATION.md#release-dates) | → `ReleaseFreshnessException` (Distrustful)                                                                                                                                                                                                                                  |
+| Condition | Result |
+| -- | -- |
+| Source `Valid-Until` earlier than now | → `ReleaseFreshnessException` (Distrustful) |
+| Source `Date` earlier than the loaded target `Date` | → `ReleaseFreshnessException` (Distrustful) |
+| Source `Date` missing while the loaded target has a `Date` | → `ReleaseFreshnessException` (Distrustful) |
+| Source `Date` or `Valid-Until` malformed → [VALIDATION.md](VALIDATION.md#release-dates) | → `ReleaseFreshnessException` (Distrustful) |
 | Target trust | The operator owns the target, so its Release sets the floor unverified: whoever can write the target can roll it back directly, and `--allow-release-rollback` recovers from a bad floor. |
 | Target compared | The target as read under txstore's `history_lock` → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking), so a peer commit that lands before the lock is granted is the floor; `--verify-existing` checks that same read |
 | Target reset as corrupt | Its indices are ignored → [Verification failures](#verification-failures), but the `Date` its Release carried before the reset stays the floor |
 | Later pass | The source is compared with the staged target and with the target as the run found it, so a staged target cannot lower the floor |
-| Target loaded from `InRelease`                                                          | Its `Date` is read from the signed body → [GPG](#gpg), even though the target is not verified                                                                                                                                                                                |
-| Source `Valid-Until` missing, target not loaded, or target without `Date`               | Not compared                                                                                                                                                                                                                                                                 |
-| Target `Date` malformed                                                                 | Logged, not compared                                                                                                                                                                                                                                                         |
-| `--allow-release-rollback` → [CONFIG.md](CONFIG.md#sync)                                | Checks skipped; a warning is logged once per run                                                                                                                                                                                                                             |
+| Target loaded from `InRelease` | Its `Date` is read from the signed body → [GPG](#gpg), even though the target is not verified |
+| Source `Valid-Until` missing, target not loaded, or target without `Date` | Not compared |
+| Target `Date` malformed | Logged, not compared |
+| `--allow-release-rollback` → [CONFIG.md](CONFIG.md#sync) | Checks skipped; a warning is logged once per run |
 
 ## Verification failures
 
-| Path                                                       | Failure                                                                                                                                                                      |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sync` transfer digest mismatch                            | Target object deleted, then `ChecksumException` (Distrustful); the surrounding transaction discards every staged footmark → [STORAGE.md](STORAGE.md#transactions).           |
+| Path | Failure |
+| -- | -- |
+| `sync` transfer digest mismatch | Target object deleted, then `ChecksumException` (Distrustful); the surrounding transaction discards every staged footmark → [STORAGE.md](STORAGE.md#transactions). |
 | `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed. An unfixed error exits `Repository is not consistent.` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | `sync --verify-existing` payload digest mismatch | Logged and deleted inside the sync's transaction; the sync copies it again. Nothing is raised. |
 | `insert` `.changes` file | A `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
@@ -114,7 +114,7 @@ older Release no longer lists.
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | A clearsigned `.changes` is parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. A malformed armor → `ChangesException` (Write). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
-| GPG verification failure                                   | `GPGVerifyException` (Read).                                                                                                                                                 |
+| GPG verification failure | `GPGVerifyException` (Read). |
 
 ## Implementation rules
 

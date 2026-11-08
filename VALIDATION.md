@@ -20,11 +20,11 @@ Implemented by `storage_url()` in `action/__init__.py` for `--target-url`, `--so
 `--incoming-url`; txstore validates what it receives → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#storage-urls),
 including HTTP joins and the S3 path split.
 
-| Rule      | Constraint                                                                                                         | Failure                                  |
-| --------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| Bare path | A value without `://` is a filesystem path, made absolute against the working directory and prefixed with `fs://`. | —                                        |
-| `fs://`   | The path is absolute: `fs:///srv/repo`.                                                                            | `fs://relative` → `ValueError` (Generic) |
-| Schemes   | `fs`, `s3`, `http`, `https`, from txstore's `get_supported_schemes()`.                                             | Other scheme → `ValueError` (Generic)    |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Bare path | A value without `://` is a filesystem path, made absolute against the working directory and prefixed with `fs://`. | — |
+| `fs://` | The path is absolute: `fs:///srv/repo`. | `fs://relative` → `ValueError` (Generic) |
+| Schemes | `fs`, `s3`, `http`, `https`, from txstore's `get_supported_schemes()`. | Other scheme → `ValueError` (Generic) |
 
 ## Debian source strings
 
@@ -32,12 +32,12 @@ Implemented by `RepoParams.from_deb_source()` in `repo/params.py`. Format is
 `<url> <dist> [<component> ...]`; repeated whitespace is collapsed and surrounding whitespace is
 stripped before parsing.
 
-| Rule                   | Constraint                                                                        | Failure                                      |
-| ---------------------- | --------------------------------------------------------------------------------- | -------------------------------------------- |
-| Field count            | At least two fields.                                                              | → `RepoParamsException` (Generic)            |
-| Flat repository        | Two fields: `url`, `dist`; no components; `is_flat=True`; `indices_prefix=""`.    | —                                            |
-| Componented repository | Three or more fields: `url`, `dist`, components; `indices_prefix="dists/<dist>"`. | —                                            |
-| Input type             | A string.                                                                         | Non-string → `RepoParamsException` (Generic) |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Field count | At least two fields. | → `RepoParamsException` (Generic) |
+| Flat repository | Two fields: `url`, `dist`; no components; `is_flat=True`; `indices_prefix=""`. | — |
+| Componented repository | Three or more fields: `url`, `dist`, components; `indices_prefix="dists/<dist>"`. | — |
+| Input type | A string. | Non-string → `RepoParamsException` (Generic) |
 | Names | A componented source's dist and every component pass `is_safe_name()`: non-empty, not `.`, and the [unsafe-key rule](#filename-safety); `/` is allowed, as in `updates/main`. A flat dist names a directory only when it is a real dist. | → `RepoParamsException` (Generic) |
 | `--component` | `component_type()` in `argtypes.py` applies the same rule. | → `ArgumentTypeError` (Usage) |
 | Release `Components` token | A root Release token follows the same rule. | Dropped and logged |
@@ -46,30 +46,30 @@ stripped before parsing.
 
 Implemented by `RepoParams.is_real_dist()`.
 
-| Rule      | Constraint                                                   | Failure                                   |
-| --------- | ------------------------------------------------------------ | ----------------------------------------- |
-| Real dist | Matches `^[A-Za-z0-9]*$`; the empty string matches.          | —                                         |
-| Not real  | Contains `/`, `-`, `_`, whitespace, or non-ASCII characters. | Treated as a path-like dist, not an error |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Real dist | Matches `^[A-Za-z0-9]*$`; the empty string matches. | — |
+| Not real | Contains `/`, `-`, `_`, whitespace, or non-ASCII characters. | Treated as a path-like dist, not an error |
 
 ## Repository index paths
 
 Built by `RepoParams.indices_path()` from the layout prefix, component, and inner path.
 
-| Layout                    | Prefix applied to an index path                                                                                                                                                                    |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Componented               | `dists/<dist>/<component>/`, as in `dists/<dist>/main/binary-<arch>/Packages[.<compression>]` or `dists/<dist>/main/source/Sources[.<compression>]`                                                |
-| Flat                      | `<dist>/`, as in `<dist>/Packages[.<compression>]`                                                                                                                                                 |
-| Rootless flat             | None, as in `Packages[.<compression>]`                                                                                                                                                             |
-| Componented, no component | `dists/<dist>/`, as in `dists/<dist>/Contents-<arch>[.<compression>]` at the dists root                                                                                                            |
-| No dist                   | None, as in `<component>/binary-<arch>/Packages[.<compression>]`                                                                                                                                   |
-| Architecture directory    | `binary-<arch>/` for a binary architecture, `source/` for the source one; built by `RepoParams.arch_dir()`                                                                                         |
-| Package index inner path  | `Packages` and `Sources` compose `arch_dir()` and `index_name()` into one inner path, read and write alike                                                                                         |
+| Layout | Prefix applied to an index path |
+| -- | -- |
+| Componented | `dists/<dist>/<component>/`, as in `dists/<dist>/main/binary-<arch>/Packages[.<compression>]` or `dists/<dist>/main/source/Sources[.<compression>]` |
+| Flat | `<dist>/`, as in `<dist>/Packages[.<compression>]` |
+| Rootless flat | None, as in `Packages[.<compression>]` |
+| Componented, no component | `dists/<dist>/`, as in `dists/<dist>/Contents-<arch>[.<compression>]` at the dists root |
+| No dist | None, as in `<component>/binary-<arch>/Packages[.<compression>]` |
+| Architecture directory | `binary-<arch>/` for a binary architecture, `source/` for the source one; built by `RepoParams.arch_dir()` |
+| Package index inner path | `Packages` and `Sources` compose `arch_dir()` and `index_name()` into one inner path, read and write alike |
 | Compression preference | `Packages` and `Sources` discovery follows the codec order in `repo/compress.py`, the uncompressed index last; a save rewrites every form discovery found |
-| Release files             | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
+| Release files | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
 | Component Release | Only a componented repo reads or writes a per-component `Release`; its component and architecture are non-empty, else → `ValueError` (Generic). |
 | Flat component | A flat layout has one component slot: insert joins the component it loaded, `/` when its Release names none, whatever `--component` says. A new flat repository is set up without `Components`, and a save never rewrites the field, so a loaded one is kept. `--component` still names the pool key → [Filename safety](#filename-safety). |
 | Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. |
-| Release key               | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends                                                                                             |
+| Release key | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends |
 
 Every other index, `Contents`, `Translation`, dep11, and `Commands` among them, is reached through
 its Release-listed path rather than a built one.
@@ -80,37 +80,37 @@ Implemented by `select_index_entry()` in `repo/index_selection.py`. The sync ind
 Release-listed paths, filtered by these rules and by the exclude globs below. Publication is settled
 per entry by its transfer; the source is never probed.
 
-| Rule                    | Constraint                                                                                                                                                                                                                                                                  | Failure                                                                           |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Component               | The segment before the first `/`; a key with no `/` belongs to no component and passes                                                                                                                                                                                      | —                                                                                 |
-| Known architectures     | The selected architectures plus every root Release token the Release token rule keeps, whatever `--architectures` selects → [Architectures](#architectures)                                                                                                                 | —                                                                                 |
-| Architecture token      | A `-<arch>` run ending at `.`, `/`, or the key end, matched only against the known architectures; where several end at one token the longest owns it                                                                                                                        | —                                                                                 |
-| Structural rule scope   | The architecture-token, source, and unparsed rules read the key below its component segment, so a component name such as `extra-armhf` or `installer-extras` never trips them                                                                                               | —                                                                                 |
-| Source indices          | A key under `<component>/source/`, a `Sources*` file name, or a `-source` token is selected only when `source` is a selected architecture                                                                                                                                   | —                                                                                 |
-| Unparsed index          | A key under `debian-installer/` or an `installer-<arch>/` image tree whose `<arch>` is a known architecture, or one with a segment starting `Contents-udeb`, is dropped: nothing parses these, so a mirror would carry metadata for `.udeb` payloads it lacks               | —                                                                                 |
-| Unparsed index scope    | The unparsed-index rule is structural, so an exclude glob cannot switch it off                                                                                                                                                                                              | —                                                                                 |
-| Compression forms       | Every compression of an index the Release lists is its own entry, uncompressed included; the rules above never prefer one form, so the mirror serves every form its signed Release names                                                                                    | —                                                                                 |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Component | The segment before the first `/`; a key with no `/` belongs to no component and passes | — |
+| Known architectures | The selected architectures plus every root Release token the Release token rule keeps, whatever `--architectures` selects → [Architectures](#architectures) | — |
+| Architecture token | A `-<arch>` run ending at `.`, `/`, or the key end, matched only against the known architectures; where several end at one token the longest owns it | — |
+| Structural rule scope | The architecture-token, source, and unparsed rules read the key below its component segment, so a component name such as `extra-armhf` or `installer-extras` never trips them | — |
+| Source indices | A key under `<component>/source/`, a `Sources*` file name, or a `-source` token is selected only when `source` is a selected architecture | — |
+| Unparsed index | A key under `debian-installer/` or an `installer-<arch>/` image tree whose `<arch>` is a known architecture, or one with a segment starting `Contents-udeb`, is dropped: nothing parses these, so a mirror would carry metadata for `.udeb` payloads it lacks | — |
+| Unparsed index scope | The unparsed-index rule is structural, so an exclude glob cannot switch it off | — |
+| Compression forms | Every compression of an index the Release lists is its own entry, uncompressed included; the rules above never prefer one form, so the mirror serves every form its signed Release names | — |
 | Unpublished entry | A selected path the source does not publish stays in the set, so it is never purged from the target | — |
 | Payload deletion | A payload dropped from one source index is deleted from the target only when no selected source index still lists it, so a shared `all` payload survives its removal from one architecture | — |
 | Absent entry | A selected path the target lacks and no parse proved is copied by a forced pass without a source probe, even when both root Releases record its digest alike: the last sync copies the Release whether or not it copied the object | Missing at the source → skipped at transfer, logged at debug, never retried |
 | Absent entry recovery | An absent entry never forces the index pass, so a run with nothing else to sync copies nothing; one the source 404ed once is recovered by the next forced pass or `--indices-only` | — |
 | Parse-proven entry | A selected path a parse found, a root Release file or a component `Packages`, is copied without a source probe when the target lacks it: the parse already fetched it from the source | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
-| Held entry              | A selected path the target already holds is transferred without a source probe: an earlier transfer proved the source publishes it, so a changed digest is a republish. Digests both root Releases record alike settle it without a digest round trip                       | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
-| Unloaded target         | A target whose Release did not load, empty or reset after a checksum failure, settles no entry: agreement and stored metadata are both skipped, so every selected path it holds is copied again                                                                             | —                                                                                 |
-| Later pass              | A pass after the source changed mid-sync reloads the target through the transaction first, so agreement compares against the Release the previous pass staged                                                                                                               | —                                                                                 |
+| Held entry | A selected path the target already holds is transferred without a source probe: an earlier transfer proved the source publishes it, so a changed digest is a republish. Digests both root Releases record alike settle it without a digest round trip | A source that stops publishing it fails the transfer → `RepoSyncException` (Sync) |
+| Unloaded target | A target whose Release did not load, empty or reset after a checksum failure, settles no entry: agreement and stored metadata are both skipped, so every selected path it holds is copied again | — |
+| Later pass | A pass after the source changed mid-sync reloads the target through the transaction first, so agreement compares against the Release the previous pass staged | — |
 | Unsettled source | A source whose Release hash still differs after `MAX_UPDATED_REPO_RETRIES` (4) passes is not read again: the run commits the last pass, which matches the Release it loaded | Logged as a warning |
-| Payload naming an index | A stanza `Filename` a Release digest block also lists is an index, not a payload: it leaves the package set, so the rules above alone decide whether it is copied or purged and selection cannot disagree with the payload copy → [CRYPTO.md](CRYPTO.md#verification-order) | Dropped from the package set and logged                                           |
+| Payload naming an index | A stanza `Filename` a Release digest block also lists is an index, not a payload: it leaves the package set, so the rules above alone decide whether it is copied or purged and selection cannot disagree with the payload copy → [CRYPTO.md](CRYPTO.md#verification-order) | Dropped from the package set and logged |
 
 ## Index exclude globs
 
-| Rule         | Constraint                                                                                                                                              | Failure |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Value        | Comma-separated `fnmatch` globs; the empty string excludes nothing                                                                                      | —       |
-| Empty token  | Dropped, so `a,,b` excludes two globs                                                                                                                   | —       |
-| Match target | The path as the root Release lists it, relative to the layout prefix                                                                                    | —       |
-| Matching     | Case-sensitive; `*` crosses `/`                                                                                                                         | —       |
-| Scope        | Every candidate index, discovered while parsing as well as listed in the Release; the root `Release`, `Release.gpg`, and `InRelease` are never filtered | —       |
-| Effect       | An excluded index is not mirrored, and is purged from the target as an orphan                                                                           | —       |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Value | Comma-separated `fnmatch` globs; the empty string excludes nothing | — |
+| Empty token | Dropped, so `a,,b` excludes two globs | — |
+| Match target | The path as the root Release lists it, relative to the layout prefix | — |
+| Matching | Case-sensitive; `*` crosses `/` | — |
+| Scope | Every candidate index, discovered while parsing as well as listed in the Release; the root `Release`, `Release.gpg`, and `InRelease` are never filtered | — |
+| Effect | An excluded index is not mirrored, and is purged from the target as an orphan | — |
 
 ## Package stanzas
 
@@ -128,16 +128,16 @@ Parsed and written by `Package.parse()` and `Package.serialize()` through `debia
 Parsed by `Sources._expand_stanza()`. Each stanza names several payload files under one `Directory`;
 every file becomes one record keyed by `<directory>/<name>`.
 
-| Rule                | Constraint                                                                                                                                                                                                                                                                 | Failure                                            |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| Directory           | Present, not `.`, and passes the unsafe-key rule below.                                                                                                                                                                                                                    | → `PackagesException` (Read)                       |
-| File name           | A bare name: no `/` segment, and the joined key passes the unsafe-key rule.                                                                                                                                                                                                | → `PackagesException` (Read)                       |
-| Size                | Agrees across every hash block that lists the file.                                                                                                                                                                                                                        | → `PackagesException` (Read)                       |
-| Digests             | At least one algorithm normalization keeps; `Files` alone is MD5, which it drops → [CRYPTO.md](CRYPTO.md#checksums).                                                                                                                                                       | → `PackagesException` (Read)                       |
-| Shared payload      | A file named by several stanzas is kept once, last stanza wins; disagreeing digests are logged.                                                                                                                                                                            | —                                                  |
-| Mutation            | `insert` is refused; `remove` matches nothing; `save` writes nothing.                                                                                                                                                                                                      | `insert` → `PackagesException` (Read)              |
-| Container           | The source architecture resolves to `Sources` on the read and the write path alike, through `container_for()` in `repo/component.py`: `Packages.setup` names its file from the layout, so a binary container would write a binary index into the canonical `Sources` path. | → `PackagesException` (Read) on the refused insert |
-| Insert architecture | A package whose control field names the source architecture is refused before the transfer, as a `.changes` is when any of its `Architecture` tokens names it.                                                                                                             | → `ActionException` (Generic)                      |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Directory | Present, not `.`, and passes the unsafe-key rule below. | → `PackagesException` (Read) |
+| File name | A bare name: no `/` segment, and the joined key passes the unsafe-key rule. | → `PackagesException` (Read) |
+| Size | Agrees across every hash block that lists the file. | → `PackagesException` (Read) |
+| Digests | At least one algorithm normalization keeps; `Files` alone is MD5, which it drops → [CRYPTO.md](CRYPTO.md#checksums). | → `PackagesException` (Read) |
+| Shared payload | A file named by several stanzas is kept once, last stanza wins; disagreeing digests are logged. | — |
+| Mutation | `insert` is refused; `remove` matches nothing; `save` writes nothing. | `insert` → `PackagesException` (Read) |
+| Container | The source architecture resolves to `Sources` on the read and the write path alike, through `container_for()` in `repo/component.py`: `Packages.setup` names its file from the layout, so a binary container would write a binary index into the canonical `Sources` path. | → `PackagesException` (Read) on the refused insert |
+| Insert architecture | A package whose control field names the source architecture is refused before the transfer, as a `.changes` is when any of its `Architecture` tokens names it. | → `ActionException` (Generic) |
 
 ## Filename safety
 
@@ -145,24 +145,24 @@ Package metadata names storage objects, so a `Filename:` field copied from a sou
 key a write lands on, and a root `Release` digest block names the index keys a mirror fetches. The
 checks below constrain both; unsafe names fail before any storage mutation.
 
-| Rule                   | Constraint                                                                                                                                                          | Failure                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Unsafe key             | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | —                                            |
-| `Packages.remove()`    | Matched package filename passes the unsafe-key rule.                                                                                                                | → `PackagesException` (Read)                 |
-| `RepoSync` index set   | Release-listed index key and path pass the unsafe-key rule.                                                                                                         | Entry dropped from the index set and logged  |
-| `Packages` index parse | Stanza `Filename` passes the unsafe-key rule.                                                                                                                       | Stanza dropped from the container and logged |
-| `Sources` payload      | Stanza `Directory` and the joined payload key pass the unsafe-key rule.                                                                                             | → `PackagesException` (Read)                 |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | — |
+| `Packages.remove()` | Matched package filename passes the unsafe-key rule. | → `PackagesException` (Read) |
+| `RepoSync` index set | Release-listed index key and path pass the unsafe-key rule. | Entry dropped from the index set and logged |
+| `Packages` index parse | Stanza `Filename` passes the unsafe-key rule. | Stanza dropped from the container and logged |
+| `Sources` payload | Stanza `Directory` and the joined payload key pass the unsafe-key rule. | → `PackagesException` (Read) |
 | Insert `Package` name | The `.deb` control `Package` field is present and a Debian Policy name, `^[a-z0-9][a-z0-9+.-]+$`, checked before the transfer. | → `DebFileException` (Read) |
 | Insert pool path | The pool key `pool/[<component>/]<first letter>/<package>/<upload path>` from `pool_path()` in `repo/params.py` passes the unsafe-key rule, checked before the transfer. | → `DebFileException` (Read) |
 | `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Write) |
-| Storage paths          | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety).          | → `StorageException` (Generic)               |
+| Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
 
 ## Log levels
 
 Flag and variable → [CONFIG.md](CONFIG.md#global-flags).
 
-| Rule            | Constraint                                                         | Failure                     |
-| --------------- | ------------------------------------------------------------------ | --------------------------- |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
 | Accepted values | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`; case-insensitive. | Other → usage error (Usage) |
 
 ## History retention
@@ -170,24 +170,24 @@ Flag and variable → [CONFIG.md](CONFIG.md#global-flags).
 Implemented by `positive_int_type()` and `history_max_age_type()` in `argtypes.py`; flags →
 [CONFIG.md](CONFIG.md#global-flags).
 
-| Rule                | Constraint                                                                                                  | Failure                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Integer             | Plain ASCII decimal, optional sign, surrounding whitespace ignored; `1_0` and non-ASCII digits are refused. | → `ArgumentTypeError` (Usage)         |
-| `--history-keep`    | 1 or greater.                                                                                               | Below 1 → `ArgumentTypeError` (Usage) |
-| `--history-max-age` | 0 to 36500 days, txstore's bound; `0` disables pruning.                                                     | Outside → `ArgumentTypeError` (Usage) |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Integer | Plain ASCII decimal, optional sign, surrounding whitespace ignored; `1_0` and non-ASCII digits are refused. | → `ArgumentTypeError` (Usage) |
+| `--history-keep` | 1 or greater. | Below 1 → `ArgumentTypeError` (Usage) |
+| `--history-max-age` | 0 to 36500 days, txstore's bound; `0` disables pruning. | Outside → `ArgumentTypeError` (Usage) |
 
 ## Environment values
 
 Implemented by `_env.py` and `_options.py`; resolution → [CONFIG.md](CONFIG.md#resolution).
 
-| Rule         | Constraint                                                                   | Failure                                         |
-| ------------ | ---------------------------------------------------------------------------- | ----------------------------------------------- |
-| Empty        | An empty variable counts as unset.                                           | —                                               |
-| Switch true  | `1`, `true`, `yes`, `on`; case-insensitive, surrounding whitespace ignored.  | —                                               |
-| Switch false | `0`, `false`, `no`, `off`; case-insensitive, surrounding whitespace ignored. | —                                               |
-| Switch other | Never read as true, so a typo cannot disable verification.                   | → usage error naming the variable (Usage)       |
-| Valued       | Converted and checked as the flag's value would be.                          | → usage error naming the variable (Usage)       |
-| Prefix       | Only `DEBKIT_` names are read.                                               | Other name → `ValueError` (a programming error) |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Empty | An empty variable counts as unset. | — |
+| Switch true | `1`, `true`, `yes`, `on`; case-insensitive, surrounding whitespace ignored. | — |
+| Switch false | `0`, `false`, `no`, `off`; case-insensitive, surrounding whitespace ignored. | — |
+| Switch other | Never read as true, so a typo cannot disable verification. | → usage error naming the variable (Usage) |
+| Valued | Converted and checked as the flag's value would be. | → usage error naming the variable (Usage) |
+| Prefix | Only `DEBKIT_` names are read. | Other name → `ValueError` (a programming error) |
 
 ## Release dates
 
@@ -195,10 +195,10 @@ Implemented by `parse_release_date()` and `Release.date()` in `repo/release.py` 
 `Date` and `Valid-Until` fields. Both raise `ValueError`, which never reaches the CLI: the freshness
 check maps it → [CRYPTO.md](CRYPTO.md#release-freshness).
 
-| Rule   | Constraint                                                                                                                                                                                                                  | Failure                                                           |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Format | RFC 2822 date as `email.utils.parsedate_to_datetime` reads it, e.g. `Sat, 10 Jun 2023 08:47:46 UTC`.                                                                                                                        | Rejected by the parser → [CRYPTO.md](CRYPTO.md#release-freshness) |
-| Zone   | Last token `UTC`, `GMT`, `UT`, `Z`, or a numeric `+hhmm` / `-hhmm` offset; `-0000` is read as UTC. A named zone such as `CEST`, a missing zone, or trailing text is refused, since it would otherwise read silently as UTC. | Rejected by the parser → [CRYPTO.md](CRYPTO.md#release-freshness) |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Format | RFC 2822 date as `email.utils.parsedate_to_datetime` reads it, e.g. `Sat, 10 Jun 2023 08:47:46 UTC`. | Rejected by the parser → [CRYPTO.md](CRYPTO.md#release-freshness) |
+| Zone | Last token `UTC`, `GMT`, `UT`, `Z`, or a numeric `+hhmm` / `-hhmm` offset; `-0000` is read as UTC. A named zone such as `CEST`, a missing zone, or trailing text is refused, since it would otherwise read silently as UTC. | Rejected by the parser → [CRYPTO.md](CRYPTO.md#release-freshness) |
 
 ## Package pattern matching
 
@@ -206,10 +206,10 @@ Implemented by `pkg_pattern_type()` in `argtypes.py` for `--pkg-pattern` and `DE
 before the target is read; `Packages.remove()` matches the compiled patterns; flag →
 [CONFIG.md](CONFIG.md#remove).
 
-| Rule               | Constraint                                                                                                                                                                 | Failure                                                                       |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
 | Shape | Non-empty JSON object mapping package field names to regex strings; any field, no allow-list. | Invalid JSON, another JSON type, `{}`, or a non-string value → `ArgumentTypeError` (Usage) |
-| Match              | Every supplied field pattern matches, using `re.search` without anchoring.                                                                                                 | —                                                                             |
+| Match | Every supplied field pattern matches, using `re.search` without anchoring. | — |
 | Length | At most 500 characters per pattern; checked before compilation. | Longer → `ArgumentTypeError` (Usage) |
 | Nested quantifiers | No quantifier (`+`, `*`, `?`, or an unbounded `{n,}`) inside a quantified group, e.g. `(a+)+`; a bounded `{n}` or `{n,m}` never counts as one. Checked before compilation. | → `ArgumentTypeError` (Usage) |
 | Repeated alternatives | No `+`, `*`, or `{n,}` repeats a group whose alternatives, or those of a group inside it, can start with the same character, e.g. `(a\|aa)+`. Checked before compilation. | → `ArgumentTypeError` (Usage) |
@@ -223,29 +223,29 @@ Used by `ActionSync` and `insert`; flag → [CONFIG.md](CONFIG.md#sync). The tok
 `is_valid_arch()` in `repo/params.py`: a token names the `binary-<arch>/` directory of a storage
 path.
 
-| Rule          | Constraint                                                                                                                                                                  | Failure                                  |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Value         | Comma-separated string, default `amd64,arm64`; split on commas, with no trimming or case folding.                                                                           | —                                        |
-| Empty token   | Dropped, so `amd64,,arm64` selects two architectures; a value of commas alone selects none, and the Release tokens decide.                                                  | —                                        |
-| Empty string  | No override is applied.                                                                                                                                                     | —                                        |
-| Token         | Lower-case letters, digits, and `-`, not starting with `-`, e.g. `amd64`, `hurd-i386`; a flag token is checked before any storage is opened.                                                                                      | Flag token → `ActionException` (Generic) |
-| Release token | A root Release `Architectures` or `Architecture` token follows the token rule.                                                                                              | Dropped and logged                       |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Value | Comma-separated string, default `amd64,arm64`; split on commas, with no trimming or case folding. | — |
+| Empty token | Dropped, so `amd64,,arm64` selects two architectures; a value of commas alone selects none, and the Release tokens decide. | — |
+| Empty string | No override is applied. | — |
+| Token | Lower-case letters, digits, and `-`, not starting with `-`, e.g. `amd64`, `hurd-i386`; a flag token is checked before any storage is opened. | Flag token → `ActionException` (Generic) |
+| Release token | A root Release `Architectures` or `Architecture` token follows the token rule. | Dropped and logged |
 | No Release token | A root Release with neither `Architectures` nor a valid `Architecture` token selects the empty arch in a flat repo; a componented one selects each arch its digest block lists `<component>/binary-<arch>/Packages*` for, under the token rule, `all` skipped. | Bad token dropped and logged |
-| Upload token  | Every `.changes` `Architecture` token and the `.deb` control `Architecture` follow the token rule, checked before the transfer.                                             | → `ActionException` (Generic)            |
+| Upload token | Every `.changes` `Architecture` token and the `.deb` control `Architecture` follow the token rule, checked before the transfer. | → `ActionException` (Generic) |
 | Index slot | `Component.insert_pkg` refuses an arch that is neither empty nor a token, whatever its caller checked. | → `ComponentException` (Read) |
 | Insert target | A `.deb` goes to its control `Architecture` alone; an `all` or missing one goes to every root Release architecture but `source`. The `.changes` field and its file order play no part. | — |
 | No binary target | An `all` or arch-less `.deb` while the root Release lists no architecture but `source`, refused before its transfer. | → `ActionException` (Generic) |
-| `source`      | Selects the source pseudo-architecture: `<component>/source/Sources*` is parsed and every payload it lists joins the package set. The index is mirrored, never regenerated. | —                                        |
+| `source` | Selects the source pseudo-architecture: `<component>/source/Sources*` is parsed and every payload it lists joins the package set. The index is mirrored, never regenerated. | — |
 
 ## S3 canned ACLs
 
 Implemented by `object_acl_type()` and `bucket_acl_type()` in `argtypes.py` over txstore's
 `parse_object_acl()` and `parse_bucket_acl()`; values → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#s3-canned-acls).
 
-| Rule               | Constraint                                      | Failure                             |
-| ------------------ | ----------------------------------------------- | ----------------------------------- |
+| Rule | Constraint | Failure |
+| -- | -- | -- |
 | `--s3-default-acl` | An object canned ACL, or `none` to send no ACL. | Other → `ArgumentTypeError` (Usage) |
-| `--s3-bucket-acl`  | A bucket canned ACL.                            | Other → `ArgumentTypeError` (Usage) |
+| `--s3-bucket-acl` | A bucket canned ACL. | Other → `ArgumentTypeError` (Usage) |
 
 ## Maintenance
 

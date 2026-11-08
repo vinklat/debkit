@@ -14,18 +14,18 @@ This file states only what debkit chooses.
 through it or the `attach_storage_*` helpers built on it →
 [STRUCTURE.md](STRUCTURE.md#dependencies).
 
-| Input                    | Rule                                                                                                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| URL                      | A value without `://` is a filesystem path, made absolute and prefixed with `fs://`; any other value passes to txstore unchanged → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| Input | Rule |
+| -- | -- |
+| URL | A value without `://` is a filesystem path, made absolute and prefixed with `fs://`; any other value passes to txstore unchanged → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | `create_path` | Set on the target for `insert`, `remove`, and `sync`, and always on the `insert` `--incoming-url` storage: creates the S3 bucket or FS directory when missing. |
-| `verify_ssl`             | `not (skip_verify or skip_verify_ssl)` → [CRYPTO.md](CRYPTO.md#verification-switches).                                                                                          |
+| `verify_ssl` | `not (skip_verify or skip_verify_ssl)` → [CRYPTO.md](CRYPTO.md#verification-switches). |
 | `s3_access`, `s3_secret` | The resolved `--s3-access` and `DEBKIT_S3_SECRET` values, unset ones left to txstore → [CONFIG.md](CONFIG.md#resolution); an `s3://` URL missing either key is a construction failure below. |
 | `s3_default_acl` | `--s3-default-acl` → [CONFIG.md](CONFIG.md#storage-flags); its default is public because an apt repository serves its objects anonymously. |
-| `s3_bucket_acl`          | `--s3-bucket-acl`, else none; never derived from the object ACL, since a public bucket ACL lists every key.                                                                     |
+| `s3_bucket_acl` | `--s3-bucket-acl`, else none; never derived from the object ACL, since a public bucket ACL lists every key. |
 | Rejected URL | A URL txstore's rules reject → `ValueError` (Generic) for every URL → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | Construction failure | `make_storage` raising `StorageException` (empty URL, no host, unresolved S3 key, uncreatable path): `--target-url` or `--source-url` → `RepoReadException` (Read). |
 | Construction failure, plain URL | The same on `--incoming-url` or a `log`, `revert`, or `prune` target → `StorageException` (Generic). |
-| Digest sink              | `RepoSync` builds a `StorageNull` directly to digest a source object without storing it → [ROADMAP.md](ROADMAP.md#known-deviations).                                            |
+| Digest sink | `RepoSync` builds a `StorageNull` directly to digest a source object without storing it → [ROADMAP.md](ROADMAP.md#known-deviations). |
 
 ## Storage errors
 
@@ -36,23 +36,23 @@ through it or the `attach_storage_*` helpers built on it →
 
 ## Transactions
 
-| Rule                     | Behavior                                                                                                                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rule | Behavior |
+| -- | -- |
 | Scope | `insert`, `remove`, `sync`, and `check --fix` run their writes inside one `maybe_transaction`; `sync --verify-existing` deletes inside the sync's transaction. The read-only commands record nothing. |
-| Retention                | `Action.__init__` builds `HistoryRetention.from_env(keep=..., max_age_days=...)` from `--history-keep` and `--history-max-age` and passes it to `maybe_transaction`, so a recorded write prunes expired history → [CONFIG.md](CONFIG.md#global-flags). |
-| Non-transactional target | An HTTP target runs the body without a transaction or history.                                                                                                                                                                                         |
-| Failure                  | The body's exception propagates after txstore discards the staged footmarks; a partial commit on an unreachable backend is repaired by re-running `sync --verify-existing`.                                                                            |
+| Retention | `Action.__init__` builds `HistoryRetention.from_env(keep=..., max_age_days=...)` from `--history-keep` and `--history-max-age` and passes it to `maybe_transaction`, so a recorded write prunes expired history → [CONFIG.md](CONFIG.md#global-flags). |
+| Non-transactional target | An HTTP target runs the body without a transaction or history. |
+| Failure | The body's exception propagates after txstore discards the staged footmarks; a partial commit on an unreachable backend is repaired by re-running `sync --verify-existing`. |
 
 ## History commands
 
-| Command         | Rule                                                                                                                                                       |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scope           | `log`, `revert`, and `prune` address the storage root: the `--target-url` dist and component fields are optional and ignored → [CONFIG.md](CONFIG.md#log). |
-| Guard           | A non-transactional backend → `ActionException` (Generic).                                                                                                 |
-| `log`           | Lists `{id, timestamp}` records in file order; `-o json` prints the array as the history file stores it.                                                   |
-| `revert`        | Reverts the latest recorded transaction; empty history → `ActionException` (Generic). `--dry-run` names it without reverting.                              |
-| `prune`         | Applies the retention policy above; `--orphans` also reclaims footmarks of no recorded transaction; `--dry-run` reports the same paths without deleting.   |
-| Storage failure | `StorageException`, including a malformed history file, is re-raised as `ActionException` (Generic).                                                       |
+| Command | Rule |
+| -- | -- |
+| Scope | `log`, `revert`, and `prune` address the storage root: the `--target-url` dist and component fields are optional and ignored → [CONFIG.md](CONFIG.md#log). |
+| Guard | A non-transactional backend → `ActionException` (Generic). |
+| `log` | Lists `{id, timestamp}` records in file order; `-o json` prints the array as the history file stores it. |
+| `revert` | Reverts the latest recorded transaction; empty history → `ActionException` (Generic). `--dry-run` names it without reverting. |
+| `prune` | Applies the retention policy above; `--orphans` also reclaims footmarks of no recorded transaction; `--dry-run` reports the same paths without deleting. |
+| Storage failure | `StorageException`, including a malformed history file, is re-raised as `ActionException` (Generic). |
 
 ## Maintenance
 

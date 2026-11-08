@@ -24,12 +24,12 @@ style conflicts. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Layers
 
-| Layer          | Contract                                                                                                                                                                                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cli.py`       | Parses args, configures logging, dispatches actions, maps exceptions to exit groups → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). The only `sys.exit` caller.                                                                                            |
-| `argparser.py` | Builds the parser through `_options.EnvArgumentParser`; its type converters live in `argtypes.py` and raise `ArgumentTypeError` for bad values → [VALIDATION.md](VALIDATION.md#principles).                                                                  |
-| `Action*`      | Orchestrates `Repo*` objects and output. Reaches storage only through `open_storage` and the `attach_storage_*` helpers; never instantiates a backend or implements repo logic. Wraps writes in `maybe_transaction` → [STORAGE.md](STORAGE.md#transactions). |
-| `Repo*`        | Operates on a txstore `Storage` plus `RepoParams`, never on raw URLs or backend SDKs.                                                                                                                                                                        |
+| Layer | Contract |
+| -- | -- |
+| `cli.py` | Parses args, configures logging, dispatches actions, maps exceptions to exit groups → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). The only `sys.exit` caller. |
+| `argparser.py` | Builds the parser through `_options.EnvArgumentParser`; its type converters live in `argtypes.py` and raise `ArgumentTypeError` for bad values → [VALIDATION.md](VALIDATION.md#principles). |
+| `Action*` | Orchestrates `Repo*` objects and output. Reaches storage only through `open_storage` and the `attach_storage_*` helpers; never instantiates a backend or implements repo logic. Wraps writes in `maybe_transaction` → [STORAGE.md](STORAGE.md#transactions). |
+| `Repo*` | Operates on a txstore `Storage` plus `RepoParams`, never on raw URLs or backend SDKs. |
 
 Import directions → [STRUCTURE.md](STRUCTURE.md#dependencies).
 
@@ -45,11 +45,11 @@ Import directions → [STRUCTURE.md](STRUCTURE.md#dependencies).
 
 ## Performance
 
-| Concern       | Rule                                                                                            |
-| ------------- | ----------------------------------------------------------------------------------------------- |
+| Concern | Rule |
+| -- | -- |
 | Large objects | Stream with `get_stream`, `put_stream`, and `transfer`; never load a package just to digest it. |
-| Digests       | Reuse txstore's `ChecksumOpen` for in-flight calculation → [CRYPTO.md](CRYPTO.md#checksums).    |
-| Lookups       | Avoid repeated full scans when a stable key lookup is available.                                |
+| Digests | Reuse txstore's `ChecksumOpen` for in-flight calculation → [CRYPTO.md](CRYPTO.md#checksums). |
+| Lookups | Avoid repeated full scans when a stable key lookup is available. |
 
 ## Maintenance
 
