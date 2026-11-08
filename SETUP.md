@@ -34,6 +34,9 @@ uv run pytest
 uv run pytest --cov
 ```
 
+`tests/test_gnupg_real.py` runs the `gpg` binary when it is on `PATH` and skips otherwise; CI
+installs it, so a missing binary there fails the job.
+
 ## Quality gates
 
 Run every row before submitting. `.github/workflows/ci.yml` runs the check rows on pushes to `main`,

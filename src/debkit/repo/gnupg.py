@@ -171,7 +171,7 @@ class GnuPG:
             detach (bool, optional): Detach signature. Defaults to False.
 
         Returns:
-            str: GPG signature.
+            str: GPG signature; empty when gpg created none, e.g. on a wrong passphrase.
         """
         if detach:
             logger.info("Generate detached GPG signature.")
@@ -179,4 +179,9 @@ class GnuPG:
             logger.info("Generate GPG signed data.")
 
         signed_data = self.gnupg.sign(data, detach=detach, passphrase=self.passphrase)
+        # a failed clearsign still prints the armor header and body, so the text alone does
+        # not tell a signature; python-gnupg is true only once gpg reported one created
+        if not signed_data:
+            logger.debug("gpg created no signature: %s", getattr(signed_data, "status", None))
+            return ""
         return str(signed_data)

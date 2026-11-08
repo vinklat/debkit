@@ -7,7 +7,9 @@ not copied here.
 ## Harness and gates
 
 - Run with `uv run pytest` → [SETUP.md](SETUP.md#test).
-- Keep tests isolated: no real network, no real cloud account, no real user GPG home. S3-backed
+- Keep tests isolated: no real network, no real cloud account, no real user GPG home; a
+  throwaway home from `tests/helpers/gpg.py` is allowed. Real-gpg tests skip without a gpg
+  binary, except under `CI`, where they fail instead. S3-backed
   tests use the session-scoped `moto_server` fixture; CLI and action tests use `fake_pars`, both
   from `tests/conftest.py`.
 - `tests/conftest.py` clears every `DEBKIT_*` and `TXSTORE_*` variable before each test; a test
@@ -53,7 +55,7 @@ not copied here.
 | Sync index Release skip | The Release-block skip with its metadata fallback → [VALIDATION.md](VALIDATION.md#index-selection) is asserted from both sides.                                                                                                                                                                 |
 | Sync index recovery     | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync.                                                                                                        |
 | Validation              | Every documented boundary rule, success and failure.                                                                                                                                                                                                                                            |
-| Crypto                  | GPG verify and sign paths, skip-verify branches; the checksum source order `Repo.verify_checksum` walks; hash-block parsing and `HexDigests` in `repo/hashes.py`; each Release freshness rule.                                                                                                  |
+| Crypto                  | GPG verify and sign paths, skip-verify branches; a real-gpg round trip in `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring, right and wrong passphrase; the checksum source order `Repo.verify_checksum` walks; hash-block parsing and `HexDigests` in `repo/hashes.py`; each Release freshness rule.                                                                                                  |
 
 ## Package contracts
 

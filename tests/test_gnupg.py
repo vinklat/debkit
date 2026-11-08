@@ -96,6 +96,23 @@ def test_sign_returns_str() -> None:
         assert gpg.sign(b"payload") == "signed-bytes"
 
 
+def test_sign_returns_nothing_when_gpg_created_no_signature() -> None:
+    """A failed clearsign still prints its armor header and body (wrong passphrase)."""
+
+    class FailedSign:
+        """python-gnupg's result: false without a created signature, text all the same."""
+
+        def __bool__(self) -> bool:
+            return False
+
+        def __str__(self) -> str:
+            return "-----BEGIN PGP SIGNED MESSAGE-----\n\nbody\n"
+
+    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock()) as mock_gpg:
+        mock_gpg.return_value.sign.return_value = FailedSign()
+        assert _gnupg(None).sign(b"payload") == ""
+
+
 @pytest.mark.parametrize(("passphrase", "sent"), [("", None), (None, None), ("pw", "pw")])
 def test_sign_sends_no_passphrase_when_empty(passphrase: str | None, sent: str | None) -> None:
     """An empty passphrase must not reach gpg, which would read the data's first line as one."""

@@ -1,0 +1,67 @@
+"""Throwaway GnuPG homes for tests that run the real gpg binary.
+
+Each home holds one generated ed25519 signing key and a `trustedkeys.gpg` keyring with its public
+half, the layout `GnuPG` opens → [TESTING.md](../../TESTING.md#harness-and-gates). A home never
+touches the user's own.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+KEYRING = "trustedkeys.gpg"
+
+# Skipped where gpg is missing, but never in CI, so a CI job without gpg fails instead of
+# passing on skipped signature tests.
+requires_gpg = pytest.mark.skipif(
+    shutil.which("gpg") is None and not os.environ.get("CI"),
+    reason="needs the gpg binary",
+)
+
+
+def _gpg(home: Path, *args: str, data: bytes | None = None) -> bytes:
+    return subprocess.run(
+        ["gpg", "--homedir", str(home), "--batch", *args],
+        input=data,
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
+def make_gpg_home(home: Path, name: str, passphrase: str = "") -> Path:
+    """Create `home` with one signing key for `name`, locked by `passphrase` when given.
+
+    The agent caches no passphrase, so a wrong one fails even after a right one.
+    """
+    home.mkdir(mode=0o700, parents=True)
+    (home / "gpg-agent.conf").write_text(
+        "allow-loopback-pinentry\ndefault-cache-ttl 0\nmax-cache-ttl 0\n"
+    )
+    _gpg(
+        home,
+        "--pinentry-mode",
+        "loopback",
+        "--passphrase",
+        passphrase,
+        "--quick-gen-key",
+        f"debkit {name} <{name}@example.invalid>",
+        "ed25519",
+        "sign",
+        "never",
+    )
+    _gpg(
+        home, "--no-default-keyring", "--keyring", KEYRING, "--import", data=_gpg(home, "--export")
+    )
+    return home
+
+
+def stop_gpg_agent(home: Path) -> None:
+    """Stop the agent `home` started, so no process outlives the test session."""
+    subprocess.run(
+        ["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], check=False, capture_output=True
+    )
