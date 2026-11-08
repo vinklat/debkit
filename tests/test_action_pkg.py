@@ -42,6 +42,7 @@ def _make_pkg_action(*, storage: object = None) -> ActionPkg:
     target = MagicMock()
     target.storage = storage if storage is not None else MagicMock()
     target.get_archs.return_value = ["amd64"]
+    target.params.is_flat = False
     target.transfer_from.return_value = {"SHA256": "abc", "Size": "100"}
     target.diff.return_value = MagicMock(
         is_empty=MagicMock(return_value=False),
@@ -390,7 +391,9 @@ def test_insert_of_a_changes_targets_each_file_by_its_own_arch(
     assert _inserted(action) == {"a_1_amd64.deb": ["amd64"], "b_1_all.deb": ["amd64", "arm64"]}
 
 
-@pytest.mark.parametrize("repo_archs", [["source"], []], ids=["source-only", "none"])
+@pytest.mark.parametrize(
+    "repo_archs", [["source"], [], [""]], ids=["source-only", "none", "empty-arch"]
+)
 @patch("debkit.action.action_pkg.DebFile")
 @patch("debkit.action.action_pkg.Changes")
 def test_insert_refuses_an_all_package_when_the_target_has_no_binary_arch(

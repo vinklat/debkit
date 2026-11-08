@@ -228,7 +228,7 @@ def test_get_archs_from_the_singular_release_field() -> None:
 
 
 def test_get_archs_from_an_invalid_singular_release_field_defaults_to_an_empty_arch() -> None:
-    repo = _repo(RepoParams(dist="bookworm"))
+    repo = _repo(make_params(flat=True))
     repo.release.fields = {"Architecture": "x/.."}
 
     assert list(repo.get_archs()) == [""]
@@ -242,11 +242,38 @@ def test_release_archs_ignores_the_params_list() -> None:
     assert list(repo.release_archs()) == ["amd64", "i386"]
 
 
-def test_get_archs_defaults_to_a_single_empty_arch() -> None:
-    repo = _repo(RepoParams(dist="bookworm"))
+def test_get_archs_of_a_flat_repo_defaults_to_a_single_empty_arch() -> None:
+    repo = _repo(make_params(flat=True))
     repo.release.fields = {}
 
     assert list(repo.get_archs()) == [""]
+
+
+def test_get_archs_of_a_componented_repo_without_architectures_reads_its_index_paths() -> None:
+    """An empty arch would write `main/binary-/Packages` and a Release over the root one."""
+    repo = _repo()
+    repo.release.fields = {"Components": "main"}
+    for key in (
+        "main/binary-arm64/Packages.gz",
+        "main/binary-amd64/Packages",
+        "main/binary-amd64/Packages.xz",
+        "main/binary-all/Packages",
+        "main/binary-X..Y/Packages",
+        "main/source/Sources.gz",
+        "contrib/binary-i386/Packages",
+        "main/binary-mips/Release",
+        "main/i18n/Translation-en",
+    ):
+        repo.release.update_digests(key, _DIGEST)
+
+    assert list(repo.get_archs()) == ["amd64", "arm64"]
+
+
+def test_get_archs_of_a_componented_repo_without_any_index_is_empty() -> None:
+    repo = _repo()
+    repo.release.fields = {}
+
+    assert list(repo.get_archs()) == []
 
 
 def test_update_drops_a_component_the_reloaded_release_no_longer_lists(

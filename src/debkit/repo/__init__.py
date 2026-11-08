@@ -4,6 +4,7 @@ Method update() loads the repository.
 """
 
 import logging
+import re
 from collections.abc import Generator
 from copy import copy
 from typing import TYPE_CHECKING, Any
@@ -24,6 +25,9 @@ if TYPE_CHECKING:
 
 # create logger
 logging.getLogger(__name__).addHandler(logging.NullHandler())
+
+# the architecture directory of a binary index key, `<comp>/binary-<arch>/Packages[.<ext>]`
+_BINARY_INDEX_KEY = re.compile(r"binary-(?P<arch>[^/]+)/Packages(?:\.[^/]+)?")
 
 
 class RepoReadException(Exception):
@@ -120,7 +124,10 @@ class Repo:
     def get_archs(self) -> Generator[str]:
         """Get the architectures of the repo.
 
-        The `--architectures` selection wins; without one the Release tokens decide.
+        The `--architectures` selection wins; without one the Release tokens decide. A
+        Release without `Architectures` yields the empty arch of a flat repo, or the
+        binary architectures a componented one lists indices for
+        -> [VALIDATION.md](VALIDATION.md#architectures).
 
         Yields:
             List[str]: The name of an arch.
@@ -132,8 +139,37 @@ class Repo:
         archs = list(self.release_archs())
         if archs or "Architectures" in self.release.fields:
             yield from archs
-        else:
+        elif self.params.is_flat:
             yield ""
+        else:
+            yield from self._listed_binary_archs()
+
+    def _listed_binary_archs(self) -> list[str]:
+        """Get the binary architectures the root Release lists a `Packages` index for.
+
+        Only the selected components count; a directory name that is not an architecture
+        token, or `all`, is skipped like a Release token.
+
+        Returns:
+            List[str]: Sorted architecture names, without duplicates.
+        """
+        archs: set[str] = set()
+        for comp in self.get_components():
+            prefix = f"{comp}/"
+            for key in self.release.digests:
+                match = _BINARY_INDEX_KEY.fullmatch(key[len(prefix) :])
+                if match is None or not key.startswith(prefix):
+                    continue
+                arch = match["arch"]
+                if arch == ARCH_ANY:
+                    continue
+                if not is_valid_arch(arch):
+                    logging.warning("%r in a Release index path is not an architecture.", arch)
+                    continue
+                archs.add(arch)
+        if archs:
+            logging.info("Release declares no Architectures; using its indices: %s", sorted(archs))
+        return sorted(archs)
 
     def release_archs(self) -> Generator[str]:
         """Get the architectures the root Release declares, ignoring the selection.

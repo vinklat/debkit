@@ -188,12 +188,19 @@ class ActionPkg(Action):
         """Get the repository architectures a binary package can be inserted into.
 
         A mirrored `Sources` index is read-only, so `source` never receives a `.deb`
-        -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
+        -> [VALIDATION.md](VALIDATION.md#sources-stanzas). The empty arch names no
+        `binary-<arch>/` directory, so only a flat repo inserts under it
+        -> [VALIDATION.md](VALIDATION.md#architectures).
 
         Returns:
             List[str]: The repository architectures without the source one.
         """
-        return [arch for arch in self.target_repo.get_archs() if arch != SOURCE_ARCH]
+        is_flat = self.target_repo.params.is_flat
+        return [
+            arch
+            for arch in self.target_repo.get_archs()
+            if arch != SOURCE_ARCH and (arch or is_flat)
+        ]
 
     def _changes_deb_files(
         self, incoming_storage: "Storage", changes_filename: str
