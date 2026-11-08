@@ -191,7 +191,9 @@ class RepoRW(Repo):
 
         Every payload the indices list is read back and verified; with `fix`, a corrupt one
         is deleted, so a later sync copies it again, and so is every orphan
-        -> [CONFIG.md](CONFIG.md#check).
+        -> [CONFIG.md](CONFIG.md#check). A corrupt payload another dist sharing the root may
+        list is kept: its bytes may be what that dist's index records
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
             fix: Delete corrupt payloads and orphans. Defaults to False.
@@ -200,7 +202,7 @@ class RepoRW(Repo):
         Returns:
             The missing and orphan paths, and the failed and fixed counts.
         """
-        missing, orphans = self.consistency_lists()
+        missing, orphans, shared = self.consistency_lists()
         payloads = sorted(self._payload_files())
         absent = set(missing)
         failed = 0
@@ -215,9 +217,11 @@ class RepoRW(Repo):
                 if not self._verify_file(file, progress=(cnt, len(payloads)), fix=fix):
                     logger.warning("Checksum verify failed: %s", file)
                     failed += 1
-                    if fix:
+                    if fix and shared.deletable(file):
                         self._delete(file)
                         fixed += 1
+                    elif fix:
+                        logger.warning("Keep: %s (another dist sharing the root may list it)", file)
             except StorageException as exc:
                 logger.error("Error checking file: %s: %s", file, exc)
                 failed += 1

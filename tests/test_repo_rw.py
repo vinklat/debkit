@@ -356,6 +356,19 @@ def test_check_counts_a_corrupt_payload_and_deletes_it_only_with_fix(
     assert (tmp_path / _BAR).exists()
 
 
+def test_check_fix_keeps_a_corrupt_payload_another_dist_lists(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The bytes this dist calls corrupt may be the ones the other dist's index records."""
+    repo = _checked(tmp_path)
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+    (tmp_path / _FOO).write_bytes(b"corrupt")
+
+    assert repo.check(fix=True) == CheckReport([], [], 1, 0)
+    assert (tmp_path / _FOO).exists()
+    assert f"Keep: {_FOO}" in caplog.text
+
+
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:
     storage = _FaultyFS(str(tmp_path), unreadable=_FOO)
     repo = _checked(tmp_path, storage)

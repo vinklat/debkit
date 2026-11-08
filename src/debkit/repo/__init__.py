@@ -597,7 +597,7 @@ class Repo:
         purge = {file for file in existing_files - payloads - planned if file not in indices}
         return repair, purge
 
-    def consistency_lists(self) -> tuple[list[str], list[str]]:
+    def consistency_lists(self) -> ConsistencyLists:
         """List what this repository's own storage lacks and what it holds unclaimed.
 
         Missing are the payloads and the parsed component indices the listing lacks:
@@ -607,12 +607,13 @@ class Repo:
         claims -> [CONFIG.md](CONFIG.md#check).
 
         Returns:
-            Missing and orphan paths, sorted; both empty when the storage cannot list.
+            Missing and orphan paths, sorted, and the shared root claims from the same
+            listing; both lists empty and the claims unknown when the storage cannot list.
         """
         try:
             existing_files = set(self.storage.list())
         except NotImplementedError:
-            return [], []
+            return ConsistencyLists([], [], _unlisted_shared_root(self.params))
 
         indices = self._get_indices()
         missing, orphans = self._repair_and_purge(self._payload_files(), indices, existing_files)
@@ -623,7 +624,7 @@ class Repo:
         }
         root_files = set(self.release.get_indices_paths())
         missing |= (parsed & indices.keys()) - root_files - existing_files
-        return sorted(missing), sorted(orphans)
+        return ConsistencyLists(sorted(missing), sorted(orphans), shared)
 
     def shared_root(self) -> SharedRoot:
         """Collect what the other dists sharing this repository's root claim.
@@ -673,6 +674,20 @@ class SharedRoot(NamedTuple):
         if path in self.claimed:
             return False
         return self.complete or path.startswith(self.prefix)
+
+
+class ConsistencyLists(NamedTuple):
+    """What `Repo.consistency_lists` found in the repository's own storage listing.
+
+    Attributes:
+        missing: Payloads and parsed component indices the listing lacks, sorted.
+        orphans: Listed paths that no index and no other dist claims, sorted.
+        shared: What the other dists sharing the root claim, from the same listing.
+    """
+
+    missing: list[str]
+    orphans: list[str]
+    shared: SharedRoot
 
 
 # a flat layout has no `dists/` tree, so no other dist shares its root
