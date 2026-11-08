@@ -30,7 +30,9 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   before the first pass, so its deletions are staged and recorded with the sync, and the first pass
   copies each deleted payload again; a failure it could not delete is logged as a warning.
 - The source repository is re-read after each pass until its `Release` hash is stable, so a source
-  that changes during the mirror is synced again rather than left inconsistent.
+  that changes during the mirror is synced again rather than left inconsistent. After
+  `MAX_UPDATED_REPO_RETRIES` passes the run stops re-reading, logs a warning, and commits the last
+  pass, which matches the Release it loaded → [VALIDATION.md](../../VALIDATION.md#index-selection).
 - With GPG verification on, each pass checks the source Release against the loaded target Release
   before building its lists, so an expired or older source fails the run instead of purging newer
   target objects. A later pass also checks against the target as the run found it, so a staged

@@ -25,7 +25,7 @@ from txstore import (
 )
 
 from debkit.action import OutputType
-from debkit.action.action_sync import ActionSync
+from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionSync
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 
@@ -149,6 +149,29 @@ def test_sync_reloads_the_target_before_a_later_pass() -> None:
     assert _source(action).sync.call_count == 2
     assert _target(action).update.call_count == 2
     assert _source(action).release.check_fresh_against.call_count == 3
+
+
+def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    txn = TxnStorageStub()
+    action = _make_action(storage=txn)
+    hashes = iter(f"hash{n}" for n in range(1, 100))
+
+    def update(strict_arch: bool = False) -> None:
+        _source(action).release.hash = next(hashes)
+
+    _source(action).update.side_effect = update
+
+    with caplog.at_level(logging.WARNING):
+        action.sync()
+
+    assert _source(action).sync.call_count == MAX_UPDATED_REPO_RETRIES
+    assert txn.committed
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING] == [
+        f"Source repo still changing after {MAX_UPDATED_REPO_RETRIES} passes; "
+        "committing the last pass"
+    ]
 
 
 def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:

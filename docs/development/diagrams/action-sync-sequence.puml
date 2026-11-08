@@ -26,10 +26,10 @@ opt verify_existing
   ActionSync -> TStor: read, delete the failing payloads\n[checker.check(missing, [], fix=True);\nstaged in the transaction]
 end
 
-loop pass_cnt > 0
+loop up to MAX_UPDATED_REPO_RETRIES passes
   ActionSync -> Src: update(strict_arch=True)
   Src --> ActionSync: release.hash
-  break prev_hash == release.hash
+  break a later pass and prev_hash == release.hash
     note over ActionSync: source unchanged, exit loop
   end
 
@@ -55,6 +55,10 @@ loop pass_cnt > 0
 
   ActionSync -> Src: sync(target, copy_list, delete_list)
   Src --> ActionSync: returns, or raises RepoSyncException
+end
+
+opt every pass ran and the source never settled
+  note over ActionSync: log warning "Source repo still changing";\nthe last pass is committed
 end
 
 ActionSync -> CM: __exit__(None)

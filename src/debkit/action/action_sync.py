@@ -155,8 +155,7 @@ class ActionSync(Action):
         if self.allow_release_rollback:
             logging.warning("Release freshness checks skipped: --allow-release-rollback is set")
 
-        pass_cnt: int = MAX_UPDATED_REPO_RETRIES
-        prev_hash: str = "nohash"
+        prev_hash: str = ""
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             # a peer may commit before `history_lock` is granted, so the target every pass
             # plans and floors against is read under it -> txstore locking rules
@@ -167,18 +166,17 @@ class ActionSync(Action):
             if self.verify_existing:
                 self._verify_existing(self.target_repo)
 
-            while pass_cnt > 0:
-                if pass_cnt == MAX_UPDATED_REPO_RETRIES:
+            for attempt in range(MAX_UPDATED_REPO_RETRIES):
+                if attempt == 0:
                     logging.info("---------- Load source repo (%s)...", self.source_repo.params.url)
                 else:
                     logging.info("---------- Retrieve load to verify source repo changes...")
 
                 self.source_repo.update(strict_arch=True)
 
-                if prev_hash == self.source_repo.release.hash:
-                    break
-
-                if pass_cnt < MAX_UPDATED_REPO_RETRIES:
+                if attempt > 0:
+                    if prev_hash == self.source_repo.release.hash:
+                        break
                     logging.info("Source repo modified during synchronisation! Repeat sync...")
                     # reads go through the transaction, so the target now describes the
                     # bytes the previous pass staged -> txstore footmark rules
@@ -187,7 +185,7 @@ class ActionSync(Action):
                 if self.source_repo.params.verify_gpg and not self.allow_release_rollback:
                     now = datetime.now(UTC)
                     self.source_repo.release.check_fresh_against(self.target_repo.release, now)
-                    if pass_cnt < MAX_UPDATED_REPO_RETRIES:
+                    if attempt > 0:
                         # a staged target reset as corrupt has no Date; the run never goes
                         # below the Release it found -> [CRYPTO.md](CRYPTO.md#release-freshness)
                         self.source_repo.release.check_fresh_against(target_before.release, now)
@@ -207,8 +205,13 @@ class ActionSync(Action):
                     logging.error("Checksum error: %s", exc)
                     raise
 
-                pass_cnt -= 1
                 prev_hash = self.source_repo.release.hash
+            else:
+                # -> [VALIDATION.md](VALIDATION.md#index-selection)
+                logging.warning(
+                    "Source repo still changing after %d passes; committing the last pass",
+                    MAX_UPDATED_REPO_RETRIES,
+                )
 
         ret_diff = self.source_repo.diff(target_before)
         if self.output == OutputType.json:

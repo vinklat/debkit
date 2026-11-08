@@ -8,8 +8,6 @@ endif
 if (allow_release_rollback?) then (yes)
   :log warning "Release freshness checks skipped";
 endif
-:pass_cnt = MAX_UPDATED_REPO_RETRIES
-prev_hash = "nohash";
 
 partition "with maybe_transaction(target.storage)" {
   :target.update();
@@ -34,10 +32,10 @@ partition "with maybe_transaction(target.storage)" {
   endif
   repeat
     :source.update(strict_arch=True);
-    if (prev_hash == source.release.hash?) then (yes)
-      break
-    endif
     if (a later pass?) then (yes)
+      if (prev_hash == source.release.hash?) then (yes)
+        break
+      endif
       :load target again;
       note right: reads the bytes the previous\npass staged
     endif
@@ -66,9 +64,11 @@ partition "with maybe_transaction(target.storage)" {
       retries raises RepoSyncException,
       so no partial target is committed
     end note
-    :pass_cnt -= 1
-    prev_hash = source.release.hash;
-  repeat while (pass_cnt > 0) is (yes)
+    :prev_hash = source.release.hash;
+  repeat while (fewer than MAX_UPDATED_REPO_RETRIES passes?) is (yes)
+  -> no;
+  :log warning "Source repo still changing";
+  note right: commits the last pass
 }
 
 if (any exception escaped the partition?) then (yes)
