@@ -35,3 +35,32 @@ def test_package_exception_message_no_self_leak() -> None:
     """Regression: ``__init__(self, ...)`` used to leak the instance into args."""
     exc = PackageException("boom")
     assert str(exc) == "Package: boom"
+
+
+_STANZA = (
+    "Package: foo\n"
+    "Maintainer: Jöhn Dœ <j@example.invalid>\n"
+    "Conffiles:\n"
+    " /etc/foo.conf 0123456789abcdef0123456789abcdef\n"
+    " /etc/bar.conf fedcba9876543210fedcba9876543210\n"
+    "Description: short synopsis\n"
+    " line one.\n"
+    " .\n"
+    " para two.\n"
+    "Filename: pool/main/f/foo/foo_1.0_amd64.deb\n"
+    "Size: 1\n"
+)
+
+
+def test_package_parse_serialize_keeps_multiline_and_utf8_values() -> None:
+    """Regression: the email-based serializer folded, MIME-encoded, and rewrapped values."""
+    pkg = Package()
+    pkg.parse(_STANZA)
+    assert pkg.fields["Description"] == "short synopsis\n line one.\n .\n para two."
+    assert pkg.serialize() == _STANZA + "\n"
+
+
+def test_package_parse_newline_in_single_line_field_raises() -> None:
+    pkg = Package()
+    with pytest.raises(PackageException, match="newline in field: Size"):
+        pkg.parse("Package: foo\nFilename: pool/main/foo.deb\nSize:\n 1\n 2\n")

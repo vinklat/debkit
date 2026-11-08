@@ -106,6 +106,17 @@ per entry by its transfer; the source is never probed.
 | Scope        | Every candidate index, discovered while parsing as well as listed in the Release; the root `Release`, `Release.gpg`, and `InRelease` are never filtered | —       |
 | Effect       | An excluded index is not mirrored, and is purged from the target as an orphan                                                                           | —       |
 
+## Package stanzas
+
+Parsed and written by `Package.parse()` and `Package.serialize()` through `debian.deb822`.
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Mandatory | `Package`, `Filename`, and `Size` are present. | → `PackageException` (Read) |
+| Multi-line value | Continuation lines are kept, so a rewritten index carries `Description` and `Conffiles` unchanged. | — |
+| Encoding | Values are written verbatim as UTF-8; no MIME encoding or rewrapping. | — |
+| Single-line field | `Package`, `Filename`, `Size`, and every digest field hold no line break. | → `PackageException` (Read) |
+
 ## Sources stanzas
 
 Parsed by `Sources._expand_stanza()`. Each stanza names several payload files under one `Directory`;
