@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from helpers.factories import make_package, make_params
-from helpers.storage import NonTxnStorageStub, TxnStorageStub, iso_timestamp, seed_history
-from txstore import HistoryRetention, StorageFS, TransactionHistory, is_transactional
+from helpers.storage import TxnStorageStub, iso_timestamp, seed_history
+from txstore import HistoryRetention, StorageFS, StorageNull, TransactionHistory
 
 from debkit.action import OutputType
 from debkit.action.action_pkg import ActionPkg
@@ -27,8 +27,9 @@ def _make_pkg_action(*, storage: object = None) -> ActionPkg:
 
     Args:
         storage: The storage object attached to the target repo.  Pass a
-            ``TxnStorageStub`` for transactional tests, a ``NonTxnStorageStub``
-            for regression tests, or ``None`` to get a plain ``MagicMock``.
+            ``TxnStorageStub`` for transactional tests, txstore's ``StorageNull``
+            for a backend that refuses transactions, or ``None`` to get a plain
+            ``MagicMock``.
     """
     action = ActionPkg.__new__(ActionPkg)
     action.output = OutputType.brief
@@ -72,146 +73,76 @@ def _debfile_mock(mock_debfile_cls: MagicMock, *, arch: str = "amd64") -> MagicM
 
 
 # ---------------------------------------------------------------------------
-# Protocol conformance
+# Transaction wiring, shared by insert() and remove()
 # ---------------------------------------------------------------------------
 
-
-def test_txn_stub_is_transactional() -> None:
-    assert is_transactional(TxnStorageStub())
-    assert not is_transactional(NonTxnStorageStub())
+_OPS = ["insert", "remove"]
 
 
-# ---------------------------------------------------------------------------
-# insert() — transactional storage
-# ---------------------------------------------------------------------------
+def _txn_action(op: str, storage: object, mock_debfile_cls: MagicMock) -> ActionPkg:
+    """Build an action set up to run `op`: a .deb to insert, or a pattern to remove."""
+    action = _make_pkg_action(storage=storage)
+    if op == "insert":
+        _debfile_mock(mock_debfile_cls)
+    else:
+        action.deb_filename = None
+        action.pkg_pattern = {"Package": re.compile("hello")}
+    return action
 
 
+@pytest.mark.parametrize("op", _OPS)
 @patch("debkit.action.action_pkg.DebFile")
-def test_insert_begins_and_commits_on_success(mock_debfile_cls: MagicMock) -> None:
+def test_txn_begins_and_commits_on_success(mock_debfile_cls: MagicMock, op: str) -> None:
     txn = TxnStorageStub()
-    action = _make_pkg_action(storage=txn)
-    _debfile_mock(mock_debfile_cls)
+    action = _txn_action(op, txn, mock_debfile_cls)
 
-    action.insert()
+    getattr(action, op)()
 
     assert txn.began
     assert txn.committed
     assert not txn.discarded
 
 
+@pytest.mark.parametrize("op", _OPS)
 @patch("debkit.action.action_pkg.DebFile")
-def test_insert_discards_on_exception(mock_debfile_cls: MagicMock) -> None:
+def test_txn_discards_on_exception(mock_debfile_cls: MagicMock, op: str) -> None:
     txn = TxnStorageStub()
-    action = _make_pkg_action(storage=txn)
-
-    instance = MagicMock()
-    instance.filename_field = "pool/main/h/hello/hello_1.0_amd64.deb"
-    instance.get_package.side_effect = RuntimeError("corrupt deb")
-    mock_debfile_cls.return_value = instance
-
-    with pytest.raises(RuntimeError, match="corrupt deb"):
-        action.insert()
-
-    assert txn.began
-    assert not txn.committed
-    assert txn.discarded
-
-
-# ---------------------------------------------------------------------------
-# insert() — non-transactional storage (regression for FootmarkMixin fix)
-# ---------------------------------------------------------------------------
-
-
-@patch("debkit.action.action_pkg.DebFile")
-def test_insert_no_txn_on_non_txn_storage(mock_debfile_cls: MagicMock) -> None:
-    """TransactionNotSupportedMixin backend must not trigger NotImplementedError.
-
-    Before the FootmarkMixin discriminator fix, isinstance(storage,
-    is_transactional) returned True for NonTxnStorageStub, and the
-    subsequent transaction_begin() call raised NotImplementedError.
-    """
-    non_txn = NonTxnStorageStub()
-    action = _make_pkg_action(storage=non_txn)
-    _debfile_mock(mock_debfile_cls)
-
-    action.insert()  # must not raise
-
-
-# ---------------------------------------------------------------------------
-# remove() — transactional storage
-# ---------------------------------------------------------------------------
-
-
-def test_remove_begins_and_commits_on_success() -> None:
-    txn = TxnStorageStub()
-    action = _make_pkg_action(storage=txn)
-    action.deb_filename = None
-    action.pkg_pattern = {"Package": re.compile("hello")}
-
-    action.remove()
-
-    assert txn.began
-    assert txn.committed
-    assert not txn.discarded
-
-
-def test_remove_discards_on_exception() -> None:
-    txn = TxnStorageStub()
-    action = _make_pkg_action(storage=txn)
-    action.deb_filename = None
-    action.pkg_pattern = {"Package": re.compile("hello")}
-    _target(action).remove_pkg.side_effect = RuntimeError("fail")
+    action = _txn_action(op, txn, mock_debfile_cls)
+    if op == "insert":
+        mock_debfile_cls.return_value.get_package.side_effect = RuntimeError("fail")
+    else:
+        _target(action).remove_pkg.side_effect = RuntimeError("fail")
 
     with pytest.raises(RuntimeError, match="fail"):
-        action.remove()
+        getattr(action, op)()
 
     assert txn.began
     assert not txn.committed
     assert txn.discarded
 
 
-# ---------------------------------------------------------------------------
-# remove() — non-transactional storage (regression for FootmarkMixin fix)
-# ---------------------------------------------------------------------------
-
-
-def test_remove_no_txn_on_non_txn_storage() -> None:
-    """TransactionNotSupportedMixin backend must not trigger NotImplementedError."""
-    non_txn = NonTxnStorageStub()
-    action = _make_pkg_action(storage=non_txn)
-    action.deb_filename = None
-    action.pkg_pattern = {"Package": re.compile("hello")}
-
-    action.remove()  # must not raise
-
-
-# ---------------------------------------------------------------------------
-# Retention hand-off to maybe_transaction
-# ---------------------------------------------------------------------------
-
-
+@pytest.mark.parametrize("op", _OPS)
 @patch("debkit.action.action_pkg.DebFile")
-def test_insert_hands_retention_to_maybe_transaction(mock_debfile_cls: MagicMock) -> None:
+def test_txn_skipped_on_non_txn_storage(mock_debfile_cls: MagicMock, op: str) -> None:
+    """A backend that refuses transactions runs without one.
+
+    `StorageNull` is a txstore `TransactionNotSupportedMixin` backend, whose
+    `transaction_begin()` raises `NotImplementedError`.
+    """
+    action = _txn_action(op, StorageNull(), mock_debfile_cls)
+
+    getattr(action, op)()  # must not raise
+
+
+@pytest.mark.parametrize("op", _OPS)
+@patch("debkit.action.action_pkg.DebFile")
+def test_txn_gets_the_retention_policy(mock_debfile_cls: MagicMock, op: str) -> None:
     txn = TxnStorageStub()
-    action = _make_pkg_action(storage=txn)
-    _debfile_mock(mock_debfile_cls)
+    action = _txn_action(op, txn, mock_debfile_cls)
     action.history_retention = HistoryRetention(keep=1, max_age_days=5)
 
     with patch("debkit.action.action_pkg.maybe_transaction") as wiring:
-        action.insert()
-
-    wiring.assert_called_once_with(txn, action.history_retention)
-
-
-def test_remove_hands_retention_to_maybe_transaction() -> None:
-    txn = TxnStorageStub()
-    action = _make_pkg_action(storage=txn)
-    action.deb_filename = None
-    action.pkg_pattern = {"Package": re.compile("hello")}
-    action.history_retention = HistoryRetention(keep=1, max_age_days=5)
-
-    with patch("debkit.action.action_pkg.maybe_transaction") as wiring:
-        action.remove()
+        getattr(action, op)()
 
     wiring.assert_called_once_with(txn, action.history_retention)
 

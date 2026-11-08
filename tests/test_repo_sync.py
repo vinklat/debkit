@@ -1,9 +1,9 @@
 """Coverage for debkit.repo.repo_sync.RepoSync.
 
-See TESTING.md section 10 (RepoSync). Tests are isolated: Storage is mocked
-via `MagicMock(spec=Storage)` and Release/Component state is injected by the
-factory helpers in tests/helpers/factories.py instead of being parsed from a
-real Debian tree on disk.
+Required cases -> TESTING.md#required-coverage, the Repo classes and Sync index rows.
+Tests are isolated: Storage is mocked via `MagicMock(spec=Storage)` and
+Release/Component state is injected by the factory helpers in
+tests/helpers/factories.py instead of being parsed from a real Debian tree on disk.
 """
 
 from __future__ import annotations
@@ -737,20 +737,16 @@ def test_check_all_clean_returns_zero_zero() -> None:
     _mock_storage(src).delete.assert_not_called()
 
 
-def test_check_one_corrupt_no_fix() -> None:
+@pytest.mark.parametrize(("fix", "expected"), [(False, (1, 0)), (True, (1, 1))])
+def test_check_one_corrupt_is_counted_and_deleted_only_with_fix(
+    fix: bool, expected: tuple[int, int]
+) -> None:
     src = _src_with_pkgs(["p1.deb", "p2.deb"])
     _patch_verify(src, {"p1.deb": False})
 
-    assert src.check(missing_list=[], orphan_list=[], fix=False) == (1, 0)
-    _mock_storage(src).delete.assert_not_called()
-
-
-def test_check_one_corrupt_with_fix_deletes_corrupt() -> None:
-    src = _src_with_pkgs(["p1.deb", "p2.deb"])
-    _patch_verify(src, {"p1.deb": False})
-
-    assert src.check(missing_list=[], orphan_list=[], fix=True) == (1, 1)
-    _mock_storage(src).delete.assert_called_once_with("p1.deb")
+    assert src.check(missing_list=[], orphan_list=[], fix=fix) == expected
+    deleted = [call.args[0] for call in _mock_storage(src).delete.call_args_list]
+    assert deleted == (["p1.deb"] if fix else [])
 
 
 def test_check_missing_file_skipped_and_not_counted(
@@ -776,23 +772,16 @@ def test_check_storage_exception_counts_as_error() -> None:
     _mock_storage(src).delete.assert_not_called()
 
 
-def test_check_orphans_with_fix_are_deleted_and_counted() -> None:
+@pytest.mark.parametrize(("fix", "expected"), [(False, (0, 0)), (True, (0, 2))])
+def test_check_orphans_are_deleted_and_counted_only_with_fix(
+    fix: bool, expected: tuple[int, int]
+) -> None:
     src = _src_with_pkgs(["p1.deb"])
     _patch_verify(src, {})
 
-    err, fixed = src.check(missing_list=[], orphan_list=["junk.deb", "old.deb"], fix=True)
-
-    assert (err, fixed) == (0, 2)
-    _mock_storage(src).delete.assert_any_call("junk.deb")
-    _mock_storage(src).delete.assert_any_call("old.deb")
-
-
-def test_check_orphans_without_fix_are_not_touched() -> None:
-    src = _src_with_pkgs(["p1.deb"])
-    _patch_verify(src, {})
-
-    assert src.check(missing_list=[], orphan_list=["junk.deb"], fix=False) == (0, 0)
-    _mock_storage(src).delete.assert_not_called()
+    assert src.check(missing_list=[], orphan_list=["junk.deb", "old.deb"], fix=fix) == expected
+    deleted = sorted(call.args[0] for call in _mock_storage(src).delete.call_args_list)
+    assert deleted == (["junk.deb", "old.deb"] if fix else [])
 
 
 # =========================================================================

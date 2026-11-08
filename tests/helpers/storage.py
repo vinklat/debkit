@@ -163,13 +163,6 @@ class TxnStorageStub(FootmarkMixin):
         return self._reserved.get(rel)
 
 
-class NonTxnStorageStub:
-    """Non-transactional storage stub: `is_transactional` reports False for it."""
-
-    def __init__(self) -> None:
-        self.metrics = MagicMock()
-
-
 def storage_namespace(**overrides: object) -> Namespace:
     """CLI-shaped namespace with every option `open_storage()` and `attach_storage_*` read."""
     base: dict[str, object] = {

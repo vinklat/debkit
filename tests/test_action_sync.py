@@ -13,14 +13,14 @@ from typing import IO, Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-from helpers.storage import NonTxnStorageStub, TxnStorageStub
+from helpers.storage import TxnStorageStub
 from txstore import (
     HistoryRetention,
     Storage,
     StorageException,
     StorageFS,
+    StorageNull,
     TransactionHistory,
-    is_transactional,
     maybe_transaction,
 )
 
@@ -41,8 +41,9 @@ def _make_action(*, storage: object = None) -> ActionSync:
 
     Args:
         storage: The storage object attached to the target repo.  Pass a
-            ``TxnStorageStub`` for transactional tests, a ``NonTxnStorageStub``
-            for regression tests, or ``None`` to get a plain ``MagicMock``.
+            ``TxnStorageStub`` for transactional tests, txstore's ``StorageNull``
+            for a backend that refuses transactions, or ``None`` to get a plain
+            ``MagicMock``.
     """
     action = ActionSync.__new__(ActionSync)
     action.output = OutputType.brief
@@ -77,16 +78,6 @@ def _source(action: ActionSync) -> MagicMock:
 def _target(action: ActionSync) -> MagicMock:
     """Return the mocked target repo attached by `_make_action` or `_init_action`."""
     return cast(MagicMock, action.target_repo)
-
-
-# ---------------------------------------------------------------------------
-# Protocol conformance
-# ---------------------------------------------------------------------------
-
-
-def test_txn_stub_is_transactional() -> None:
-    assert is_transactional(TxnStorageStub())
-    assert not is_transactional(NonTxnStorageStub())
 
 
 # ---------------------------------------------------------------------------
@@ -739,14 +730,12 @@ def test_check_reports_an_empty_target_inconsistent(tmp_path: Path) -> None:
 
 
 def test_sync_no_txn_on_non_txn_storage() -> None:
-    """TransactionNotSupportedMixin backend must not trigger NotImplementedError.
+    """A backend that refuses transactions runs without one.
 
-    Before the FootmarkMixin discriminator fix, isinstance(storage,
-    is_transactional) returned True for NonTxnStorageStub, and the
-    subsequent transaction_begin() call raised NotImplementedError.
+    `StorageNull` is a txstore `TransactionNotSupportedMixin` backend, whose
+    `transaction_begin()` raises `NotImplementedError`.
     """
-    non_txn = NonTxnStorageStub()
-    action = _make_action(storage=non_txn)
+    action = _make_action(storage=StorageNull())
 
     action.sync()  # must not raise
 
