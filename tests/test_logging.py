@@ -43,6 +43,14 @@ def test_debug_adds_module_and_function_and_quiets_third_party() -> None:
     assert all(logging.getLogger(name).level == logging.INFO for name in QUIET_LOGGERS)
 
 
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_plain_lines_escape_control_characters(level: str) -> None:
+    configure_logging(level)
+    line = _format("pkg\r\nINFO forged\x1b[2K\x85\tend", logging.getLevelNamesMapping()[level])
+    assert line.endswith("pkg\\x0d\\x0aINFO forged\\x1b[2K\\x85\tend")
+    assert line.replace("\t", "").isprintable()
+
+
 def test_json_lines_escape_forged_entries() -> None:
     configure_logging("WARNING", LogFormat.json)
     line = _format("pkg\nINFO forged", logging.WARNING)

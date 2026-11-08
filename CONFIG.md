@@ -27,7 +27,7 @@ flags in `argparser.py`, subcommand flags in the owning `Action*` module.
 | `-V`, `--version`     | none                      | none              | Prints `__version__` and exits                                                              |
 | `--target-url`        | `DEBKIT_TARGET_URL`       | —                 | Target deb source string → [VALIDATION.md](VALIDATION.md#debian-source-strings)             |
 | `-l`, `--log-level`   | `DEBKIT_LOG_LEVEL`        | `INFO`            | Values → [VALIDATION.md](VALIDATION.md#log-levels)                                          |
-| `--log-format`        | `DEBKIT_LOG_FORMAT`       | `plain`           | `plain` lines (module and function added at DEBUG) or one `json` object per line            |
+| `--log-format` | `DEBKIT_LOG_FORMAT` | `plain` | `plain` lines (module and function added at DEBUG) with control characters but tab escaped as `\xNN`, or one `json` object per line |
 | `-n`, `--skip-verify` | `DEBKIT_SKIP_VERIFY`      | off               | Disables TLS, GPG, and digest verification → [CRYPTO.md](CRYPTO.md#verification-switches)   |
 | `--skip-verify-ssl`   | `DEBKIT_SKIP_VERIFY_SSL`  | off               | Disables TLS certificate verification                                                       |
 | `--skip-verify-gpg` | `DEBKIT_SKIP_VERIFY_GPG` | off | Disables GPG verification and Release signing → [CRYPTO.md](CRYPTO.md#verification-switches) |

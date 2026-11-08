@@ -18,12 +18,34 @@ QUIET_LOGGERS = ("urllib3", "botocore", "boto3", "s3transfer")
 _PLAIN_FORMAT = "%(levelname)s %(message)s"
 _DEBUG_FORMAT = "%(levelname)s %(module)s %(funcName)s %(message)s"
 
+# C0 and C1 control characters and DEL, except tab, each become a visible ``\xNN``.
+_CONTROL_ESCAPES = {
+    code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0)) if code != ord("\t")
+}
+
 
 class LogFormat(StrEnum):
     """Log line format."""
 
     plain = "plain"
     json = "json"
+
+
+class _PlainFormatter(logging.Formatter):
+    """Emit one plain line per record with control characters escaped.
+
+    Repository content in a message (package names, Release fields, URLs) could otherwise carry a
+    newline or carriage return that forges an extra entry, or an ANSI escape that rewrites the
+    terminal (CWE-117). A traceback still spans several lines; `LogFormat.json` keeps it on one.
+    """
+
+    def formatMessage(self, record: logging.LogRecord) -> str:
+        r"""Format `record` through the template, then escape its control characters.
+
+        Returns:
+            The formatted line with each C0/C1 control except tab replaced by ``\xNN``.
+        """
+        return super().formatMessage(record).translate(_CONTROL_ESCAPES)
 
 
 class _JsonFormatter(logging.Formatter):
@@ -70,7 +92,7 @@ def configure_logging(level: str, log_format: LogFormat = LogFormat.plain) -> No
         handler.setFormatter(_JsonFormatter())
     else:
         handler.setFormatter(
-            logging.Formatter(_DEBUG_FORMAT if numeric <= logging.DEBUG else _PLAIN_FORMAT)
+            _PlainFormatter(_DEBUG_FORMAT if numeric <= logging.DEBUG else _PLAIN_FORMAT)
         )
     logging.basicConfig(level=numeric, handlers=[handler], force=True)
     if numeric <= logging.DEBUG:
