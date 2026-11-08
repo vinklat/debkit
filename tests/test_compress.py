@@ -3,19 +3,64 @@
 from __future__ import annotations
 
 import lzma
+import tracemalloc
 
 import pytest
 
-from debkit.repo.compress import CODECS, Codec, codec_for
+from debkit.repo.compress import CODECS, Codec, SizeLimitError, codec_for
 
 _DATA = b"Package: foo\nVersion: 1.0\n" * 32
+_COMPRESSED = [codec for codec in CODECS if codec.suffix]
+_BOMB_SIZE = 32 << 20  # past every decoder's working set, the 8 MiB xz dictionary included
 
 
-@pytest.mark.parametrize("codec", CODECS, ids=lambda codec: codec.suffix or "plain")
+def _ids(codec: Codec) -> str:
+    return codec.suffix or "plain"
+
+
+@pytest.mark.parametrize("codec", CODECS, ids=_ids)
 def test_round_trip(codec: Codec) -> None:
     encoded = codec.compress(_DATA)
     assert (encoded != _DATA) is bool(codec.suffix)  # compressed unless uncompressed
-    assert codec.decompress(encoded) == _DATA
+    assert codec.decompress(encoded, len(_DATA)) == _DATA
+
+
+@pytest.mark.parametrize("codec", CODECS, ids=_ids)
+def test_decompress_refuses_output_past_the_limit(codec: Codec) -> None:
+    with pytest.raises(SizeLimitError):
+        codec.decompress(codec.compress(_DATA), len(_DATA) - 1)
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_stops_a_bomb_before_inflating_it(codec: Codec) -> None:
+    """The decoder stops at the limit: memory stays far below the inflated size."""
+    bomb = codec.compress(bytes(_BOMB_SIZE))
+    tracemalloc.start()
+    try:
+        with pytest.raises(SizeLimitError):
+            codec.decompress(bomb, 1024)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < _BOMB_SIZE // 2
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_reads_concatenated_streams(codec: Codec) -> None:
+    """Multi-stream xz/bz2 and multi-member gzip decode in full, as the one-shot decoders do."""
+    encoded = codec.compress(_DATA) + codec.compress(b"tail")
+    assert codec.decompress(encoded, len(_DATA) + 4) == _DATA + b"tail"
+
+
+@pytest.mark.parametrize("codec", _COMPRESSED, ids=_ids)
+def test_decompress_refuses_a_truncated_stream(codec: Codec) -> None:
+    with pytest.raises(EOFError):
+        codec.decompress(codec.compress(_DATA)[:-8], len(_DATA))
+
+
+def test_xz_skips_stream_padding() -> None:
+    encoded = codec_for(".xz").compress(_DATA) + bytes(4)
+    assert codec_for(".xz").decompress(encoded, len(_DATA)) == _DATA
 
 
 def test_lzma_writes_the_lzma_alone_format() -> None:
@@ -26,7 +71,7 @@ def test_lzma_writes_the_lzma_alone_format() -> None:
 
 def test_lzma_still_reads_an_xz_stream() -> None:
     """An `.lzma` an older debkit wrote in xz format stays readable."""
-    assert codec_for("Packages.lzma").decompress(lzma.compress(_DATA)) == _DATA
+    assert codec_for("Packages.lzma").decompress(lzma.compress(_DATA), len(_DATA)) == _DATA
 
 
 @pytest.mark.parametrize(

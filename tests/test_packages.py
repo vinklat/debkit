@@ -18,8 +18,10 @@ import pytest
 from helpers.factories import make_package, make_packages_block, make_params, make_storage_mock
 from txstore import StorageFS, calc_digests
 
+from debkit.repo import packages as packages_module
+from debkit.repo.compress import codec_for
 from debkit.repo.hashes import ChecksumException
-from debkit.repo.packages import MAX_INDICES_BYTES, Packages, PackagesException
+from debkit.repo.packages import Packages, PackagesException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import Release
 
@@ -132,7 +134,7 @@ def test_packages_find_packages_file_reads_the_uncompressed_index_last() -> None
     root.digests = {"main/binary-amd64/Packages": {}}
     _storage(pkgs).exists.return_value = True
     path, fun = pkgs._find_packages_file(root, "main", "amd64")
-    assert (path, fun(b"raw")) == ("dists/bookworm/main/binary-amd64/Packages", b"raw")
+    assert (path, fun(b"raw", 3)) == ("dists/bookworm/main/binary-amd64/Packages", b"raw")
 
     pkgs = _new_packages()
     root.digests["main/binary-amd64/Packages.gz"] = {}
@@ -341,18 +343,24 @@ def test_packages_load_refuses_bytes_the_release_does_not_list(
     assert pkgs.packages == {}
 
 
-def test_packages_load_exceeds_size_cap_raises() -> None:
-    pkgs = _new_packages()
-    huge = b"x" * (MAX_INDICES_BYTES + 1)
-    _storage(pkgs).get.return_value = b"compressed"
-    with patch.object(
-        Packages,
-        "_find_packages_file",
-        return_value=("p", lambda _b: huge),
-    ):
-        root = MagicMock(spec=Release)
-        with pytest.raises(PackagesException, match="soft cap"):
-            pkgs.load(root, "main", "amd64")
+@pytest.mark.parametrize("suffix", [".gz", ".xz"])
+def test_packages_load_refuses_an_index_past_the_size_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    """A real compressed index that inflates past the cap is refused, not loaded."""
+    monkeypatch.setattr(packages_module, "MAX_INDICES_BYTES", 1024)
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    stored = codec_for(suffix).compress(make_packages_block("foo").encode() * 64)
+    root = Release(storage, params)
+    root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(stored))
+    storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
+    pkgs = Packages(storage, params)
+
+    with pytest.raises(PackagesException, match="soft cap"):
+        pkgs.load(root, "main", "amd64")
+
+    assert pkgs.packages == {}
 
 
 # ---------------------------------------------------------------------------

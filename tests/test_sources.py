@@ -18,6 +18,7 @@ from helpers.factories import make_params, make_storage_mock
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
+from debkit.repo.compress import codec_for
 from debkit.repo.packages import PackagesException
 from debkit.repo.params import RepoParams
 from debkit.repo.sources import Sources
@@ -241,7 +242,7 @@ def test_sources_load_expands_the_index_it_finds() -> None:
     storage.get.return_value = gzip.compress(_STANZA_3.encode("utf-8"))
     src = _new_sources(storage=storage, params=make_params(verify_digests=False))
     root = MagicMock()
-    found = ("dists/bookworm/main/source/Sources.gz", gzip.decompress)
+    found = ("dists/bookworm/main/source/Sources.gz", codec_for(".gz").decompress)
 
     with patch.object(Sources, "_find_packages_file", return_value=found):
         assert src.load(root, "main", "source") is True

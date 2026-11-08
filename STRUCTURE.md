@@ -31,7 +31,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/component.py` | Component (suite/component) helpers. |
 | `src/debkit/repo/changes.py` | `.changes` parsing. |
 | `src/debkit/repo/debfile.py` | `.deb` introspection. |
-| `src/debkit/repo/compress.py` | Index codecs; `codec_for()` picks one by suffix; discovery order → [VALIDATION.md](VALIDATION.md#repository-index-paths). |
+| `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix; discovery order → [VALIDATION.md](VALIDATION.md#repository-index-paths). |
 | `src/debkit/repo/gnupg.py` | GPG sign/verify wrapper → [CRYPTO.md](CRYPTO.md#gpg). |
 | `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `HexDigests`, `ChecksumException`; re-exports txstore's algorithm-name lists → [CRYPTO.md](CRYPTO.md#checksums). |
 | `tests/` | Test suite → [TESTING.md](TESTING.md#file-layout). |

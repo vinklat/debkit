@@ -113,6 +113,15 @@ per entry by its transfer; the source is never probed.
 | Scope | Every candidate index, discovered while parsing as well as listed in the Release; the root `Release`, `Release.gpg`, and `InRelease` are never filtered | — |
 | Effect | An excluded index is not mirrored, and is purged from the target as an orphan | — |
 
+## Index decoding
+
+Implemented by `Packages.load()` in `repo/packages.py`, which `Sources` inherits, through the
+decoders in `repo/compress.py`.
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Decompressed size | Decoding stops as soon as the output passes `MAX_INDICES_BYTES` (256 MiB), so a compression bomb is never inflated in full. | → `PackagesException` (Read) |
+
 ## Package stanzas
 
 Parsed and written by `Package.parse()` and `Package.serialize()` through `debian.deb822`.

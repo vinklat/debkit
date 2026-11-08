@@ -13,7 +13,7 @@ from typing import (
 
 from txstore import calc_digests, compare_digests, is_unsafe_path
 
-from debkit.repo.compress import CODECS, codec_for
+from debkit.repo.compress import CODECS, SizeLimitError, codec_for
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.release import Release
@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-# Soft cap on decompressed Packages-indices size (bytes). Guards against
-# zip-bomb-style payloads served over http(s). Documented in VALIDATION.md.
+# Soft cap on decompressed Packages-indices size (bytes); decoding stops as soon as it is
+# passed, so a zip-bomb-style payload is never inflated in full
+# -> [VALIDATION.md](VALIDATION.md#index-decoding)
 MAX_INDICES_BYTES = 256 * 1024 * 1024
 
 
@@ -163,7 +164,7 @@ class Packages:
 
     def _find_packages_file(
         self, root_release: Release, comp: str, arch: str
-    ) -> tuple[str, Callable[[bytes], bytes]]:
+    ) -> tuple[str, Callable[[bytes, int], bytes]]:
         """Find usable existing Package indices files from repo.
 
         There may be more than one indices file in the repo with different compression.
@@ -180,7 +181,7 @@ class Packages:
         Returns:
             Tuple[str, Callable]: The path of the file to read and its decompression function.
         """
-        ret: None | tuple[str, Callable[[bytes], bytes]] = None
+        ret: None | tuple[str, Callable[[bytes, int], bytes]] = None
 
         for codec in CODECS:
             # search for all Packages indices files, the uncompressed one included, so a
@@ -258,6 +259,7 @@ class Packages:
 
         Raises:
             ChecksumException: Checksum mismatch for Packages file.
+            PackagesException: The decompressed index exceeds `MAX_INDICES_BYTES`.
 
         Returns:
             bool: True if the packages indices file is successfully loaded, False otherwise.
@@ -281,13 +283,12 @@ class Packages:
             logger.info("No packages indices.")
             return False
 
-        raw = decompress_fun(enc_data)
-
-        if len(raw) > MAX_INDICES_BYTES:
+        try:
+            raw = decompress_fun(enc_data, MAX_INDICES_BYTES)
+        except SizeLimitError as exc:
             raise PackagesException(
-                f"Decompressed indices {indices_path} exceeds soft cap "
-                f"({len(raw)} > {MAX_INDICES_BYTES} bytes)."
-            )
+                f"Decompressed indices {indices_path} exceeds soft cap ({MAX_INDICES_BYTES} bytes)."
+            ) from exc
 
         data = raw.decode("utf-8")
 
