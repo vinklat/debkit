@@ -247,8 +247,8 @@ class Action:
         self.gpg: GnuPG | None = None
         self.history_retention: HistoryRetention = history_retention(pars)
 
-        skip_verify: bool = hasattr(pars, "skip_verify") and pars.skip_verify
-        skip_verify_gpg: bool = hasattr(pars, "skip_verify_gpg") and pars.skip_verify_gpg
+        skip_verify: bool = getattr(pars, "skip_verify", False)
+        skip_verify_gpg: bool = getattr(pars, "skip_verify_gpg", False)
 
         # one warning per run, as for `--allow-release-rollback`
         # -> [CRYPTO.md](CRYPTO.md#verification-switches)

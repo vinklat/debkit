@@ -10,6 +10,7 @@ from humanize import naturalsize
 from txstore import maybe_transaction
 
 from debkit.action import (
+    OUTPUT_DEFAULT,
     Action,
     ActionException,
     OutputType,
@@ -53,16 +54,12 @@ class ActionPkg(Action):
             create_path (bool): Create path or bucket if True.
         """
         super().__init__(pars, create_path=create_path)
-        self.output: OutputType = pars.output if hasattr(pars, "output") else OutputType.brief
+        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
         self.pkg_pattern: dict[str, re.Pattern[str]] | None = getattr(pars, "pkg_pattern", None)
-        self.changes_filename: str | None = (
-            pars.changes_filename if hasattr(pars, "changes_filename") else None
-        )
-        self.changes_sha256: str | None = (
-            pars.changes_sha256 if hasattr(pars, "changes_sha256") else None
-        )
-        self.deb_filename: str | None = pars.deb_filename if hasattr(pars, "deb_filename") else None
-        self.component: str = pars.component if hasattr(pars, "component") else "main"
+        self.changes_filename: str | None = getattr(pars, "changes_filename", None)
+        self.changes_sha256: str | None = getattr(pars, "changes_sha256", None)
+        self.deb_filename: str | None = getattr(pars, "deb_filename", None)
+        self.component: str = getattr(pars, "component", "main")
 
         self.incoming_storage: Storage | None = (
             attach_storage_plain(pars, pars.incoming_url, create_path=True)

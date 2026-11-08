@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from humanize import naturalsize
 from txstore import get_supported_schemes, maybe_transaction, redact_url
 
-from debkit.action import Action, ActionException, OutputType, dump_json
+from debkit.action import OUTPUT_DEFAULT, Action, ActionException, OutputType, dump_json
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
@@ -92,12 +92,10 @@ class ActionSync(Action):
                     raise ActionException(f"Invalid architecture: {arch!r}")
 
         super().__init__(pars, create_path=create_path)
-        self.output: OutputType = pars.output if hasattr(pars, "output") else OutputType.brief
-        self.fix: bool = pars.fix if hasattr(pars, "fix") else False
-        self.verify_existing: bool = (
-            pars.verify_existing if hasattr(pars, "verify_existing") else False
-        )
-        self.indices_only: bool = pars.indices_only if hasattr(pars, "indices_only") else False
+        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
+        self.fix: bool = getattr(pars, "fix", False)
+        self.verify_existing: bool = getattr(pars, "verify_existing", False)
+        self.indices_only: bool = getattr(pars, "indices_only", False)
         self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
 
         # force selected architectures from argparser

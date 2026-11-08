@@ -16,6 +16,7 @@ from txstore import (
 )
 
 from debkit.action import (
+    OUTPUT_DEFAULT,
     ActionException,
     OutputType,
     attach_storage_root,
@@ -50,8 +51,8 @@ class ActionHistory:
         Args:
             pars: Parsed CLI namespace.
         """
-        self.output: OutputType = pars.output if hasattr(pars, "output") else OutputType.brief
-        self.dry_run: bool = pars.dry_run if hasattr(pars, "dry_run") else False
+        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
+        self.dry_run: bool = getattr(pars, "dry_run", False)
         self.orphans: bool = getattr(pars, "orphans", False)
         self.history_retention: HistoryRetention = history_retention(pars)
         self._storage = attach_storage_root(pars)
