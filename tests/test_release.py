@@ -216,6 +216,57 @@ def test_save_signed_keeps_and_rewrites_the_root_signatures() -> None:
     assert [call.args[0] for call in gpg.sign.call_args_list] == [body, body]
 
 
+@pytest.mark.parametrize(
+    ("source", "root"),
+    [("fs:///r ReleaseCandidate main", "dists/ReleaseCandidate"), ("fs:///r Release1", "Release1")],
+    ids=["componented", "flat"],
+)
+def test_save_signed_names_the_signatures_by_layout_not_by_dist(source: str, root: str) -> None:
+    """Regression: a substitution of every `Release` in the path renamed the dist too."""
+    params = RepoParams(verify_gpg=True)
+    params.from_deb_source(source)
+    storage = MagicMock()
+    r = Release(storage, params, gpg=_signing_gpg())
+    r.setup(fields={"Origin": "test"})
+
+    r.save()
+
+    written = [call.args[0] for call in storage.put.call_args_list]
+    assert written == [f"{root}/Release", f"{root}/InRelease", f"{root}/Release.gpg"]
+
+
+def _inrelease_only_root(tmp_path: Path, params: RepoParams, gpg: MagicMock | None) -> Release:
+    storage = StorageFS(str(tmp_path))
+    storage.put(f"{_ROOT}/InRelease", _clearsigned(b"Origin: inline\nSuite: bookworm\n"))
+    r = Release(storage, params, gpg=gpg)
+    r.load()
+    r.fields["Origin"] = "new"
+    r.modified = True
+    return r
+
+
+def test_save_unsigned_of_an_inrelease_loaded_root_writes_the_release(tmp_path: Path) -> None:
+    """Regression: the save wrote the unsigned body into `InRelease` and no `Release`."""
+    r = _inrelease_only_root(tmp_path, _params(), gpg=None)
+
+    r.save()
+
+    assert (tmp_path / _ROOT / "Release").read_bytes().startswith(b"Origin: new")
+    assert not (tmp_path / _ROOT / "InRelease").exists()
+
+
+def test_save_signed_of_an_inrelease_loaded_root_writes_every_root_file(tmp_path: Path) -> None:
+    """Regression: the save signed into `InInRelease` and `InRelease.gpg`."""
+    r = _inrelease_only_root(tmp_path, _params(verify_gpg=True), gpg=_accepting_gpg())
+    r.gpg = _signing_gpg()
+
+    r.save()
+
+    names = sorted(path.name for path in (tmp_path / _ROOT).iterdir())
+    assert names == ["InRelease", "Release", "Release.gpg"]
+    assert (tmp_path / _ROOT / "InRelease").read_bytes() == b"inline"
+
+
 def test_save_refuses_an_empty_inline_signature_before_writing_inrelease() -> None:
     """`GnuPG.sign` returns an empty signature when signing fails, e.g. on a wrong passphrase."""
     storage = MagicMock()

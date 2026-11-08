@@ -129,6 +129,8 @@ class Release(HexDigests):
         hash (str): Hexdigest of a file content (for changes detection).
         root_digests (Dict[str, Dict[str, str]]): Release key → digests of each root
             Release file as the last load fetched it.
+        is_root (bool): True once `load` or `setup` made this the root Release; a root
+            save writes and signs the layout's root paths, not the file it was read from.
     """
 
     def __init__(
@@ -150,6 +152,7 @@ class Release(HexDigests):
         self.hashfuns: list[str] = []
         self.hash = ""
         self.root_digests: dict[str, dict[str, str]] = {}
+        self.is_root = False
         super().__init__()
 
     def reset(self) -> None:
@@ -180,6 +183,7 @@ class Release(HexDigests):
         ret.modified = self.modified
         ret.hash = self.hash
         ret.root_digests = {key: digests.copy() for key, digests in self.root_digests.items()}
+        ret.is_root = self.is_root
         return ret
 
     def __repr__(self) -> str:
@@ -377,19 +381,15 @@ class Release(HexDigests):
         Returns:
             bytes: The verified data.
         """
-        ret_data: bytes = b""
-
-        if self.gpg is None:
-            return ret_data
+        # only reached when `_checks_signatures()` holds, so a missing GnuPG is a caller bug,
+        # never an unverified load
+        assert self.gpg is not None, "signature check without GnuPG"
 
         if detach_sign is None:
             logger.debug("Verify signed InRelease...")
-            ret_data = self.gpg.verify(data)
-        else:
-            logger.debug("Verify detached GPG signature...")
-            ret_data = self.gpg.verify(data, detach_sign=detach_sign)
-
-        return ret_data
+            return self.gpg.verify(data)
+        logger.debug("Verify detached GPG signature...")
+        return self.gpg.verify(data, detach_sign=detach_sign)
 
     def _load_root_files(self, use_inrelease: bool) -> bytes:
         """Fetch every root Release file once and verify each signature present.
@@ -468,6 +468,7 @@ class Release(HexDigests):
             bool: Always True; a missing root Release raises.
         """
         use_inrelease, self.filename = self._find_root_files()
+        self.is_root = True
         self._parse_loaded(self._load_root_files(use_inrelease))
         logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
         return True
@@ -491,6 +492,7 @@ class Release(HexDigests):
             bool: True if the Release file was loaded, False when storage lacks it.
         """
         self._require_coordinates(comp, arch)
+        self.is_root = False
         filename = self._component_release_path(comp, arch)
         if not self.storage.exists(filename):
             self.filename = None
@@ -537,12 +539,11 @@ class Release(HexDigests):
 
         return ret
 
-    def _sign_gpg(self, filename: str, enc_data: bytes) -> None:
-        """Sign Release file with GnuPG.
+    def _sign_gpg(self, enc_data: bytes) -> None:
+        """Sign the root Release into the layout's `InRelease` and `Release.gpg`.
 
         Args:
-            filename (str): The filename to sign.
-            enc_data (bytes): The encoded data to sign.
+            enc_data (bytes): The encoded root Release to sign.
 
         Raises:
             ReleaseWriteException: GnuPG sign error
@@ -554,7 +555,7 @@ class Release(HexDigests):
 
         signed_data = self.gpg.sign(enc_data).encode("utf-8")
         if len(signed_data):
-            signed_filename = re.sub(r"Release", "InRelease", filename)
+            signed_filename = self.params.indices_path("InRelease")
             logger.info("Save signed InRelease...")
             self.storage.put(signed_filename, signed_data)
         else:
@@ -562,7 +563,7 @@ class Release(HexDigests):
 
         detached_signature = self.gpg.sign(enc_data, detach=True).encode("utf-8")
         if len(detached_signature):
-            detached_filename = f"{filename}.gpg"
+            detached_filename = self.params.indices_path("Release.gpg")
             logger.info("Save detached GPG signature...")
             self.storage.put(detached_filename, detached_signature)
         else:
@@ -588,7 +589,10 @@ class Release(HexDigests):
     def save(self) -> dict[str, str] | None:
         """Save Release file.
 
-        A root Release saved without signing drops its old signatures.
+        A root Release is written to the layout's `Release` even when it was read from an
+        `InRelease`, then signed, or its old signatures dropped when it is saved unsigned
+        -> [CRYPTO.md](CRYPTO.md#verification-switches). A per-component Release is never
+        signed.
 
         Returns:
             Dict[str, str] | None: The digests of the saved file.
@@ -600,15 +604,20 @@ class Release(HexDigests):
             logger.debug("%s not modified.", self.filename)
             return None
 
+        if self.is_root:
+            self.filename = self.params.indices_path("Release")
+
         data = self.serialize()
         enc_data = data.encode("utf-8")
         logger.info("Save %s...", self.filename)
         self.storage.put(self.filename, enc_data)
         digests = calc_digests(enc_data)
 
+        if not self.is_root:
+            return digests
         if self.gpg and self.params.verify_gpg:
-            self._sign_gpg(self.filename, enc_data)
-        elif self.filename == self.params.indices_path("Release"):
+            self._sign_gpg(enc_data)
+        else:
             self._remove_root_signatures()
 
         return digests
@@ -741,6 +750,7 @@ class Release(HexDigests):
                 "Description": "Generated by debkit",
             }
         )
+        self.is_root = True
         self._start_file(self.params.indices_path("Release"))
 
     def setup_component(self, comp: str, arch: str) -> None:
@@ -754,6 +764,7 @@ class Release(HexDigests):
             ValueError: `comp` or `arch` is empty.
         """
         self._require_coordinates(comp, arch)
+        self.is_root = False
         self.fields = {"Component": comp, "Architecture": arch}
         self._start_file(self._component_release_path(comp, arch))
 
