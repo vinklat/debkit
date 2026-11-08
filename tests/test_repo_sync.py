@@ -27,7 +27,7 @@ from debkit.repo.package import Package
 from debkit.repo.packages import Packages
 from debkit.repo.params import RepoParams
 from debkit.repo.release import IndexEntry
-from debkit.repo.repo_rw import CheckReport, RepoRW
+from debkit.repo.repo_rw import RepoRW
 from debkit.repo.repo_sync import RepoSync, RepoSyncException, SyncPlan
 
 INDICES = ["dists/bookworm/Release", "dists/bookworm/main/binary-amd64/Packages"]
@@ -750,112 +750,6 @@ def test_sync_empty_copy_list_with_deletes_only() -> None:
 
 
 # =========================================================================
-# § 3c. check (verify + fix)
-# =========================================================================
-
-
-def _patch_verify(repo: RepoRW, outcomes: dict[str, bool | type[BaseException]]) -> MagicMock:
-    """Replace _verify_file with a controlled mock."""
-
-    def side_effect(file: str, *_a: object, **_k: object) -> bool:
-        outcome = outcomes.get(file, True)
-        if isinstance(outcome, type) and issubclass(outcome, BaseException):
-            raise outcome("boom")
-        return bool(outcome)
-
-    mock = MagicMock(side_effect=side_effect)
-    repo._verify_file = mock  # type: ignore[method-assign]
-    return mock
-
-
-def _target_with_pkgs(filenames: list[str], extra: list[str] | None = None) -> RepoRW:
-    """A target whose indices list `filenames` and whose storage holds them plus `extra`."""
-    _, tgt = _two_repos(
-        src_components={},
-        tgt_components={"main": {"amd64": [make_package(f) for f in filenames]}},
-        tgt_list=[*filenames, *INDICES, *(extra or [])],
-    )
-    return tgt
-
-
-def test_check_all_clean_returns_zero_zero() -> None:
-    tgt = _target_with_pkgs(["p1.deb", "p2.deb"])
-    _patch_verify(tgt, {})
-
-    assert tgt.check() == CheckReport([], [], 0, 0)
-    _mock_storage(tgt).delete.assert_not_called()
-
-
-@pytest.mark.parametrize(("fix", "expected"), [(False, (1, 0)), (True, (1, 1))])
-def test_check_one_corrupt_is_counted_and_deleted_only_with_fix(
-    fix: bool, expected: tuple[int, int]
-) -> None:
-    tgt = _target_with_pkgs(["p1.deb", "p2.deb"])
-    _patch_verify(tgt, {"p1.deb": False})
-
-    report = tgt.check(fix=fix)
-
-    assert (report.failed, report.fixed) == expected
-    deleted = [call.args[0] for call in _mock_storage(tgt).delete.call_args_list]
-    assert deleted == (["p1.deb"] if fix else [])
-
-
-def test_check_missing_file_skipped_and_not_counted(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    tgt = _target_with_pkgs(["p1.deb", "p2.deb"])
-    _mock_storage(tgt).list.return_value = ["p2.deb", *INDICES]
-    verify = _patch_verify(tgt, {})
-
-    with caplog.at_level(logging.WARNING):
-        assert tgt.check() == CheckReport(["p1.deb"], [], 0, 0)
-
-    called = {call.args[0] for call in verify.call_args_list}
-    assert "p1.deb" not in called
-    assert "p2.deb" in called
-    assert any("missing" in r.message for r in caplog.records)
-
-
-def test_check_storage_exception_counts_as_error() -> None:
-    tgt = _target_with_pkgs(["p1.deb", "p2.deb"])
-    _patch_verify(tgt, {"p1.deb": StorageException})
-
-    assert tgt.check().failed == 1
-    _mock_storage(tgt).delete.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    ("fix", "purge_orphans", "fixed"),
-    [(False, True, 0), (True, True, 2), (True, False, 0)],
-    ids=["check", "check-fix", "verify-existing"],
-)
-def test_check_orphans_are_deleted_from_its_own_storage_only_with_fix(
-    fix: bool, purge_orphans: bool, fixed: int
-) -> None:
-    tgt = _target_with_pkgs(["p1.deb"], extra=["junk.deb", "old.deb"])
-    _patch_verify(tgt, {})
-
-    report = tgt.check(fix=fix, purge_orphans=purge_orphans)
-
-    assert report == CheckReport([], ["junk.deb", "old.deb"], 0, fixed)
-    deleted = sorted(call.args[0] for call in _mock_storage(tgt).delete.call_args_list)
-    assert deleted == (["junk.deb", "old.deb"] if fixed else [])
-
-
-def test_check_orphan_delete_failure_is_logged_and_not_counted_fixed(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    tgt = _target_with_pkgs(["p1.deb"], extra=["junk.deb", "old.deb"])
-    _patch_verify(tgt, {})
-    _mock_storage(tgt).delete.side_effect = [StorageException("denied"), None]
-
-    with caplog.at_level(logging.ERROR):
-        assert tgt.check(fix=True).fixed == 1
-
-    assert "Error deleting file: junk.deb" in caplog.text
-
-
-# =========================================================================
 # § 3c. consistency_lists (what check and --verify-existing act on)
 # =========================================================================
 
@@ -1000,61 +894,6 @@ def test_transfer_file_does_not_pass_acl_kwarg() -> None:
     assert src._transfer_file("p1.deb", tgt) is True
 
     kwargs = _mock_storage(src).transfer.call_args.kwargs
-    assert "acl" not in kwargs
-
-
-# =========================================================================
-# § 3e. RepoRW._verify_file
-# =========================================================================
-
-
-def test_verify_file_valid_digests_no_fix() -> None:
-    _, tgt = _two_repos(
-        src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
-    )
-    tgt.verify_checksum = MagicMock(return_value=True)  # type: ignore[method-assign]
-
-    assert tgt._verify_file("p1.deb", (1, 1), fix=False) is True
-    _mock_storage(tgt).add_metadata.assert_not_called()
-
-
-def test_verify_file_invalid_digests_returns_false() -> None:
-    _, tgt = _two_repos(
-        src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
-    )
-    tgt.verify_checksum = MagicMock(return_value=False)  # type: ignore[method-assign]
-
-    assert tgt._verify_file("p1.deb", (1, 1), fix=False) is False
-    _mock_storage(tgt).transfer.assert_called_once()
-    _mock_storage(tgt).add_metadata.assert_not_called()
-
-
-def test_verify_file_skips_verify_when_digests_disabled() -> None:
-    _, tgt = _two_repos(
-        src_components={"main": {"amd64": []}},
-        tgt_components={"main": {"amd64": []}},
-        tgt_list=[],
-        verify_digests=False,
-    )
-    tgt.verify_checksum = MagicMock(return_value=False)  # type: ignore[method-assign]
-
-    assert tgt._verify_file("p1.deb", (1, 1), fix=False) is True
-    tgt.verify_checksum.assert_not_called()
-
-
-def test_verify_file_fix_does_not_pass_acl_kwarg() -> None:
-    """ACL handling now lives in the storage layer (StorageS3.default_acl)."""
-    _, tgt = _two_repos(
-        src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
-    )
-    tgt_storage = _mock_storage(tgt)
-    tgt_storage.get_type.return_value = StorageType.s3
-    tgt.verify_checksum = MagicMock(return_value=True)  # type: ignore[method-assign]
-
-    assert tgt._verify_file("p1.deb", (1, 1), fix=True) is True
-
-    tgt_storage.add_metadata.assert_called_once()
-    kwargs = tgt_storage.add_metadata.call_args.kwargs
     assert "acl" not in kwargs
 
 

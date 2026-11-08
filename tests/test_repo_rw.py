@@ -12,11 +12,12 @@ from unittest.mock import MagicMock, call
 
 import pytest
 from helpers.factories import make_package, make_params, make_storage_mock
-from txstore import StorageException, StorageFS
+from helpers.trees import payload_path, write_dist
+from txstore import Storage, StorageException, StorageFS
 
 from debkit.repo.component import Component
 from debkit.repo.params import RepoParams
-from debkit.repo.repo_rw import RepoRW
+from debkit.repo.repo_rw import CheckReport, RepoRW
 
 
 def _repo() -> tuple[RepoRW, MagicMock]:
@@ -247,3 +248,134 @@ def test_insert_into_a_loaded_multi_arch_flat_repo_keeps_every_package(tmp_path:
     repo.save()
 
     assert sorted(_flat_packages(tmp_path)) == ["aa", "cc", "upstream"]
+
+
+# ---------------------------------------------------------------------------
+# check() — the repository against its own indices, on a real tree
+# ---------------------------------------------------------------------------
+
+
+class _FaultyFS(StorageFS):
+    """`StorageFS` whose reads or deletes of chosen paths fail, recording metadata writes."""
+
+    def __init__(self, base_dir: str, *, unreadable: str = "", undeletable: str = "") -> None:
+        super().__init__(base_dir)
+        self.unreadable = unreadable
+        self.undeletable = undeletable
+        self.metadata_writes: list[tuple[str, dict[str, str], str | None]] = []
+
+    def transfer(
+        self,
+        path_src: str,
+        storage_dst: Storage,
+        path_dst: str | None = None,
+        acl: str | None = None,
+    ) -> dict[str, str]:
+        if path_src == self.unreadable:
+            raise StorageException(f"backend down reading {path_src}")
+        return super().transfer(path_src, storage_dst, path_dst, acl)
+
+    def delete(self, path: str) -> None:
+        if path == self.undeletable:
+            raise StorageException(f"denied deleting {path}")
+        super().delete(path)
+
+    def add_metadata(self, path: str, metadata: dict[str, str], acl: str | None = None) -> None:
+        self.metadata_writes.append((path, metadata, acl))
+
+
+_FOO = payload_path("foo", "1")
+_BAR = payload_path("bar", "1")
+
+
+def _checked(
+    tmp_path: Path, storage: StorageFS | None = None, *, verify_digests: bool = True
+) -> RepoRW:
+    """A loaded repo over a real two-package tree."""
+    write_dist(tmp_path, packages={"foo": "1", "bar": "1"})
+    params = RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False)
+    params.verify_digests = verify_digests
+    repo = RepoRW(storage or StorageFS(str(tmp_path)), params)
+    repo.update()
+    return repo
+
+
+def test_check_finds_a_clean_tree_clean(tmp_path: Path) -> None:
+    assert _checked(tmp_path).check() == CheckReport([], [], 0, 0)
+
+
+@pytest.mark.parametrize("fix", [False, True])
+def test_check_counts_a_corrupt_payload_and_deletes_it_only_with_fix(
+    tmp_path: Path, fix: bool
+) -> None:
+    repo = _checked(tmp_path)
+    (tmp_path / _FOO).write_bytes(b"corrupt")
+
+    assert repo.check(fix=fix) == CheckReport([], [], 1, 1 if fix else 0)
+    assert (tmp_path / _FOO).exists() is not fix
+    assert (tmp_path / _BAR).exists()
+
+
+def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:
+    storage = _FaultyFS(str(tmp_path), unreadable=_FOO)
+    repo = _checked(tmp_path, storage)
+    (tmp_path / _FOO).unlink()
+
+    assert repo.check() == CheckReport([_FOO], [], 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("fix", "purge_orphans", "deleted"),
+    [(False, True, False), (True, True, True), (True, False, False)],
+    ids=["check", "check-fix", "verify-existing"],
+)
+def test_check_deletes_orphans_from_its_own_storage_only_with_fix(
+    tmp_path: Path, fix: bool, purge_orphans: bool, deleted: bool
+) -> None:
+    repo = _checked(tmp_path)
+    orphan = tmp_path / "pool/main/z/zz/zz_1_amd64.deb"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"orphan")
+    key = orphan.relative_to(tmp_path).as_posix()
+
+    report = repo.check(fix=fix, purge_orphans=purge_orphans)
+
+    assert report == CheckReport([], [key], 0, 1 if deleted else 0)
+    assert orphan.exists() is not deleted
+
+
+def test_check_logs_an_orphan_it_cannot_delete_and_counts_it_unfixed(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    key = "pool/main/z/zz/zz_1_amd64.deb"
+    repo = _checked(tmp_path, _FaultyFS(str(tmp_path), undeletable=key))
+    (tmp_path / key).parent.mkdir(parents=True)
+    (tmp_path / key).write_bytes(b"orphan")
+
+    assert repo.check(fix=True).fixed == 0
+    assert f"Error deleting file: {key}" in caplog.text
+
+
+def test_check_counts_a_payload_it_cannot_read_as_failed(tmp_path: Path) -> None:
+    repo = _checked(tmp_path, _FaultyFS(str(tmp_path), unreadable=_FOO))
+
+    assert repo.check(fix=True) == CheckReport([], [], 1, 0)
+    assert (tmp_path / _FOO).exists()
+
+
+def test_check_without_digest_verification_accepts_any_payload(tmp_path: Path) -> None:
+    repo = _checked(tmp_path, verify_digests=False)
+    (tmp_path / _FOO).write_bytes(b"corrupt")
+
+    assert repo.check(fix=True) == CheckReport([], [], 0, 0)
+
+
+def test_check_fix_records_each_verified_digest_as_metadata(tmp_path: Path) -> None:
+    """The ACL is the storage's own default, so none is passed with the metadata."""
+    storage = _FaultyFS(str(tmp_path))
+    repo = _checked(tmp_path, storage)
+
+    repo.check(fix=True)
+
+    assert sorted(path for path, _, _ in storage.metadata_writes) == sorted([_FOO, _BAR])
+    assert all(digests["SHA256"] and acl is None for _, digests, acl in storage.metadata_writes)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import gzip
-import hashlib
 import io
 import json
 import logging
@@ -16,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history, storage_namespace
+from helpers.trees import write_dist
 from txstore import (
     HistoryRetention,
     Storage,
@@ -291,26 +290,7 @@ _PREFIX = "dists/bookworm"
 
 def _write_tree(base: Path, date: str, version: str) -> None:
     """Write a one-package repository whose detached Release is dated *date*."""
-    deb = f"pool/main/f/foo/foo_{version}_amd64.deb"
-    payload = f"deb {version}".encode()
-    packages = (
-        f"Package: foo\nVersion: {version}\nArchitecture: amd64\nFilename: {deb}\n"
-        f"Size: {len(payload)}\nSHA256: {hashlib.sha256(payload).hexdigest()}\n"
-    ).encode()
-    packages = gzip.compress(packages, mtime=0)
-    release = (
-        f"Origin: t\nSuite: bookworm\nDate: {date}\nArchitectures: amd64\nComponents: main\n"
-        f"SHA256:\n {hashlib.sha256(packages).hexdigest()} {len(packages)} "
-        "main/binary-amd64/Packages.gz\n"
-    ).encode()
-    for path, data in {
-        deb: payload,
-        f"{_PREFIX}/main/binary-amd64/Packages.gz": packages,
-        f"{_PREFIX}/Release": release,
-        f"{_PREFIX}/Release.gpg": b"signature",
-    }.items():
-        (base / path).parent.mkdir(parents=True, exist_ok=True)
-        (base / path).write_bytes(data)
+    write_dist(base, packages={"foo": version}, date=date, detached_signature=True)
 
 
 def _fs_action(
@@ -391,28 +371,7 @@ def test_sync_refuses_a_root_release_copy_that_differs_from_the_verified_one(
 
 def _write_other_dist(base: Path, dist: str, packages: dict[str, str]) -> None:
     """Write another dist beside bookworm in the same root, listing *packages* (name → version)."""
-    stanzas: list[str] = []
-    for name, version in packages.items():
-        deb = f"pool/main/{name[0]}/{name}/{name}_{version}_amd64.deb"
-        payload = f"deb {version}".encode()
-        (base / deb).parent.mkdir(parents=True, exist_ok=True)
-        (base / deb).write_bytes(payload)
-        stanzas.append(
-            f"Package: {name}\nVersion: {version}\nArchitecture: amd64\nFilename: {deb}\n"
-            f"Size: {len(payload)}\nSHA256: {hashlib.sha256(payload).hexdigest()}\n"
-        )
-    index = gzip.compress("\n".join(stanzas).encode(), mtime=0)
-    release = (
-        f"Origin: t\nSuite: {dist}\nDate: Tue, 01 Sep 2026 00:00:00 UTC\nArchitectures: amd64\n"
-        f"Components: main\nSHA256:\n {hashlib.sha256(index).hexdigest()} {len(index)} "
-        "main/binary-amd64/Packages.gz\n"
-    ).encode()
-    for path, data in {
-        f"dists/{dist}/main/binary-amd64/Packages.gz": index,
-        f"dists/{dist}/Release": release,
-    }.items():
-        (base / path).parent.mkdir(parents=True, exist_ok=True)
-        (base / path).write_bytes(data)
+    write_dist(base, dist, packages)
 
 
 _BULLSEYE_PATHS = (
@@ -464,6 +423,62 @@ def test_sync_deletes_only_its_own_tree_while_another_dist_does_not_load(tmp_pat
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
     assert (tmp_path / "tgt" / "pool/main/b/bar/bar_1_amd64.deb").exists()
     assert not stale.exists()
+
+
+class _RecordingFS(StorageFS):
+    """`StorageFS` that records every object a sync transfers out of it."""
+
+    def __init__(self, base_dir: str) -> None:
+        super().__init__(base_dir)
+        self.transferred: list[str] = []
+
+    def transfer(
+        self,
+        path_src: str,
+        storage_dst: Storage,
+        path_dst: str | None = None,
+        acl: str | None = None,
+    ) -> dict[str, str]:
+        self.transferred.append(path_src)
+        return super().transfer(path_src, storage_dst, path_dst, acl)
+
+
+def test_sync_copies_only_the_indices_a_real_tree_changed(tmp_path: Path) -> None:
+    """Sync index set, copying and Release skip on a real tree, without stubs.
+
+    A second sync after a source republish copies the index whose digest changed, skips the
+    one both root Releases record alike, and skips one the source lists but does not publish.
+    """
+    src = tmp_path / "src"
+    unchanged, changed, absent = (
+        "main/i18n/Translation-en.gz",
+        "main/i18n/Translation-de.gz",
+        "main/dep11/Components-amd64.yml.gz",
+    )
+    write_dist(
+        src,
+        packages={"foo": "2"},
+        date="Tue, 01 Sep 2026 00:00:00 UTC",
+        detached_signature=True,
+        indices={unchanged: b"en", changed: b"de 1", absent: None},
+    )
+    _fs_action(StorageFS(str(src)), tmp_path / "tgt").sync()
+    write_dist(
+        src,
+        packages={"foo": "3"},
+        date="Thu, 01 Oct 2026 00:00:00 UTC",
+        detached_signature=True,
+        indices={unchanged: b"en", changed: b"de 2", absent: None},
+    )
+    source = _RecordingFS(str(src))
+
+    _fs_action(source, tmp_path / "tgt").sync()
+
+    assert f"{_PREFIX}/{changed}" in source.transferred
+    assert f"{_PREFIX}/{unchanged}" not in source.transferred
+    assert (tmp_path / "tgt" / _PREFIX / changed).read_bytes() == b"de 2"
+    assert (tmp_path / "tgt" / _PREFIX / unchanged).read_bytes() == b"en"
+    assert not (tmp_path / "tgt" / _PREFIX / absent).exists()
 
 
 def test_sync_then_check_finds_the_mirror_consistent(tmp_path: Path) -> None:

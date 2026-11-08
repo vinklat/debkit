@@ -13,10 +13,14 @@ not copied here.
   CLI and action tests use `fake_pars`, both from `tests/conftest.py`.
 - `tests/conftest.py` clears every `DEBKIT_*` and `TXSTORE_*` variable before each test; a test sets
   one with `monkeypatch.setenv`.
-- Factory helpers and storage stubs live in `tests/helpers/`; prefer them over ad-hoc setup.
+- Factory helpers and storage stubs live in `tests/helpers/`; prefer them over ad-hoc setup. A
+  real repository tree on disk comes from `tests/helpers/trees.py`.
 - Import txstore through its façade only; a storage need its public names do not meet goes to
   txstore, not into a private import.
 - Test the owning layer directly; do not rely on broader integration tests to cover a local rule.
+- A rule that a stubbed `Release` or `Component` decides in a unit test also gets one case on a real
+  tree over `StorageFS`, so the stub cannot hide a disagreement with the real class: the sync index
+  set, copying, and Release skip rows, the check, and the shared root.
 - Name test functions `test_<subject>_<scenario>`; parameterize cases that differ only in input.
 - Keep every parameter set non-empty: `empty_parameter_set_mark = "fail_at_collect"` in
   `pyproject.toml` turns an empty set into a collection error, not a skip.
