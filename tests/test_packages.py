@@ -315,39 +315,30 @@ def test_packages_load_empty_payload_with_matching_digest_returns_false() -> Non
         cd.assert_called_once_with(b"")
 
 
-def test_packages_load_empty_payload_with_mismatched_digest_raises() -> None:
-    """0-byte object against non-empty Release digest must raise ChecksumException."""
-    p = make_params(verify_digests=True)
-    pkgs = _new_packages(params=p)
-    _storage(pkgs).get.return_value = b""
-    with (
-        patch.object(
-            Packages,
-            "_find_packages_file",
-            return_value=("dists/bookworm/main/binary-amd64/Packages.xz", lambda b: b),
-        ),
-        patch.object(Packages, "_verify_indices_checksum", return_value=False),
-    ):
-        root = MagicMock(spec=Release)
-        with pytest.raises(ChecksumException, match="Mismatch"):
-            pkgs.load(root, "main", "amd64")
+_INDEX_PATH = "dists/bookworm/main/binary-amd64/Packages.gz"
 
 
-def test_packages_load_digest_mismatch_raises() -> None:
-    p = make_params(verify_digests=True)
-    pkgs = _new_packages(params=p)
-    _storage(pkgs).get.return_value = b"hello"
-    with (
-        patch.object(
-            Packages,
-            "_find_packages_file",
-            return_value=("dists/bookworm/main/binary-amd64/Packages", lambda b: b),
-        ),
-        patch.object(pkgs, "_verify_indices_checksum", return_value=False),
-    ):
-        root = MagicMock(spec=Release)
-        with pytest.raises(ChecksumException):
-            pkgs.load(root, "main", "amd64")
+@pytest.mark.parametrize(
+    "stored",
+    [gzip.compress(make_packages_block("evil").encode(), mtime=0), b"", b"x"],
+    ids=["tampered-gzip", "truncated", "garbage"],
+)
+def test_packages_load_refuses_bytes_the_release_does_not_list(
+    tmp_path: Path, stored: bytes
+) -> None:
+    """Real Release digests against real stored bytes; nothing in the check is patched."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    root = Release(storage, params)
+    listed = gzip.compress(make_packages_block("foo").encode(), mtime=0)
+    root.update_digests("main/binary-amd64/Packages.gz", calc_digests(listed))
+    storage.put(_INDEX_PATH, stored)
+    pkgs = Packages(storage, params)
+
+    with pytest.raises(ChecksumException, match="Mismatch"):
+        pkgs.load(root, "main", "amd64")
+
+    assert pkgs.packages == {}
 
 
 def test_packages_load_exceeds_size_cap_raises() -> None:

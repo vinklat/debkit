@@ -138,7 +138,15 @@ def test_txn_skipped_on_non_txn_storage(mock_debfile_cls: MagicMock, op: str) ->
     """
     action = _txn_action(op, StorageNull(), mock_debfile_cls)
 
-    getattr(action, op)()  # must not raise
+    getattr(action, op)()
+
+    # only the transaction is skipped; the work still runs
+    target = _target(action)
+    if op == "insert":
+        target.transfer_from.assert_called_once()
+    else:
+        target.remove_pkg.assert_called_once_with(action.pkg_pattern)
+    target.save.assert_called_once_with()
 
 
 @pytest.mark.parametrize("op", _OPS)

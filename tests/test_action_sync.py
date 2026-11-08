@@ -803,7 +803,10 @@ def test_sync_no_txn_on_non_txn_storage() -> None:
     """
     action = _make_action(storage=StorageNull())
 
-    action.sync()  # must not raise
+    action.sync()
+
+    # only the transaction is skipped; the work still runs
+    _source(action).sync.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
