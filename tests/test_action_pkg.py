@@ -334,6 +334,81 @@ def test_insert_of_an_arch_all_deb_skips_the_source_arch(mock_debfile_cls: Magic
 
 
 # ---------------------------------------------------------------------------
+# insert() — each .changes file goes to the arches its own control field names
+# ---------------------------------------------------------------------------
+
+
+def _changes_upload(
+    mock_changes_cls: MagicMock, mock_debfile_cls: MagicMock, field: str, files: list[str]
+) -> ActionPkg:
+    """An `ActionPkg` inserting a mocked `.changes` whose debs carry the arch in their name."""
+    action = _make_pkg_action(storage=TxnStorageStub())
+    action.deb_filename = None
+    action.changes_filename = "hello_1.0_amd64.changes"
+    changes = mock_changes_cls.return_value
+    changes.get_archs.return_value = field.split()
+    changes.names_source_arch.return_value = False
+    changes.get_deb_files.return_value = files
+
+    def debfile(_storage: object, filename: str, comp: str) -> MagicMock:
+        instance = MagicMock()
+        instance.filename_field = f"pool/{comp}/{filename}"
+        instance.get_package.return_value = make_package(
+            filename, Architecture=filename.removesuffix(".deb").rsplit("_", 1)[1]
+        )
+        return instance
+
+    mock_debfile_cls.side_effect = debfile
+    return action
+
+
+def _inserted(action: ActionPkg) -> dict[str, list[str]]:
+    """Arches each inserted package went to, keyed by its file name."""
+    ret: dict[str, list[str]] = {}
+    for call in _target(action).insert_pkg.call_args_list:
+        ret.setdefault(call.args[2].fields["Filename"], []).append(call.args[1])
+    return ret
+
+
+@pytest.mark.parametrize("field", ["all amd64", "amd64 all"])
+@pytest.mark.parametrize(
+    "files",
+    [["a_1_amd64.deb", "b_1_all.deb"], ["b_1_all.deb", "a_1_amd64.deb"]],
+    ids=["arch-first", "all-first"],
+)
+@patch("debkit.action.action_pkg.DebFile")
+@patch("debkit.action.action_pkg.Changes")
+def test_insert_of_a_changes_targets_each_file_by_its_own_arch(
+    mock_changes_cls: MagicMock, mock_debfile_cls: MagicMock, field: str, files: list[str]
+) -> None:
+    """Neither the `Architecture` field order nor the file order picks a package's arches."""
+    action = _changes_upload(mock_changes_cls, mock_debfile_cls, field, files)
+    _target(action).get_archs.return_value = ["amd64", "arm64", "source"]
+
+    action.insert()
+
+    assert _inserted(action) == {"a_1_amd64.deb": ["amd64"], "b_1_all.deb": ["amd64", "arm64"]}
+
+
+@pytest.mark.parametrize("repo_archs", [["source"], []], ids=["source-only", "none"])
+@patch("debkit.action.action_pkg.DebFile")
+@patch("debkit.action.action_pkg.Changes")
+def test_insert_refuses_an_all_package_when_the_target_has_no_binary_arch(
+    mock_changes_cls: MagicMock, mock_debfile_cls: MagicMock, repo_archs: list[str]
+) -> None:
+    from debkit.action import ActionException
+
+    action = _changes_upload(mock_changes_cls, mock_debfile_cls, "all", ["b_1_all.deb"])
+    _target(action).get_archs.return_value = repo_archs
+
+    with pytest.raises(ActionException, match="lists no binary architecture"):
+        action.insert()
+
+    _target(action).transfer_from.assert_not_called()
+    _target(action).insert_pkg.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # insert() — a control field naming the source architecture
 # ---------------------------------------------------------------------------
 
@@ -355,7 +430,6 @@ def test_insert_refuses_a_changes_naming_the_source_arch_in_any_position(
     changes = mock_changes_cls.return_value
     tokens = architecture.split()
     changes.get_archs.return_value = tokens
-    changes.get_arch.return_value = tokens[0]
     changes.names_source_arch.return_value = "source" in tokens
     changes.get_deb_files.return_value = ["hello_1.0_amd64.deb"]
 
@@ -420,7 +494,6 @@ def test_insert_refuses_a_changes_whose_arch_is_not_an_architecture(
     action.changes_filename = "hello_1.0_amd64.changes"
     changes = mock_changes_cls.return_value
     changes.get_archs.return_value = ["amd64", "x/../.."]
-    changes.get_arch.return_value = "amd64"
     changes.names_source_arch.return_value = False
 
     with pytest.raises(ActionException, match="Invalid architecture"):

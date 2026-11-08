@@ -192,8 +192,9 @@ Used by `ActionPkg.remove()` and `Packages.remove()`; flag → [CONFIG.md](CONFI
 
 ## Architectures
 
-Used by `ActionSync`; flag → [CONFIG.md](CONFIG.md#sync). The token rule is `is_valid_arch()` in
-`repo/params.py`: a token names the `binary-<arch>/` directory of a storage path.
+Used by `ActionSync` and `insert`; flag → [CONFIG.md](CONFIG.md#sync). The token rule is
+`is_valid_arch()` in `repo/params.py`: a token names the `binary-<arch>/` directory of a storage
+path.
 
 | Rule          | Constraint                                                                                                                                                                  | Failure                                  |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -203,6 +204,8 @@ Used by `ActionSync`; flag → [CONFIG.md](CONFIG.md#sync). The token rule is `i
 | Token         | Lower-case letters, digits, and `-`, not starting with `-`, e.g. `amd64`, `hurd-i386`.                                                                                      | Flag token → `ActionException` (Generic) |
 | Release token | A root Release `Architectures` or `Architecture` token follows the token rule.                                                                                              | Dropped and logged                       |
 | Upload token  | Every `.changes` `Architecture` token and the `.deb` control `Architecture` follow the token rule, checked before the transfer.                                             | → `ActionException` (Generic)            |
+| Insert target | A `.deb` goes to its control `Architecture` alone; an `all` or missing one goes to every root Release architecture but `source`. The `.changes` field and its file order play no part. | — |
+| No binary target | An `all` or arch-less `.deb` while the root Release lists no architecture but `source`, refused before its transfer. | → `ActionException` (Generic) |
 | `source`      | Selects the source pseudo-architecture: `<component>/source/Sources*` is parsed and every payload it lists joins the package set. The index is mirrored, never regenerated. | —                                        |
 
 ## S3 canned ACLs

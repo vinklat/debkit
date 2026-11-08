@@ -16,22 +16,16 @@ opt ReleaseNotFoundException
   ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)
 end
 
-alt --changes-filename
+opt --changes-filename
   ActionPkg -> Chg: load(changes_filename, sha256)
-  Chg --> ActionPkg: arch, deb_files[]
-  opt names_source_arch()
+  Chg --> ActionPkg: archs, deb_files[]
+  opt invalid token or names_source_arch()
     ActionPkg -> ActionPkg: raise ActionException
   end
-  opt arch == "all"
-    ActionPkg -> Tgt: get_archs()
-    Tgt --> ActionPkg: archs
-    ActionPkg -> ActionPkg: _binary_archs()\n[drop "source"]
-  end
-else --deb-filename
-  ActionPkg -> Tgt: get_archs()
-  Tgt --> ActionPkg: archs
-  ActionPkg -> ActionPkg: _binary_archs()\n[drop "source"]
 end
+ActionPkg -> Tgt: get_archs()
+Tgt --> ActionPkg: archs
+ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]
 
 ActionPkg -> CM: __enter__(TStor)
 CM -> TStor: history_lock acquire\n[blocks; S3 times out after 300 s]
@@ -44,6 +38,10 @@ loop for filename in filenames
   Df --> ActionPkg: package
   ActionPkg -> ActionPkg: pkg_arch = package.get_arch()
   opt pkg_arch == "source"
+    ActionPkg -> ActionPkg: raise ActionException\n[before any transfer]
+  end
+  ActionPkg -> ActionPkg: archs = [pkg_arch], or binary_archs\nfor "all" or no Architecture
+  opt archs empty
     ActionPkg -> ActionPkg: raise ActionException\n[before any transfer]
   end
   ActionPkg -> Tgt: transfer_from(Inc, filename, path_dst)

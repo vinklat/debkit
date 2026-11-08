@@ -212,6 +212,36 @@ class ActionPkg(Action):
             return []
         return [arch for arch in self.target_repo.get_archs() if arch != SOURCE_ARCH]
 
+    def _changes_deb_files(
+        self, incoming_storage: "Storage", changes_filename: str
+    ) -> builtins.list[str]:
+        """Load and check a `.changes` upload and list the `.deb` files it carries.
+
+        Args:
+            incoming_storage (Storage): The storage holding the upload.
+            changes_filename (str): The `.changes` file in it.
+
+        Raises:
+            ActionException: An architecture token is not an architecture name.
+            ActionException: An architecture token names the source one.
+
+        Returns:
+            List[str]: The `.deb` files the upload lists.
+        """
+        changes = Changes(incoming_storage)
+        changes.load(changes_filename, digest_expected=self.changes_sha256)
+        for arch in changes.get_archs():
+            if not is_valid_arch(arch):
+                raise ActionException(f"Invalid architecture in {changes_filename}: {arch!r}")
+
+        # `Architecture` lists every arch the upload built, so a source plus binary
+        # build names `source` beside the binary one; reading the first token alone
+        # let the field order decide the upload
+        if changes.names_source_arch():
+            raise ActionException("Source packages are not supported yet")
+
+        return changes.get_deb_files()
+
     def insert(self) -> None:
         """Insert packages into repository.
 
@@ -220,8 +250,10 @@ class ActionPkg(Action):
             ActionException: If neither --changes-filename nor --deb-filename are provided.
             ActionException: If the .deb filename does not end with '.deb'.
             ActionException: If the .changes architecture names the source one.
-            ActionException: If the architecture is not found in the package.
+            ActionException: If an architecture token is not an architecture name.
             ActionException: If the package control field names the source architecture.
+            ActionException: If an `all` or arch-less package finds no binary architecture
+                in the target.
         """
         if (self.changes_filename is None) == (self.deb_filename is None):
             raise ActionException(
@@ -230,9 +262,6 @@ class ActionPkg(Action):
 
         if self.incoming_storage is None or self.target_repo is None:
             return
-
-        filenames: list[str] = []
-        archs: list[str] | None = None
 
         # load or setup target repository
         try:
@@ -247,38 +276,13 @@ class ActionPkg(Action):
 
         # process deb files
         if self.changes_filename is not None:
-            # TODO: split this into a separate method
-
-            changes = Changes(self.incoming_storage)
-            changes.load(self.changes_filename, digest_expected=self.changes_sha256)
-            ch_arch = changes.get_arch()
-            for arch in changes.get_archs():
-                if not is_valid_arch(arch):
-                    raise ActionException(
-                        f"Invalid architecture in {self.changes_filename}: {arch!r}"
-                    )
-
-            # `Architecture` lists every arch the upload built, so a source plus binary
-            # build names `source` beside the binary one; reading the first token alone
-            # let the field order decide the upload
-            if changes.names_source_arch():
-                raise ActionException("Source packages are not supported yet")
-
-            # logging.debug("Changes arch: %s", ch_arch)
-            # logging.debug("fields: %s", self.target_repo.release.fields)
-
-            archs = self._binary_archs() if ch_arch == ARCH_ANY else [ch_arch]
-
-            # logging.debug("Archs: %s", archs)
-            filenames = changes.get_deb_files()
+            filenames = self._changes_deb_files(self.incoming_storage, self.changes_filename)
         else:
             if self.deb_filename is None or not self.deb_filename.endswith(".deb"):
                 raise ActionException(f"Invalid .deb filename: {self.deb_filename}")
-            archs = self._binary_archs()
             filenames = [self.deb_filename]
 
-        if (not isinstance(archs, list)) or (isinstance(archs, list) and len(archs) == 0):
-            raise ActionException("Internal error - no architectures set. May be bug in the code.")
+        binary_archs = self._binary_archs()
 
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             for filename in filenames:
@@ -289,22 +293,27 @@ class ActionPkg(Action):
                 if pkg_arch is not None and not is_valid_arch(pkg_arch):
                     raise ActionException(f"Invalid architecture in {filename}: {pkg_arch!r}")
                 # the control field is read straight out of the uploaded .deb, so it can
-                # name the source arch and overwrite the binary set `_binary_archs` picked;
-                # the mirrored source index is read-only, so refuse before the transfer
-                # as the changes path already does
+                # name the source arch; the mirrored source index is read-only, so refuse
+                # before the transfer as the changes path already does
                 if pkg_arch == SOURCE_ARCH:
                     raise ActionException("Source packages are not supported yet")
+
+                # each package by its own control field, so neither the upload's field
+                # order nor its file order picks the arches
+                # -> [VALIDATION.md](VALIDATION.md#architectures)
+                archs = (
+                    [pkg_arch] if pkg_arch is not None and pkg_arch != ARCH_ANY else binary_archs
+                )
+                if not archs:
+                    raise ActionException(
+                        f"Cannot insert {filename} (Architecture: {pkg_arch or 'none'}): "
+                        "the target Release lists no binary architecture"
+                    )
 
                 digests = self.target_repo.transfer_from(
                     self.incoming_storage, filename, path_dst=debfile_obj.filename_field
                 )
                 package.set_digests(digests)
-
-                if pkg_arch is not None and pkg_arch != ARCH_ANY:
-                    archs = [pkg_arch]
-
-                if archs is None:
-                    raise ActionException("Architecture not found in package")
 
                 for arch in archs:
                     self.target_repo.insert_pkg(self.component, arch, package)

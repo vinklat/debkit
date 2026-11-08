@@ -21,32 +21,22 @@ partition "load or setup target" {
 }
 
 if (changes_filename provided?) then (yes)
-  :changes = Changes(incoming_storage)
-   changes.load(changes_filename, digest_expected=changes_sha256);
-  :ch_arch = changes.get_arch();
-  if (changes.names_source_arch()?) then (yes)
-    :raise ActionException
-     ("Source packages are not supported yet");
+  :filenames = _changes_deb_files(incoming_storage, changes_filename)
+   [Changes.load(changes_filename, digest_expected=changes_sha256)];
+  if (any Architecture token invalid or "source"?) then (yes)
+    :raise ActionException;
     stop
   endif
-  :archs = self._binary_archs() if ch_arch == ARCH_ANY else [ch_arch]
-   filenames = changes.get_deb_files();
-  note right: get_archs() minus "source":\nthe mirrored Sources index is read-only
 else (no)
   if (deb_filename ends with ".deb"?) then (no)
     :raise ActionException
      (f"Invalid .deb filename: {deb_filename}");
     stop
   endif
-  :archs = self._binary_archs()
-   filenames = [deb_filename];
+  :filenames = [deb_filename];
 endif
-
-if (archs is non-empty list?) then (no)
-  :raise ActionException
-   ("Internal error - no architectures set");
-  stop
-endif
+:binary_archs = self._binary_archs();
+note right: get_archs() minus "source":\nthe mirrored Sources index is read-only
 
 partition "with maybe_transaction(target.storage)" {
   while (more filenames?) is (yes)
@@ -59,18 +49,22 @@ partition "with maybe_transaction(target.storage)" {
       note right: refused before any transfer
       stop
     endif
+    if (pkg_arch not None and != ARCH_ANY?) then (yes)
+      :archs = [pkg_arch];
+    else (no)
+      :archs = binary_archs;
+    endif
+    note right: per file: neither the .changes\nfield order nor the file order\npicks a package's arches
+    if (archs empty?) then (yes)
+      :raise ActionException
+       ("... the target Release lists no binary architecture");
+      note right: refused before any transfer
+      stop
+    endif
     :digests = target.transfer_from(
         incoming_storage, filename,
         path_dst=debfile.filename_field);
     :package.set_digests(digests);
-    if (pkg_arch not None and != ARCH_ANY?) then (yes)
-      :archs = [pkg_arch];
-    endif
-    if (archs is None?) then (yes)
-      :raise ActionException
-       ("Architecture not found in package");
-      stop
-    endif
     while (more archs?) is (yes)
       :target.insert_pkg(component, arch, package);
     endwhile (no)

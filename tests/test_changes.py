@@ -43,17 +43,18 @@ def test_parse_without_sha256_raises() -> None:
         changes.parse(b"Format: 1.8\nArchitecture: amd64\n")
 
 
-def test_get_arch_returns_first_word() -> None:
-    changes = Changes(_storage_with(_CHANGES_BLOB))
-    changes.parse(_CHANGES_BLOB)
-    assert changes.get_arch() == "amd64"
+def test_get_archs_returns_every_token() -> None:
+    blob = b"Format: 1.8\nArchitecture: amd64 all\nChecksums-Sha256:\n deadbeef 1 x.deb\n"
+    changes = Changes(_storage_with(blob))
+    changes.parse(blob)
+    assert changes.get_archs() == ["amd64", "all"]
 
 
-def test_get_arch_defaults_when_missing() -> None:
+def test_get_archs_defaults_when_missing() -> None:
     blob = b"Format: 1.8\nChecksums-Sha256:\n deadbeef 1 x.deb\n"
     changes = Changes(_storage_with(blob))
     changes.parse(blob)
-    assert changes.get_arch() == "amd64"
+    assert changes.get_archs() == ["amd64"]
 
 
 @pytest.mark.parametrize(

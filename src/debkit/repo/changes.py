@@ -124,15 +124,6 @@ class Changes(HexDigests):
         """
         return self.fields.get("Architecture", DEFAULT_ARCH).split()
 
-    def get_arch(self) -> str:
-        """Get the architecture of the Changes file.
-
-        Returns:
-            str: The architecture of the Changes file.
-        """
-        # first word of Architecture (= without all)
-        return self.get_archs()[0]
-
     def names_source_arch(self) -> bool:
         """Report whether the Changes file names the source architecture.
 
