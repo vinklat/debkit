@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from txstore import HistoryRetention, StorageException, make_storage, redact_url
 
@@ -12,7 +12,6 @@ from debkit.repo import RepoReadException
 from debkit.repo.gnupg import GnuPG
 from debkit.repo.params import RepoParams
 from debkit.repo.repo_rw import RepoRW
-from debkit.repo.repo_sync import RepoSync
 
 if TYPE_CHECKING:
     from argparse import Namespace
@@ -71,13 +70,11 @@ def open_storage(pars: "Namespace", url: str, create_path: bool = False) -> "Sto
     return make_storage(
         storage_url(url),
         create_path=create_path,
-        verify_ssl=not (
-            getattr(pars, "skip_verify", False) or getattr(pars, "skip_verify_ssl", False)
-        ),
-        s3_access=getattr(pars, "s3_access", None),
-        s3_secret=getattr(pars, "s3_secret", None),
-        s3_default_acl=getattr(pars, "s3_default_acl", None),
-        s3_bucket_acl=getattr(pars, "s3_bucket_acl", None),
+        verify_ssl=verify_policy(pars).verify_ssl,
+        s3_access=pars.s3_access,
+        s3_secret=pars.s3_secret,
+        s3_default_acl=pars.s3_default_acl,
+        s3_bucket_acl=pars.s3_bucket_acl,
     )
 
 
@@ -90,21 +87,52 @@ def history_retention(pars: "Namespace") -> HistoryRetention:
     Returns:
         HistoryRetention: Policy for `maybe_transaction` and `prune`.
     """
-    return HistoryRetention.from_env(
-        keep=getattr(pars, "history_keep", None),
-        max_age_days=getattr(pars, "history_max_age", None),
+    return HistoryRetention.from_env(keep=pars.history_keep, max_age_days=pars.history_max_age)
+
+
+class VerifyPolicy(NamedTuple):
+    """The checks the resolved ``--skip-verify*`` switches leave on.
+
+    → [CRYPTO.md](CRYPTO.md#verification-switches).
+    """
+
+    verify_ssl: bool
+    verify_gpg: bool
+    verify_digests: bool
+
+
+def verify_policy(pars: "Namespace") -> VerifyPolicy:
+    """Resolve ``--skip-verify``, ``--skip-verify-ssl``, and ``--skip-verify-gpg``.
+
+    Args:
+        pars: Parsed CLI namespace.
+
+    Returns:
+        VerifyPolicy: Which of TLS, GPG, and digest verification stay on.
+    """
+    return VerifyPolicy(
+        verify_ssl=not (pars.skip_verify or pars.skip_verify_ssl),
+        verify_gpg=not (pars.skip_verify or pars.skip_verify_gpg),
+        verify_digests=not pars.skip_verify,
     )
 
 
 def attach_storage_repo(
-    pars: "Namespace", url: str | None = None, create_path: bool = False
+    pars: "Namespace",
+    url: str,
+    create_path: bool = False,
+    *,
+    archs: list[str] | None = None,
+    indices_exclude: list[str] | None = None,
 ) -> tuple["Storage", RepoParams]:
     """Build a `Storage` and `RepoParams` pair from a deb-source URL.
 
     Args:
         pars: Parsed CLI namespace.
-        url: Deb-source string. Falls back to ``pars.target_url`` when ``None``.
+        url: Deb-source string.
         create_path: Create the destination bucket/directory if missing.
+        archs: The `--architectures` selection; None keeps the Release's.
+        indices_exclude: The `--indices-exclude` globs; None mirrors every listed index.
 
     Raises:
         RepoReadException: If the URL is invalid or empty.
@@ -112,13 +140,13 @@ def attach_storage_repo(
     Returns:
         Tuple of (storage, repo_params).
     """
-    if url is None:
-        url = pars.target_url
-
-    verify_gpg = not (pars.skip_verify or pars.skip_verify_gpg)
-    verify_digests = not pars.skip_verify
-
-    repo_params = RepoParams(verify_gpg=verify_gpg, verify_digests=verify_digests)
+    policy = verify_policy(pars)
+    repo_params = RepoParams(
+        archs=archs,
+        indices_exclude=indices_exclude,
+        verify_gpg=policy.verify_gpg,
+        verify_digests=policy.verify_digests,
+    )
     repo_params.from_deb_source(url)
 
     if repo_params.url is None:
@@ -131,32 +159,21 @@ def attach_storage_repo(
     return storage, repo_params
 
 
-def attach_storage_plain(
-    pars: "Namespace", url: str | None = None, create_path: bool = False
-) -> "Storage":
+def attach_storage_plain(pars: "Namespace", url: str, create_path: bool = False) -> "Storage":
     """Build a `Storage` from a plain (non-deb-source) URL.
 
     Args:
         pars: Parsed CLI namespace.
-        url: Storage URL. Falls back to ``pars.target_url`` when ``None``.
+        url: Storage URL.
         create_path: Create the destination bucket/directory if missing.
-
-    Raises:
-        StorageException: If the URL is missing (``None``) after the fallback.
 
     Returns:
         Storage: A backend instance routed by the URL scheme.
     """
-    if url is None:
-        url = pars.target_url
-    if url is None:
-        raise StorageException("Empty storage URL.")
     return open_storage(pars, url, create_path=create_path)
 
 
-def attach_storage_root(
-    pars: "Namespace", url: str | None = None, create_path: bool = False
-) -> "Storage":
+def attach_storage_root(pars: "Namespace", url: str, create_path: bool = False) -> "Storage":
     """Build a `Storage` from the URL field of a deb source, ignoring dist/components.
 
     Root-scoped commands (`log`, `revert`) address the storage root only, so
@@ -164,19 +181,16 @@ def attach_storage_root(
 
     Args:
         pars: Parsed CLI namespace.
-        url: Deb-source or plain storage URL. Falls back to ``pars.target_url``
-            when ``None``.
+        url: Deb-source or plain storage URL.
         create_path: Create the destination bucket/directory if missing.
 
     Raises:
-        StorageException: If the URL is missing or blank after the fallback.
+        StorageException: If the URL is blank.
 
     Returns:
         Storage: A backend instance routed by the URL scheme.
     """
-    if url is None:
-        url = pars.target_url
-    if not isinstance(url, str) or not url.strip():
+    if not url.strip():
         raise StorageException("Empty storage URL.")
     return attach_storage_plain(pars, url.split()[0], create_path=create_path)
 
@@ -230,11 +244,14 @@ class Action:
     """Base class for repo actions.
 
     Attributes:
-        source_repo (RepoSync): Source repository.
+        output (OutputType): Output format.
+        gpg (GnuPG | None): Verifies and signs Release files; None when GPG verification is off.
         target_repo (RepoRW): Target repository.
         history_retention (HistoryRetention): Policy the write paths hand to
             `maybe_transaction`; a `max_age_days` of `0` records without pruning.
     """
+
+    target_repo: RepoRW
 
     def __init__(self, pars: "Namespace", create_path: bool = False):
         """Initialize repo objects and storages.
@@ -243,21 +260,19 @@ class Action:
             pars (Namespace): Parsed command line arguments.
             create_path (bool): Create path or bucket if True.
         """
-        self.source_repo: RepoSync | None = None
+        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
         self.gpg: GnuPG | None = None
         self.history_retention: HistoryRetention = history_retention(pars)
 
-        skip_verify: bool = getattr(pars, "skip_verify", False)
-        skip_verify_gpg: bool = getattr(pars, "skip_verify_gpg", False)
-
+        policy = verify_policy(pars)
         # one warning per run, as for `--allow-release-rollback`
         # -> [CRYPTO.md](CRYPTO.md#verification-switches)
-        if skip_verify:
+        if not policy.verify_digests:
             logger.warning(
                 "GPG and digest verification skipped: --skip-verify is set; "
                 "Release files are neither verified nor signed"
             )
-        elif skip_verify_gpg:
+        elif not policy.verify_gpg:
             logger.warning(
                 "GPG verification skipped: --skip-verify-gpg is set; "
                 "Release files are neither verified nor signed"
@@ -265,19 +280,18 @@ class Action:
         else:
             self.gpg = GnuPG(pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase)
 
-        if hasattr(pars, "source_url"):
-            logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
-            (source_storage, source_repo_params) = attach_storage_repo(pars, url=pars.source_url)
-            self.source_repo = RepoSync(source_storage, source_repo_params, gpg=self.gpg)
+        self._attach_repos(pars, create_path)
 
+    def _attach_repos(self, pars: "Namespace", create_path: bool) -> None:
+        """Open the target repository, verified and signed with `gpg`.
+
+        A subclass that opens more repositories or narrows their selection overrides it.
+
+        Args:
+            pars (Namespace): Parsed command line arguments.
+            create_path (bool): Create the target path or bucket if True.
+        """
         # `--target-url` is required, so every action has a target
         logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
-        (target_storage, target_repo_params) = attach_storage_repo(
-            pars, url=pars.target_url, create_path=create_path
-        )
-        # With a source repository the target is overwritten, so its GnuPG check is skipped.
-        self.target_repo: RepoRW = RepoRW(
-            target_storage,
-            target_repo_params,
-            gpg=self.gpg if self.source_repo is None else None,
-        )
+        storage, params = attach_storage_repo(pars, pars.target_url, create_path=create_path)
+        self.target_repo = RepoRW(storage, params, gpg=self.gpg)

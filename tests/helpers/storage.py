@@ -15,6 +15,8 @@ from unittest.mock import MagicMock
 
 from txstore import FootmarkMixin, StorageNotFoundException, TransactionHistory, TransactionModel
 
+from debkit.argparser import parse_cli
+
 if TYPE_CHECKING:
     from collections.abc import Hashable
 
@@ -164,16 +166,23 @@ class TxnStorageStub(FootmarkMixin):
 
 
 def storage_namespace(**overrides: object) -> Namespace:
-    """CLI-shaped namespace with every option `open_storage()` and `attach_storage_*` read."""
-    base: dict[str, object] = {
-        "skip_verify": True,
-        "skip_verify_ssl": True,
-        "skip_verify_gpg": True,
-        "target_url": "fs:///tmp/repo bookworm main",
-        "s3_access": "k",
-        "s3_secret": "s",
-        "s3_default_acl": "public-read",
-        "s3_bucket_acl": None,
-    }
-    base.update(overrides)
-    return Namespace(**base)
+    """`parse_cli` namespace for a `list` run with verification off and S3 keys set.
+
+    Every root flag `open_storage()`, `attach_storage_*` and `Action.__init__` read carries its
+    parsed default; *overrides* replace or add fields.
+    """
+    pars = parse_cli(
+        [
+            "--skip-verify",
+            "--skip-verify-ssl",
+            "--skip-verify-gpg",
+            "--s3-access",
+            "k",
+            "--target-url",
+            "fs:///tmp/repo bookworm main",
+            "list",
+        ]
+    )
+    pars.s3_secret = "s"
+    vars(pars).update(overrides)
+    return pars

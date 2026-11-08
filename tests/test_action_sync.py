@@ -9,12 +9,13 @@ import json
 import logging
 from argparse import Namespace
 from collections.abc import Iterator
+from copy import copy
 from pathlib import Path
 from typing import IO, Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-from helpers.storage import TxnStorageStub, iso_timestamp, seed_history
+from helpers.storage import TxnStorageStub, iso_timestamp, seed_history, storage_namespace
 from txstore import (
     HistoryRetention,
     Storage,
@@ -829,86 +830,162 @@ def test_sync_hands_retention_to_maybe_transaction() -> None:
 # Repo params forced from the CLI
 # ---------------------------------------------------------------------------
 
+_SOURCE_URL = "fs:///tmp/src bookworm main"
 
-def _init_action(**flags: object) -> ActionSync:
-    """Run ``ActionSync.__init__`` with the base Action init and storage stubbed out."""
-    from argparse import Namespace
 
-    fields: dict[str, object] = {"architectures": "", "indices_exclude": ""}
+def _sync_pars(**flags: object) -> Namespace:
+    """A `sync` namespace over `fs://` repos with verification off; *flags* override fields."""
+    fields: dict[str, object] = {
+        "command": "sync",
+        "source_url": _SOURCE_URL,
+        "architectures": "",
+        "indices_exclude": "",
+    }
     fields.update(flags)
-    pars = Namespace(**fields)
-
-    def fake_base_init(self: ActionSync, pars: Namespace, create_path: bool = False) -> None:
-        self.source_repo = MagicMock()
-        self.source_repo.params = RepoParams(dist="bookworm", components=["main"])
-        self.target_repo = MagicMock()
-        self.target_repo.params = RepoParams(dist="bookworm", components=["main"])
-
-    with patch("debkit.action.action_sync.Action.__init__", fake_base_init):
-        return ActionSync(pars)
+    return storage_namespace(**fields)
 
 
-def test_init_sets_indices_exclude_on_both_repo_params() -> None:
+def _init_action(
+    pars: Namespace | None = None, **flags: object
+) -> tuple[ActionSync, dict[str, tuple[list[str] | None, list[str] | None]]]:
+    """Run the real ``ActionSync.__init__``, recording each repo's selection as built.
+
+    Returns the action and, per repo class, the `archs` and `indices_exclude` its
+    `RepoParams` held when the repo was constructed.
+    """
+    from debkit.repo.repo_rw import RepoRW
+    from debkit.repo.repo_sync import RepoSync
+
+    built: dict[str, tuple[list[str] | None, list[str] | None]] = {}
+
+    def recorder(name: str, real_init: Any) -> Any:
+        def init(self: Any, storage: Any, params: RepoParams, **kwargs: Any) -> None:
+            built[name] = (copy(params.archs), copy(params.indices_exclude))
+            real_init(self, storage, params, **kwargs)
+
+        return init
+
+    with (
+        patch.object(RepoSync, "__init__", recorder("RepoSync", RepoSync.__init__)),
+        patch.object(RepoRW, "__init__", recorder("RepoRW", RepoRW.__init__)),
+    ):
+        action = ActionSync(pars if pars is not None else _sync_pars(**flags))
+    return action, built
+
+
+def test_init_sets_indices_exclude_on_both_repo_params_before_building_them() -> None:
     """Both repos need the same set so `check` and `--verify-existing` agree."""
-    action = _init_action(indices_exclude="*/i18n/*,*/dep11/icons-*")
+    _, built = _init_action(indices_exclude="*/i18n/*,*/dep11/icons-*")
 
-    assert _source(action).params.indices_exclude == ["*/i18n/*", "*/dep11/icons-*"]
-    assert _target(action).params.indices_exclude == ["*/i18n/*", "*/dep11/icons-*"]
+    assert built["RepoSync"] == (None, ["*/i18n/*", "*/dep11/icons-*"])
+    assert built["RepoRW"] == (None, ["*/i18n/*", "*/dep11/icons-*"])
 
 
 def test_init_drops_empty_indices_exclude_tokens() -> None:
     """VALIDATION.md#index-exclude-globs drops an empty token, as `--architectures` does."""
-    action = _init_action(indices_exclude="*/i18n/*,,*/dep11/*,")
+    _, built = _init_action(indices_exclude="*/i18n/*,,*/dep11/*,")
 
-    assert _source(action).params.indices_exclude == ["*/i18n/*", "*/dep11/*"]
-    assert _target(action).params.indices_exclude == ["*/i18n/*", "*/dep11/*"]
-
-
-def test_init_leaves_indices_exclude_unset_when_flag_is_empty() -> None:
-    action = _init_action()
-
-    assert _source(action).params.indices_exclude is None
-    assert _target(action).params.indices_exclude is None
+    assert built["RepoSync"][1] == ["*/i18n/*", "*/dep11/*"]
+    assert built["RepoRW"][1] == ["*/i18n/*", "*/dep11/*"]
 
 
-def test_init_sets_architectures_on_both_repo_params() -> None:
-    action = _init_action(architectures="amd64,arm64")
+def test_init_leaves_the_selection_unset_when_the_flags_are_empty() -> None:
+    _, built = _init_action()
 
-    assert _source(action).params.archs == ["amd64", "arm64"]
-    assert _target(action).params.archs == ["amd64", "arm64"]
+    assert built == {"RepoSync": (None, None), "RepoRW": (None, None)}
+
+
+def test_init_sets_architectures_on_both_repo_params_before_building_them() -> None:
+    _, built = _init_action(architectures="amd64,arm64")
+
+    assert built["RepoSync"] == (["amd64", "arm64"], None)
+    assert built["RepoRW"] == (["amd64", "arm64"], None)
 
 
 def test_init_drops_empty_architecture_tokens() -> None:
     """A stray comma must not put an empty architecture into the selection."""
-    action = _init_action(architectures="amd64,,arm64")
+    _, built = _init_action(architectures="amd64,,arm64")
 
-    assert _source(action).params.archs == ["amd64", "arm64"]
-    assert _target(action).params.archs == ["amd64", "arm64"]
+    assert built["RepoSync"][0] == ["amd64", "arm64"]
+    assert built["RepoRW"][0] == ["amd64", "arm64"]
 
 
-def test_init_selects_the_source_architecture_for_a_check_namespace() -> None:
+def test_init_selects_the_target_architecture_for_a_check_namespace() -> None:
     """`check` reaches the same selection: without it a source mirror reads as orphaned."""
-    action = _init_action(architectures="amd64,source", fix=True)
+    pars = storage_namespace(
+        command="check", fix=True, architectures="amd64,source", indices_exclude=""
+    )
 
-    assert _target(action).params.archs == ["amd64", "source"]
+    action, built = _init_action(pars)
+
+    assert action.source_repo is None
+    assert "RepoSync" not in built
+    assert built["RepoRW"] == (["amd64", "source"], None)
+
+
+def test_init_reads_the_sync_flags() -> None:
+    """Non-default `--verify-existing` and `--allow-release-rollback` survive `__init__`."""
+    action, _ = _init_action(
+        verify_existing=True, allow_release_rollback=True, output=OutputType.json
+    )
+
+    assert action.verify_existing is True
+    assert action.allow_release_rollback is True
+    assert action.output is OutputType.json
+
+
+def test_init_gives_the_sync_target_no_gnupg() -> None:
+    """A sync overwrites its target, so the target is neither verified nor signed."""
+    with patch("debkit.action.GnuPG") as gnupg:
+        action, _ = _init_action(skip_verify=False, skip_verify_gpg=False)
+
+    assert action.source_repo is not None
+    assert action.source_repo.gpg is gnupg.return_value
+    assert action.target_repo.gpg is None
+
+
+def test_init_gives_the_check_target_the_gnupg() -> None:
+    pars = storage_namespace(
+        command="check",
+        skip_verify=False,
+        skip_verify_gpg=False,
+        architectures="",
+        indices_exclude="",
+    )
+
+    with patch("debkit.action.GnuPG") as gnupg:
+        action, _ = _init_action(pars)
+
+    assert action.target_repo.gpg is gnupg.return_value
+
+
+def test_init_logs_the_repository_urls_without_their_credentials(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """URL userinfo is a secret -> CONFIG.md#secrets."""
+    secret = "s3cr3tpw"
+
+    with caplog.at_level(logging.DEBUG):
+        _init_action(source_url=f"https://u:{secret}@host/debian bookworm main")
+
+    assert "Prepare source URL: https://***@host/debian bookworm main" in caplog.text
+    assert all(secret not in rec.getMessage() for rec in caplog.records)
 
 
 def test_init_refuses_an_architecture_token_that_is_not_an_architecture() -> None:
     """The token names the `binary-<arch>/` directory of every index path."""
-    from debkit.action import ActionException
-
     with pytest.raises(ActionException, match="Invalid architecture"):
         _init_action(architectures="amd64,../x")
 
 
 def test_init_refuses_an_architecture_before_opening_any_storage() -> None:
     """Regression: the refusal came after `create_path` had made the target path or bucket."""
-    from debkit.action import ActionException
-
     with (
+        patch("debkit.action.action_sync.attach_storage_repo") as attach,
         patch("debkit.action.action_sync.Action.__init__") as base_init,
         pytest.raises(ActionException, match="Invalid architecture"),
     ):
-        ActionSync(Namespace(architectures="../x", indices_exclude=""), create_path=True)
+        ActionSync(_sync_pars(architectures="../x"), create_path=True)
 
     base_init.assert_not_called()
+    attach.assert_not_called()

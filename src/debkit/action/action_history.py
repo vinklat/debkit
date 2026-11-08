@@ -55,7 +55,7 @@ class ActionHistory:
         self.dry_run: bool = getattr(pars, "dry_run", False)
         self.orphans: bool = getattr(pars, "orphans", False)
         self.history_retention: HistoryRetention = history_retention(pars)
-        self._storage = attach_storage_root(pars)
+        self._storage = attach_storage_root(pars, pars.target_url)
 
     @contextmanager
     def _translate_storage_errors(self) -> Iterator[None]:

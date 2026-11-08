@@ -10,7 +10,6 @@ from humanize import naturalsize
 from txstore import maybe_transaction
 
 from debkit.action import (
-    OUTPUT_DEFAULT,
     Action,
     ActionException,
     OutputType,
@@ -42,11 +41,7 @@ DEFAULT_REPO_FIELDS = {"Architectures": "amd64 arm64 all", "Components": "main"}
 
 
 class ActionPkg(Action):
-    """Actions with debian packages in repository.
-
-    Attributes:
-        output (OutputType): Output type.
-    """
+    """Actions with debian packages in repository."""
 
     def __init__(self, pars: "Namespace", create_path: bool = False):
         """Initialize ActionPkg.
@@ -56,7 +51,6 @@ class ActionPkg(Action):
             create_path (bool): Create path or bucket if True.
         """
         super().__init__(pars, create_path=create_path)
-        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
         self.pkg_pattern: dict[str, re.Pattern[str]] | None = getattr(pars, "pkg_pattern", None)
         self.changes_filename: str | None = getattr(pars, "changes_filename", None)
         self.changes_sha256: str | None = getattr(pars, "changes_sha256", None)

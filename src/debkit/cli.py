@@ -15,7 +15,7 @@ from txstore import StorageException
 
 from debkit import __version__
 from debkit._logging import configure_logging
-from debkit.action import ActionException
+from debkit.action import ActionException, verify_policy
 from debkit.action.action_history import ActionHistory
 from debkit.action.action_pkg import ActionPkg
 from debkit.action.action_sync import ActionSync
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> None:
     """
     pars = parse_cli(argv)
     configure_logging(pars.log_level, pars.log_format)
-    if pars.skip_verify or pars.skip_verify_ssl:
+    if not verify_policy(pars).verify_ssl:
         # txstore logs one warning per storage; urllib3 would add one per request.
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

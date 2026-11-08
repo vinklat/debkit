@@ -12,10 +12,11 @@ from typing import TYPE_CHECKING, Any
 from humanize import naturalsize
 from txstore import get_supported_schemes, maybe_transaction, redact_url
 
-from debkit.action import OUTPUT_DEFAULT, Action, ActionException, OutputType, dump_json
+from debkit.action import Action, ActionException, OutputType, attach_storage_repo, dump_json
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
+from debkit.repo.repo_rw import RepoRW
 from debkit.repo.repo_sync import RepoSync
 
 if TYPE_CHECKING:
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
     from debkit._options import EnvArgumentParser
     from debkit.repo.release import Release
     from debkit.repo.repo_diff import RepoDiff
-    from debkit.repo.repo_rw import RepoRW
 
 ARCHITECTURES_DEFAULT = "amd64,arm64"
 INDICES_EXCLUDE_DEFAULT = ""
@@ -69,7 +69,7 @@ class ActionSync(Action):
     """Sync debian repo from source repository.
 
     Attributes:
-        output (OutputType): Output type.
+        source_repo (RepoSync | None): The `sync` source; None for `check`.
         fix (bool): Fix inconsistencies if True.
     """
 
@@ -84,32 +84,54 @@ class ActionSync(Action):
             ActionException: An `--architectures` token is not an architecture name; refused
                 before any storage is opened, so no target path or bucket is created.
         """
-        archs: list[str] | None = None
-        if getattr(pars, "architectures", "") != "":
-            archs = _split_csv(pars.architectures)
-            for arch in archs:
+        self._archs: list[str] | None = None
+        if pars.architectures != "":
+            self._archs = _split_csv(pars.architectures)
+            for arch in self._archs:
                 if not is_valid_arch(arch):
                     raise ActionException(f"Invalid architecture: {arch!r}")
 
+        # index excludes apply to both repos so --verify-existing agrees with the sync
+        self._indices_exclude: list[str] | None = (
+            _split_csv(pars.indices_exclude) if pars.indices_exclude != "" else None
+        )
+
+        self.source_repo: RepoSync | None = None
         super().__init__(pars, create_path=create_path)
-        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
         self.fix: bool = getattr(pars, "fix", False)
         self.verify_existing: bool = getattr(pars, "verify_existing", False)
         self.indices_only: bool = getattr(pars, "indices_only", False)
         self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
 
-        # force selected architectures from argparser
-        if archs is not None:
-            if self.source_repo is not None:
-                self.source_repo.params.archs = archs
-            self.target_repo.params.archs = archs
+    def _attach_repos(self, pars: "Namespace", create_path: bool) -> None:
+        """Open the `sync` source, then the target, each with the selection applied.
 
-        # index excludes apply to both repos so --verify-existing agrees with the sync
-        if getattr(pars, "indices_exclude", "") != "":
-            excludes = _split_csv(pars.indices_exclude)
-            if self.source_repo is not None:
-                self.source_repo.params.indices_exclude = excludes
-            self.target_repo.params.indices_exclude = excludes
+        `check` has no `--source-url`. A `sync` overwrites the target, so the target
+        gets no `GnuPG`: its Release is read unverified and never signed
+        -> [CRYPTO.md](CRYPTO.md#gpg).
+
+        Args:
+            pars (Namespace): Command line arguments from argparser.
+            create_path (bool): Create the target path or bucket if True.
+        """
+        if hasattr(pars, "source_url"):
+            logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
+            storage, params = attach_storage_repo(
+                pars, pars.source_url, archs=self._archs, indices_exclude=self._indices_exclude
+            )
+            self.source_repo = RepoSync(storage, params, gpg=self.gpg)
+
+        logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
+        storage, params = attach_storage_repo(
+            pars,
+            pars.target_url,
+            create_path=create_path,
+            archs=self._archs,
+            indices_exclude=self._indices_exclude,
+        )
+        self.target_repo = RepoRW(
+            storage, params, gpg=self.gpg if self.source_repo is None else None
+        )
 
     def _print_sync_brief(self, diff: "RepoDiff") -> None:
         """Print sync brief output.

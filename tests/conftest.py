@@ -11,6 +11,8 @@ from collections.abc import Iterator
 
 import pytest
 
+from debkit.argparser import parse_cli
+
 
 @pytest.fixture(autouse=True)
 def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,16 +61,19 @@ def moto_server() -> Iterator[str]:
 
 @pytest.fixture
 def fake_pars() -> Namespace:
-    """Build a minimal argparse.Namespace mimicking the parsed CLI.
+    """A `parse_cli` namespace with verification off, as `cli.main()` receives it.
 
-    Provides the global flags `cli.main()` reads unconditionally before dispatch.
     Tests override `.command` and any per-command attributes as needed.
     """
-    return Namespace(
-        command=None,
-        log_level="INFO",
-        log_format="plain",
-        skip_verify=True,
-        skip_verify_ssl=True,
-        skip_verify_gpg=True,
+    pars = parse_cli(
+        [
+            "--skip-verify",
+            "--skip-verify-ssl",
+            "--skip-verify-gpg",
+            "--target-url",
+            "fs:///tmp/repo bookworm main",
+            "list",
+        ]
     )
+    pars.command = None
+    return pars

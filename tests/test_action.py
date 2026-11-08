@@ -24,6 +24,7 @@ from debkit.action import (
     ActionException,
     OutputType,
     RepoJSONEncoder,
+    VerifyPolicy,
     add_output_cli_args,
     attach_storage_plain,
     attach_storage_repo,
@@ -32,6 +33,7 @@ from debkit.action import (
     history_retention,
     open_storage,
     storage_url,
+    verify_policy,
 )
 from debkit.repo import RepoReadException
 from debkit.repo.params import RepoParamsException
@@ -142,7 +144,7 @@ def test_action_init_builds_history_retention_from_pars(tmp_path: Path) -> None:
     assert action.history_retention == HistoryRetention(keep=3, max_age_days=7)
 
 
-def test_action_init_defaults_history_retention_without_the_flags(tmp_path: Path) -> None:
+def test_action_init_defaults_history_retention_from_the_flag_defaults(tmp_path: Path) -> None:
     action = Action(_pars(tmp_path))
     assert action.history_retention == HistoryRetention()
     assert action.history_retention.enabled
@@ -192,18 +194,22 @@ def test_action_init_does_not_warn_with_verification_on(
     assert "verification skipped" not in caplog.text
 
 
-def test_action_init_logs_the_repository_urls_without_their_credentials(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """URL userinfo is a secret -> CONFIG.md#secrets."""
-    secret = "s3cr3tpw"
-    pars = _pars(tmp_path, source_url=f"https://u:{secret}@host/debian bookworm main")
+def test_action_pkg_never_builds_a_source_repo(tmp_path: Path) -> None:
+    """Only `ActionSync` opens `--source-url`, even when a namespace carries one."""
+    from debkit.action.action_pkg import ActionPkg
+    from debkit.repo.repo_sync import RepoSync
 
-    with caplog.at_level(logging.DEBUG):
-        Action(pars)
+    pars = _pars(tmp_path, source_url="fs:///tmp/src bookworm main")
 
-    assert "Prepare source URL: https://***@host/debian bookworm main" in caplog.text
-    assert all(secret not in rec.getMessage() for rec in caplog.records)
+    with patch.object(RepoSync, "__init__") as sync_init:
+        action = ActionPkg(pars)
+
+    sync_init.assert_not_called()
+    assert not hasattr(action, "source_repo")
+
+
+def test_action_init_reads_the_output_flag(tmp_path: Path) -> None:
+    assert Action(_pars(tmp_path, output=OutputType.json)).output is OutputType.json
 
 
 # --- attach_storage_* ----------------------------------------------------------------------------
@@ -211,32 +217,28 @@ def test_action_init_logs_the_repository_urls_without_their_credentials(
 
 def test_attach_storage_repo_invalid_url() -> None:
     """A deb-source URL with only one field cannot become a valid RepoParams."""
-    pars = storage_namespace(target_url="https://example.com/debian")
     with pytest.raises(RepoParamsException):
-        attach_storage_repo(pars)
+        attach_storage_repo(storage_namespace(), "https://example.com/debian")
 
 
 def test_attach_storage_repo_wraps_storage_url_errors() -> None:
     """Repository attachment preserves read-error CLI semantics."""
-    pars = storage_namespace(target_url="http:///no-host bookworm main")
     with pytest.raises(RepoReadException) as exc_info:
-        attach_storage_repo(pars)
+        attach_storage_repo(storage_namespace(), "http:///no-host bookworm main")
 
     assert "Invalid HTTP URL" in str(exc_info.value)
 
 
 def test_attach_storage_repo_fs() -> None:
-    pars = storage_namespace(target_url="fs:///tmp/repo bookworm main")
-    storage, params = attach_storage_repo(pars)
+    storage, params = attach_storage_repo(storage_namespace(), "fs:///tmp/repo bookworm main")
     assert isinstance(storage, StorageFS)
     assert params.dist == "bookworm"
     assert params.components == ["main"]
 
 
 def test_attach_storage_repo_raises_on_empty_url() -> None:
-    pars = storage_namespace(target_url="    ")
     with pytest.raises((RepoReadException, RepoParamsException)):
-        attach_storage_repo(pars)
+        attach_storage_repo(storage_namespace(), "    ")
 
 
 def test_attach_storage_plain_skips_deb_source_parsing() -> None:
@@ -245,33 +247,31 @@ def test_attach_storage_plain_skips_deb_source_parsing() -> None:
     assert isinstance(storage, StorageHTTP)
 
 
-def test_attach_storage_plain_raises_on_missing_url() -> None:
-    """A missing URL (None after fallback) must fail at the action boundary."""
-    pars = storage_namespace(target_url=None)
-    with pytest.raises(StorageException):
-        attach_storage_plain(pars)
+def test_attach_storage_plain_raises_the_storage_construction_error() -> None:
+    """A plain URL keeps txstore's error, unwrapped → STORAGE.md#construction."""
+    with pytest.raises(StorageException, match="Invalid HTTP URL"):
+        attach_storage_plain(storage_namespace(), "http:///no-host")
 
 
 def test_attach_storage_root_accepts_bare_url() -> None:
     """Root-scoped commands need no dist/components fields."""
-    pars = storage_namespace(target_url="fs:///tmp/repo")
-    storage = attach_storage_root(pars)
+    storage = attach_storage_root(storage_namespace(), "fs:///tmp/repo")
     assert isinstance(storage, StorageFS)
 
 
 def test_attach_storage_root_ignores_dist_components() -> None:
     """The documented `<url> <dist> <component>` form still resolves to the root."""
-    bare = attach_storage_root(storage_namespace(target_url="fs:///tmp/repo"))
-    suffixed = attach_storage_root(storage_namespace(target_url="fs:///tmp/repo bookworm main"))
+    bare = attach_storage_root(storage_namespace(), "fs:///tmp/repo")
+    suffixed = attach_storage_root(storage_namespace(), "fs:///tmp/repo bookworm main")
     assert isinstance(bare, StorageFS)
     assert isinstance(suffixed, StorageFS)
     assert suffixed.base_dir == bare.base_dir
 
 
 def test_attach_storage_root_raises_on_blank_url() -> None:
-    for url in (None, "", "   "):
-        with pytest.raises(StorageException):
-            attach_storage_root(storage_namespace(target_url=url))
+    for url in ("", "   "):
+        with pytest.raises(StorageException, match="Empty storage URL"):
+            attach_storage_root(storage_namespace(), url)
 
 
 # --- open_storage / storage_url → STORAGE.md#construction ------------------------------------
@@ -345,3 +345,23 @@ def test_open_storage_skip_flags_turn_tls_verification_off(
 def test_history_retention_reads_the_flags() -> None:
     retention = history_retention(storage_namespace(history_keep=3, history_max_age=7))
     assert (retention.keep, retention.max_age_days) == (3, 7)
+
+
+@pytest.mark.parametrize(
+    ("skip", "skip_ssl", "skip_gpg", "expected"),
+    [
+        (False, False, False, VerifyPolicy(True, True, True)),
+        (True, False, False, VerifyPolicy(False, False, False)),
+        (False, True, False, VerifyPolicy(False, True, True)),
+        (False, False, True, VerifyPolicy(True, False, True)),
+        (True, True, True, VerifyPolicy(False, False, False)),
+    ],
+    ids=["all-on", "skip-verify", "skip-verify-ssl", "skip-verify-gpg", "all-off"],
+)
+def test_verify_policy_resolves_the_skip_switches(
+    skip: bool, skip_ssl: bool, skip_gpg: bool, expected: VerifyPolicy
+) -> None:
+    """→ CRYPTO.md#verification-switches."""
+    pars = storage_namespace(skip_verify=skip, skip_verify_ssl=skip_ssl, skip_verify_gpg=skip_gpg)
+
+    assert verify_policy(pars) == expected
