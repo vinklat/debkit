@@ -222,13 +222,13 @@ def test_component_save_strips_the_flat_dist_prefix_from_release_keys() -> None:
 
 
 def test_component_remove_pkg_iterates_all_arches() -> None:
-    """Locks the fix: every arch's Packages.remove is invoked (no short-circuit)."""
+    """Every arch's Packages.remove is invoked; a payload listed in both is returned once."""
     comp = _component()
     a, b = MagicMock(), MagicMock()
-    a.remove.return_value = True
-    b.remove.return_value = True
+    a.remove.return_value = {"pool/foo_all.deb", "pool/foo_amd64.deb"}
+    b.remove.return_value = {"pool/foo_all.deb"}
     comp.packages = {"amd64": a, "arm64": b}
-    assert comp.remove_pkg({"Package": "foo"}) is True
+    assert comp.remove_pkg({"Package": "foo"}) == {"pool/foo_all.deb", "pool/foo_amd64.deb"}
     a.remove.assert_called_once()
     b.remove.assert_called_once()
     assert comp.modified is True
@@ -237,9 +237,9 @@ def test_component_remove_pkg_iterates_all_arches() -> None:
 def test_component_remove_pkg_no_match_returns_false() -> None:
     comp = _component()
     a = MagicMock()
-    a.remove.return_value = False
+    a.remove.return_value = set()
     comp.packages = {"amd64": a}
-    assert comp.remove_pkg({"Package": "x"}) is False
+    assert comp.remove_pkg({"Package": "x"}) == set()
     assert comp.modified is False
 
 
@@ -247,18 +247,17 @@ def test_component_remove_pkg_skips_the_read_only_source_container() -> None:
     """A binary removal must not abort on the mirrored `Sources` index.
 
     `Component.load` builds a `Sources` for the source architecture, whose
-    `remove()` always raises. Without the skip, every `pkg remove` against a
-    source-carrying repository fails before touching the binary match.
+    `remove()` matches nothing, so the binary match alone decides the result.
     """
     comp = _component()
     binary = MagicMock()
-    binary.remove.return_value = True
+    binary.remove.return_value = {"pool/foo.deb"}
     comp.packages = {
         "amd64": binary,
         "source": Sources(make_storage_mock(), make_params()),
     }
 
-    assert comp.remove_pkg({"Package": "foo"}) is True
+    assert comp.remove_pkg({"Package": "foo"}) == {"pool/foo.deb"}
 
     binary.remove.assert_called_once()
     assert comp.modified is True
@@ -268,7 +267,7 @@ def test_component_remove_pkg_returns_false_when_only_the_source_container_is_lo
     """Nothing is removable, but the removal still reports cleanly."""
     comp = _component()
     comp.packages = {"source": Sources(make_storage_mock(), make_params())}
-    assert comp.remove_pkg({"Package": "foo"}) is False
+    assert comp.remove_pkg({"Package": "foo"}) == set()
     assert comp.modified is False
 
 

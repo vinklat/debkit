@@ -11,7 +11,7 @@ from typing import (
     Any,
 )
 
-from txstore import StorageException, calc_digests, compare_digests, is_unsafe_path
+from txstore import calc_digests, compare_digests, is_unsafe_path
 
 from debkit.repo.compress import COMPRESS_MAP, DECOMPRESS_MAP
 from debkit.repo.hashes import ChecksumException
@@ -523,8 +523,11 @@ class Packages:
 
             i += 1
 
-    def remove(self, fields: dict[str, Any]) -> bool:
-        """Remove package from the Packages object.
+    def remove(self, fields: dict[str, Any]) -> set[str]:
+        """Drop the matching packages from this index; never touch storage.
+
+        An `all` package is listed in several arch indices, so the caller deletes each returned
+        payload once → `RepoRW.remove_pkg`.
 
         Args:
             fields (Dict[str, str]): The fields to match a package
@@ -532,14 +535,10 @@ class Packages:
 
         Raises:
             ValueError: If any pattern is not a valid regular expression.
-            PackagesException: If a matched package has an unsafe Filename.
-            StorageException: If the backend fails to delete a matched
-                package; the in-memory index is left untouched for that
-                entry (and any not-yet-processed entries) so the caller can
-                surface the failure instead of producing an orphan object.
+            PackagesException: If a matched package has an unsafe Filename; nothing is dropped.
 
         Returns:
-            bool: True if any package was removed, False otherwise.
+            Set[str]: Filenames of the dropped packages; empty when nothing matched.
         """
         for pattern in fields.values():
             self._validate_regex_safe(pattern)
@@ -549,9 +548,7 @@ class Packages:
         except re.error as exc:
             raise ValueError(f"Invalid regex pattern: {exc}") from exc
 
-        to_delete: set[str] = set()
-        deleted = False
-
+        removed: set[str] = set()
         for pkg_name, package in self.packages.items():
             if all(
                 field in package.fields and rx.search(package.fields[field])
@@ -559,22 +556,13 @@ class Packages:
             ):
                 if is_unsafe_path(pkg_name):
                     raise PackagesException(f"unsafe filename: {pkg_name}")
-                to_delete.add(pkg_name)
+                removed.add(pkg_name)
 
-        for pkg_name in to_delete:
-            logging.info("Remove package: %s", pkg_name)
-            try:
-                self.storage.delete(pkg_name)
-            except StorageException:
-                logging.exception("storage.delete(%s) failed", pkg_name)
-                raise
+        for pkg_name in removed:
             self.packages.pop(pkg_name)
-            deleted = True
-
-        if deleted:
+        if removed:
             self.modified = True
-
-        return deleted
+        return removed
 
     def get_indices_paths(self) -> list[str]:
         """Get list of all indices files.

@@ -2,7 +2,8 @@
 
 Explains how [`ActionPkg.remove`](../../src/debkit/action/action_pkg.py) removes the packages whose
 fields match a JSON regex map such as `{"Package": "hello", "Version": "1.0"}`: the pattern is
-applied in memory by `RepoRW.remove_pkg` and the index rewrite runs inside one transaction. Rules
+applied in memory by `RepoRW.remove_pkg`, and the payload deletes and index rewrite run inside one
+transaction. Rules
 are owned by [STYLE.md](../../STYLE.md#layers) (action layer), [CONFIG.md](../../CONFIG.md#remove)
 (flags), [VALIDATION.md](../../VALIDATION.md#package-pattern-matching) (pattern rules),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics) (no-match semantics), and
@@ -26,8 +27,10 @@ in [examples.md](../guides/examples.md#remove-packages).
   [STORAGE.md](../../STORAGE.md#transactions).
 - The JSON pattern is parsed before the transaction starts; a malformed pattern aborts without
   touching the storage backend → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
-- `remove_pkg` mutates only in-memory `Packages` indices; nothing reaches storage until
-  `target.save()` writes the rewritten indices, and only when the diff is non-empty.
+- `Packages.remove` only drops matching entries from its in-memory index and returns their
+  filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
+  listed by every binary arch index. The rewritten indices reach storage only through
+  `target.save()`, and only when the diff is non-empty.
 - No match is an orchestration failure, not a write failure →
   [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - A non-transactional target skips begin, commit, and discard →
@@ -38,7 +41,8 @@ in [examples.md](../guides/examples.md#remove-packages).
 
 `tests/test_action_pkg.py` covers pattern handling, the no-match `ActionException`, and the
 transaction wiring; `tests/test_packages.py` covers `Packages.remove()` and its filename-safety
-check → [TESTING.md](../../TESTING.md#required-coverage).
+check; `tests/test_repo_rw.py` removes an `all` payload from a real `StorageFS` →
+[TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 

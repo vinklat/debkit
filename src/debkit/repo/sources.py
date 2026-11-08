@@ -149,7 +149,7 @@ class Sources(Packages):
         """
         raise PackagesException("Sources index is read-only")
 
-    def remove(self, fields: dict[str, Any]) -> bool:
+    def remove(self, fields: dict[str, Any]) -> set[str]:
         """Remove nothing: a `Sources` index is mirrored, never composed.
 
         Returning the base contract's "nothing removed" lets a caller iterate every
@@ -159,6 +159,6 @@ class Sources(Packages):
             fields (Dict[str, Any]): Ignored.
 
         Returns:
-            bool: Always False.
+            Set[str]: Always empty.
         """
-        return False
+        return set()

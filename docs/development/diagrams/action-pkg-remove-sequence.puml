@@ -22,7 +22,9 @@ CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
 ActionPkg -> Tgt: remove_pkg(fields)
-Tgt --> ActionPkg: ok
+Tgt -> Tgt: drop matches from every arch index
+Tgt -> TStor: delete each matched payload once (staged)
+Tgt --> ActionPkg: True / False
 ActionPkg -> Tgt: diff(prev_repo)
 Tgt --> ActionPkg: ret_diff
 opt ret_diff non-empty

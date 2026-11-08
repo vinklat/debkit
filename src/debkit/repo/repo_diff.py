@@ -88,12 +88,12 @@ class RepoDiff:
         return pkgs
 
     def count_pkgs_to_copy(self) -> int:
-        """Get count of packages to copy.
+        """Get count of distinct payloads to copy; an `all` package in several arches counts once.
 
         Returns:
             int: count of packages to copy
         """
-        return len(self.get_pkgs_to_copy())
+        return len(self.get_filenames_to_copy())
 
     def get_filenames_to_copy(self) -> set[str]:
         """Get list of filenames to copy.
@@ -120,12 +120,12 @@ class RepoDiff:
         return pkgs
 
     def count_pkgs_to_remove(self) -> int:
-        """Get count of packages to remove.
+        """Get count of distinct payloads to remove; an `all` package in several arches counts once.
 
         Returns:
             int: count of packages to remove
         """
-        return len(self.get_pkgs_to_remove())
+        return len(self.get_filenames_to_remove())
 
     def get_filenames_to_remove(self) -> set[str]:
         """Get list of filenames to remove.

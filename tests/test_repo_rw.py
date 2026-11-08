@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
+import pytest
 from helpers.factories import make_package, make_params, make_storage_mock
+from txstore import StorageException, StorageFS
 
 from debkit.repo.component import Component
 from debkit.repo.repo_rw import RepoRW
@@ -43,19 +46,35 @@ def test_insert_pkg_creates_missing_component() -> None:
 def test_remove_pkg_returns_false_when_no_match() -> None:
     repo, _release = _repo()
     comp = MagicMock()
-    comp.remove_pkg.return_value = False
+    comp.remove_pkg.return_value = set()
     repo.components = {"main": comp}
     assert repo.remove_pkg({"Package": "missing"}) is False
     assert repo.modified is False
+    cast(MagicMock, repo.storage).delete.assert_not_called()
 
 
-def test_remove_pkg_returns_true_and_marks_modified() -> None:
+def test_remove_pkg_deletes_each_payload_once_and_marks_modified() -> None:
     repo, _release = _repo()
-    comp = MagicMock()
-    comp.remove_pkg.return_value = True
-    repo.components = {"main": comp}
+    main, contrib = MagicMock(), MagicMock()
+    main.remove_pkg.return_value = {"pool/foo_all.deb"}
+    contrib.remove_pkg.return_value = {"pool/foo_all.deb", "pool/bar.deb"}
+    repo.components = {"main": main, "contrib": contrib}
     assert repo.remove_pkg({"Package": "foo"}) is True
     assert repo.modified is True
+    assert cast(MagicMock, repo.storage).delete.call_args_list == [
+        call("pool/bar.deb"),
+        call("pool/foo_all.deb"),
+    ]
+
+
+def test_remove_pkg_propagates_a_delete_failure() -> None:
+    repo, _release = _repo()
+    comp = MagicMock()
+    comp.remove_pkg.return_value = {"pool/foo.deb"}
+    repo.components = {"main": comp}
+    cast(MagicMock, repo.storage).delete.side_effect = StorageException("boom")
+    with pytest.raises(StorageException, match="boom"):
+        repo.remove_pkg({"Package": "foo"})
 
 
 def test_transfer_from_does_not_pass_acl_kwarg() -> None:
@@ -78,3 +97,29 @@ def test_reset_clears_state() -> None:
     repo.reset()
     assert repo.components == {}
     release.reset.assert_called_once()
+
+
+def test_remove_pkg_of_an_arch_all_payload_on_a_real_storage(tmp_path: Path) -> None:
+    """An `all` payload listed by two arch indices is deleted once, outside a transaction.
+
+    Deleting it once per index would raise `StorageNotFoundException` on the second arch.
+    """
+    storage = StorageFS(str(tmp_path))
+    payload = "pool/main/h/hello/hello_1.0_all.deb"
+    storage.put(payload, b"deb")
+    built = RepoRW(storage, make_params())
+    built.setup({"Architectures": "amd64 arm64", "Components": "main"})
+    for arch in ("amd64", "arm64"):
+        built.insert_pkg("main", arch, make_package(payload, Package="hello", Architecture="all"))
+    built.save()
+
+    repo = RepoRW(storage, make_params())
+    repo.update()
+    assert not storage.in_transaction()
+    assert repo.remove_pkg({"Package": "^hello$"}) is True
+
+    assert not storage.exists(payload)
+    assert {arch: pkgs.packages for arch, pkgs in repo.components["main"].packages.items()} == {
+        "amd64": {},
+        "arm64": {},
+    }

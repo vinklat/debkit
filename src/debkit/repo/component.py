@@ -237,20 +237,21 @@ class Component:
         self.packages[arch].insert(package)
         self.modified = True
 
-    def remove_pkg(self, fields_patterns: dict[str, Any]) -> bool:
-        """Remove deb package object from the component (all matching arches).
+    def remove_pkg(self, fields_patterns: dict[str, Any]) -> set[str]:
+        """Drop matching packages from every arch index of the component; storage is untouched.
+
+        A mirrored `Sources` index removes nothing →
+        [VALIDATION.md](VALIDATION.md#sources-stanzas).
 
         Args:
             fields_patterns (Dict[str, Any]): The fields of the package to match.
 
         Returns:
-            bool: True if any package was removed from any arch, False otherwise.
+            Set[str]: Filenames dropped from any arch, each once.
         """
-        # Materialise to avoid the short-circuit semantics of any() over a generator,
-        # which would stop at the first matching arch. A mirrored `Sources` index
-        # removes nothing -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
-        results = [packages.remove(fields_patterns) for packages in self.packages.values()]
-        removed = any(results)
+        removed: set[str] = set()
+        for packages in self.packages.values():
+            removed |= packages.remove(fields_patterns)
         if removed:
             self.modified = True
         return removed

@@ -102,6 +102,18 @@ def test_repo_diff_get_pkgs_to_remove_excludes_old_versions() -> None:
     assert diff.count_pkgs_to_remove() == 1
 
 
+def test_repo_diff_counts_an_arch_all_payload_once() -> None:
+    """Two arch indices list one `all` payload; the brief output counts one package."""
+    diff = RepoDiff()
+    pkg = make_package("pool/main/h/hello_1_all.deb")
+    for arch in ("amd64", "arm64"):
+        diff.update("main", arch, _by_name(pkg), _by_name(pkg), {}, {})
+
+    assert len(diff.get_pkgs_to_remove()) == 2
+    assert diff.count_pkgs_to_copy() == 1
+    assert diff.count_pkgs_to_remove() == 1
+
+
 def test_repo_diff_two_components_coexist_in_dump() -> None:
     diff = RepoDiff()
     a_main = make_package("pool/main/a/a_1_amd64.deb")

@@ -104,24 +104,30 @@ class RepoRW(Repo):
         self.modified = True
 
     def remove_pkg(self, fields_patterns: dict[str, Any]) -> bool:
-        """Remove deb package objects matching ``fields_patterns`` from the repo.
+        """Drop packages matching ``fields_patterns`` from the indices and delete their payloads.
+
+        Several arch indices list one `all` payload, so each payload is deleted once.
 
         Args:
             fields_patterns (Dict[str, Any]): The fields of the package to match.
+
+        Raises:
+            StorageException: If the backend fails to delete a payload.
 
         Returns:
             bool: True iff at least one package was removed.
         """
         logging.info("Removing packages with fields patterns: %s", fields_patterns)
 
-        # Materialise the per-component results: a generator inside ``any()`` would
-        # short-circuit and only the first matching component would actually drop
-        # the packages.
-        results = [component.remove_pkg(fields_patterns) for component in self.components.values()]
-        removed = any(results)
+        removed: set[str] = set()
+        for component in self.components.values():
+            removed |= component.remove_pkg(fields_patterns)
+        for filename in sorted(removed):
+            logging.info("Remove package: %s", filename)
+            self.storage.delete(filename)
         if removed:
             self.modified = True
-        return removed
+        return bool(removed)
 
     def insert_pkg(self, component_name: str, arch: str, package: "Package") -> None:
         """Add deb package object to the repo.

@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from helpers.factories import make_package, make_packages_block, make_params, make_storage_mock
-from txstore import StorageException
 
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.packages import MAX_INDICES_BYTES, Packages, PackagesException
@@ -412,24 +411,11 @@ def test_packages_remove_all_fields_match() -> None:
         "pool/foo.deb": make_package("pool/foo.deb", Package="foo"),
         "pool/bar.deb": make_package("pool/bar.deb", Package="bar"),
     }
-    assert pkgs.remove({"Package": "^foo$"}) is True
-    _storage(pkgs).delete.assert_called_once_with("pool/foo.deb")
+    assert pkgs.remove({"Package": "^foo$"}) == {"pool/foo.deb"}
+    _storage(pkgs).delete.assert_not_called()
     assert "pool/foo.deb" not in pkgs.packages
     assert "pool/bar.deb" in pkgs.packages
     assert pkgs.modified is True
-
-
-def test_packages_remove_storage_delete_failure_propagates_and_keeps_entry(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    pkgs = _new_packages()
-    _storage(pkgs).delete.side_effect = StorageException("boom")
-    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", Package="foo")}
-    with caplog.at_level(logging.ERROR), pytest.raises(StorageException, match="boom"):
-        pkgs.remove({"Package": "foo"})
-    assert "pool/foo.deb" in pkgs.packages
-    assert pkgs.modified is False
-    assert any("storage.delete" in r.message for r in caplog.records)
 
 
 def test_packages_remove_rejects_traversal_filename() -> None:
@@ -437,7 +423,7 @@ def test_packages_remove_rejects_traversal_filename() -> None:
     pkgs.packages = {"../../etc/passwd": make_package("../../etc/passwd", Package="evil")}
     with pytest.raises(PackagesException, match="unsafe filename"):
         pkgs.remove({"Package": "evil"})
-    _storage(pkgs).delete.assert_not_called()
+    assert "../../etc/passwd" in pkgs.packages
 
 
 def test_packages_remove_rejects_leading_slash() -> None:
@@ -457,8 +443,7 @@ def test_packages_remove_invalid_regex_raises_value_error() -> None:
 def test_packages_remove_no_match_returns_false() -> None:
     pkgs = _new_packages()
     pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", Package="foo")}
-    assert pkgs.remove({"Package": "nope"}) is False
-    _storage(pkgs).delete.assert_not_called()
+    assert pkgs.remove({"Package": "nope"}) == set()
     assert pkgs.modified is False
 
 
