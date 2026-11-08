@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from helpers.factories import make_action_namespace
@@ -143,6 +145,40 @@ def test_action_init_defaults_history_retention_without_the_flags(tmp_path: Path
     action = Action(_pars(tmp_path))
     assert action.history_retention == HistoryRetention()
     assert action.history_retention.enabled
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        ({"skip_verify": True, "skip_verify_gpg": True}, "--skip-verify is set"),
+        ({"skip_verify": False, "skip_verify_gpg": True}, "--skip-verify-gpg is set"),
+    ],
+    ids=["skip-verify", "skip-verify-gpg"],
+)
+def test_action_init_warns_once_when_verification_is_skipped(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, flags: dict[str, bool], message: str
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        action = Action(_pars(tmp_path, **flags))
+
+    assert action.gpg is None
+    skipped = [rec for rec in caplog.records if "verification skipped" in rec.getMessage()]
+    assert len(skipped) == 1
+    assert skipped[0].levelno == logging.WARNING
+    assert message in skipped[0].getMessage()
+
+
+def test_action_init_does_not_warn_with_verification_on(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with (
+        patch("debkit.action.GnuPG") as gnupg,
+        caplog.at_level(logging.WARNING),
+    ):
+        action = Action(_pars(tmp_path, skip_verify=False, skip_verify_gpg=False))
+
+    assert action.gpg is gnupg.return_value
+    assert "verification skipped" not in caplog.text
 
 
 # --- attach_storage_* ----------------------------------------------------------------------------

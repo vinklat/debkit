@@ -93,7 +93,7 @@ def add_common_args(parser: EnvArgumentParser) -> None:
         "--skip-verify-gpg",
         env="DEBKIT_SKIP_VERIFY_GPG",
         dest="skip_verify_gpg",
-        help="skip GPG signature verification - INSECURE",
+        help="skip GPG signature verification and signing - INSECURE",
         action=BooleanOptionalAction,
         default=False,
     )

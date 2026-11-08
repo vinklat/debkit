@@ -10,7 +10,7 @@ from email.parser import Parser
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
-from txstore import calc_digests, compare_digests
+from txstore import StorageNotFoundException, calc_digests, compare_digests
 
 from debkit.repo.gnupg import canonical_text, cleartext_body
 from debkit.repo.hashes import (
@@ -612,8 +612,27 @@ class Release(HexDigests):
         else:
             raise ReleaseWriteException(GPG_ERR_MSG)
 
+    def _remove_root_signatures(self) -> None:
+        """Delete the root `InRelease` and `Release.gpg` an unsigned save leaves stale.
+
+        Both sign the previous content, so apt would read a hash mismatch or a bad
+        signature -> [CRYPTO.md](CRYPTO.md#verification-switches).
+        """
+        for path in (
+            self.params.indices_path("InRelease"),
+            self.params.indices_path("Release.gpg"),
+        ):
+            try:
+                self.storage.delete(path)
+            except StorageNotFoundException:
+                continue
+            logging.warning("Release saved unsigned: removed stale signature %s", path)
+            self.found_indices_files = [f for f in self.found_indices_files if f != path]
+
     def save(self) -> dict[str, str] | None:
         """Save Release file.
+
+        A root Release saved without signing drops its old signatures.
 
         Returns:
             Dict[str, str] | None: The digests of the saved file.
@@ -633,6 +652,8 @@ class Release(HexDigests):
 
         if self.gpg and self.params.verify_gpg:
             self._sign_gpg(self.filename, enc_data)
+        elif self.filename == self.params.indices_path("Release"):
+            self._remove_root_signatures()
 
         return digests
 

@@ -237,7 +237,19 @@ class Action:
         skip_verify: bool = hasattr(pars, "skip_verify") and pars.skip_verify
         skip_verify_gpg: bool = hasattr(pars, "skip_verify_gpg") and pars.skip_verify_gpg
 
-        if not (skip_verify or skip_verify_gpg):
+        # one warning per run, as for `--allow-release-rollback`
+        # -> [CRYPTO.md](CRYPTO.md#verification-switches)
+        if skip_verify:
+            logging.warning(
+                "GPG and digest verification skipped: --skip-verify is set; "
+                "Release files are neither verified nor signed"
+            )
+        elif skip_verify_gpg:
+            logging.warning(
+                "GPG verification skipped: --skip-verify-gpg is set; "
+                "Release files are neither verified nor signed"
+            )
+        else:
             self.gpg = GnuPG(pars)
 
         if hasattr(pars, "source_url"):

@@ -29,7 +29,7 @@ flags in `argparser.py`, subcommand flags in the owning `Action*` module.
 | `--log-format`        | `DEBKIT_LOG_FORMAT`       | `plain`           | `plain` lines (module and function added at DEBUG) or one `json` object per line            |
 | `-n`, `--skip-verify` | `DEBKIT_SKIP_VERIFY`      | off               | Disables TLS, GPG, and digest verification → [CRYPTO.md](CRYPTO.md#verification-switches)   |
 | `--skip-verify-ssl`   | `DEBKIT_SKIP_VERIFY_SSL`  | off               | Disables TLS certificate verification                                                       |
-| `--skip-verify-gpg`   | `DEBKIT_SKIP_VERIFY_GPG`  | off               | Disables GPG verification                                                                   |
+| `--skip-verify-gpg` | `DEBKIT_SKIP_VERIFY_GPG` | off | Disables GPG verification and Release signing → [CRYPTO.md](CRYPTO.md#verification-switches) |
 | `--gnupg-home`        | `DEBKIT_GNUPG_HOME`       | `.gnupg`          | GnuPG home directory → [CRYPTO.md](CRYPTO.md#gpg)                                           |
 | `--gnupg-keyring`     | `DEBKIT_GNUPG_KEYRING`    | `trustedkeys.gpg` | Trusted keyring filename                                                                    |
 | `--gnupg-passphrase`  | `DEBKIT_GNUPG_PASSPHRASE` | empty string      | Secret                                                                                      |

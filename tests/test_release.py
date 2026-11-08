@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from txstore import calc_digests
+from txstore import StorageFS, calc_digests
 
 from debkit.repo.gnupg import cleartext_body
 from debkit.repo.hashes import ChecksumException
@@ -129,6 +130,69 @@ def test_save_no_op_when_not_modified() -> None:
     r.filename = "dists/bookworm/Release"
     assert r.save() is None
     storage.put.assert_not_called()
+
+
+_ROOT = "dists/bookworm"
+
+
+def test_save_unsigned_removes_the_stale_root_signatures(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Both sign the old content, so apt would read a hash mismatch or a bad signature."""
+    storage = StorageFS(str(tmp_path))
+    for name in ("Release", "Release.gpg", "InRelease"):
+        storage.put(f"{_ROOT}/{name}", b"Origin: old\n")
+    r = Release(storage, _params(), gpg=None)
+    r.load()
+    r.fields["Origin"] = "new"
+    r.modified = True
+
+    with caplog.at_level(logging.WARNING):
+        assert r.save() is not None
+
+    assert not storage.exists(f"{_ROOT}/InRelease")
+    assert not storage.exists(f"{_ROOT}/Release.gpg")
+    assert storage.get(f"{_ROOT}/Release") == b"Origin: new"
+    assert r.found_indices_files == [f"{_ROOT}/Release"]
+    assert sum("removed stale signature" in rec.message for rec in caplog.records) == 2
+
+
+def test_save_unsigned_without_signatures_only_writes_the_release(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    storage = StorageFS(str(tmp_path))
+    r = Release(storage, _params())
+    r.setup(fields={"Origin": "test"})
+
+    with caplog.at_level(logging.WARNING):
+        assert r.save() is not None
+
+    assert storage.exists(f"{_ROOT}/Release")
+    assert "removed stale signature" not in caplog.text
+
+
+def test_save_signed_keeps_and_rewrites_the_root_signatures() -> None:
+    storage = MagicMock()
+    gpg = MagicMock()
+    gpg.sign.side_effect = lambda data, detach=False: "detached" if detach else "inline"
+    r = Release(storage, _params(verify_gpg=True), gpg=gpg)
+    r.setup(fields={"Origin": "test"})
+
+    r.save()
+
+    storage.delete.assert_not_called()
+    written = [call.args[0] for call in storage.put.call_args_list]
+    assert written == [f"{_ROOT}/Release", f"{_ROOT}/InRelease", f"{_ROOT}/Release.gpg"]
+
+
+def test_save_of_a_component_release_leaves_the_root_signatures() -> None:
+    storage = MagicMock()
+    r = Release(storage, _params())
+    r.setup(comp="main", arch="amd64")
+
+    r.save()
+
+    storage.delete.assert_not_called()
 
 
 def test_parse_nonstandard_continuation_lines() -> None:

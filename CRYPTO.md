@@ -12,6 +12,8 @@ Verification is on by default; skipping is explicit through the switches below.
 | ------------------- | ----------------------------------------------------------------------------------- |
 | `--skip-verify` | Disables TLS, GPG, and digest verification; GPG as under `--skip-verify-gpg`. |
 | `--skip-verify-gpg` | No `GnuPG` instance is created by action setup; Release signatures are not checked, and a root Release without `Release.gpg` or `InRelease` reads as-is. |
+| `--skip-verify-gpg`, writing | Release signing is off too: `insert` and `remove` save the root `Release` unsigned and delete its old `InRelease` and `Release.gpg`, logging each, since both sign the previous content. |
+| `--skip-verify` or `--skip-verify-gpg` | Every command that reads a repository logs a warning once per run; `log`, `revert`, and `prune` verify nothing and do not. |
 | `--skip-verify-ssl` | `verify=False` on HTTP and S3 clients → [STORAGE.md](STORAGE.md#construction).      |
 
 Flag names and variables → [CONFIG.md](CONFIG.md#global-flags).
