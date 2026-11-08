@@ -1,7 +1,7 @@
 # Structure and dependency contract
 
-Owns: directories, module ownership, internal import directions, and the txstore boundary. Routing
-→ [AGENTS.md](AGENTS.md#canonical-sources).
+Owns: directories, module ownership, internal import directions, and the txstore boundary. Routing →
+[AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Layout
 

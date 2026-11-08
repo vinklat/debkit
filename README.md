@@ -59,10 +59,10 @@ worked examples → [docs/guides/examples.md](docs/guides/examples.md).
 
 ## Documentation
 
-| Location                                        | Audience                    | Authority                                       |
-| ----------------------------------------------- | --------------------------- | ----------------------------------------------- |
-| `/` root contract documents                     | Developers and AI agents    | Canonical                                       |
-| [docs/guides/](docs/guides/README.md)           | Anyone operating the CLI    | Non-canonical how-tos and examples              |
+| Location | Audience | Authority |
+| -- | -- | -- |
+| `/` root contract documents | Developers and AI agents | Canonical |
+| [docs/guides/](docs/guides/README.md) | Anyone operating the CLI | Non-canonical how-tos and examples |
 | [docs/development/](docs/development/README.md) | Developers and contributors | Non-canonical diagrams, code maps, explanations |
 
 Domain owners and agent navigation → [AGENTS.md](AGENTS.md#canonical-sources).

@@ -3,8 +3,8 @@
 Owns: CLI flag names, their `DEBKIT_*` variables, resolution order, defaults, secrets, and only the
 behavior needed to interpret a value. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
-`—` in Default means required. Flags are registered in the layer that owns them: global and S3
-flags in `argparser.py`, subcommand flags in the owning `Action*` module.
+`—` in Default means required. Flags are registered in the layer that owns them: global and S3 flags
+in `argparser.py`, subcommand flags in the owning `Action*` module.
 
 ## Resolution
 
@@ -126,8 +126,7 @@ recorded transaction → [STORAGE.md](STORAGE.md#history-commands). Accepts `--d
 
 Uses `--target-url`, whose dist and component fields are optional and ignored; applies the
 `--history-keep` and `--history-max-age` retention policy →
-[STORAGE.md](STORAGE.md#history-commands).
-Root-scoped, and accepts `--dry-run` and `-o`.
+[STORAGE.md](STORAGE.md#history-commands). Root-scoped, and accepts `--dry-run` and `-o`.
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |

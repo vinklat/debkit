@@ -23,8 +23,8 @@ Details → [VALIDATION.md](../../VALIDATION.md#debian-source-strings) and
 
 ### List packages
 
-From a public HTTP repository. Its `Release` is verified against the trusted keyring, so import
-the Debian archive keys first, as in the [quick start](../../README.md#quick-start):
+From a public HTTP repository. Its `Release` is verified against the trusted keyring, so import the
+Debian archive keys first, as in the [quick start](../../README.md#quick-start):
 
 ```bash
 debkit --target-url="https://deb.debian.org/debian bookworm main contrib non-free" list
@@ -168,8 +168,8 @@ rules → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 
 ### Into a local directory
 
-Mirrors a public repository into `debian` under the current working directory. The source
-`Release` is verified against the trusted keyring, as for [List packages](#list-packages):
+Mirrors a public repository into `debian` under the current working directory. The source `Release`
+is verified against the trusted keyring, as for [List packages](#list-packages):
 
 ```bash
 export DEBKIT_SOURCE_URL="https://deb.debian.org/debian bookworm main contrib non-free"
@@ -196,8 +196,8 @@ debkit sync --indices-exclude '*/Contents-all,*/Contents-amd64,*/Contents-arm64'
 An excluded index is also removed from the target →
 [VALIDATION.md](../../VALIDATION.md#index-exclude-globs).
 
-Several dists can share one target root, as in the Debian archive: sync each into the same URL
-with its own dist. A sync removes only what its own dist drops, and keeps every other dist's
+Several dists can share one target root, as in the Debian archive: sync each into the same URL with
+its own dist. A sync removes only what its own dist drops, and keeps every other dist's
 `dists/<dist>/` tree and the `pool/` files that dist lists →
 [VALIDATION.md](../../VALIDATION.md#index-selection).
 
@@ -251,8 +251,8 @@ debkit check
 Deletes orphan files not referenced by any index and files with invalid checksums. A check selects
 indices and packages the way a sync does, so pass it the same `--architectures` and
 `--indices-exclude` the mirror was synced with: anything outside them counts as an orphan and is
-deleted → [CONFIG.md](../../CONFIG.md#check). The deletions are recorded, so `revert` can undo
-them → [Transaction history](#transaction-history). A mirror synced with `source` needs:
+deleted → [CONFIG.md](../../CONFIG.md#check). The deletions are recorded, so `revert` can undo them
+→ [Transaction history](#transaction-history). A mirror synced with `source` needs:
 
 ```bash
 debkit check --fix --architectures amd64,arm64,source
@@ -262,8 +262,7 @@ debkit check --fix --architectures amd64,arm64,source
 
 Every `insert`, `remove`, `sync`, and `check --fix` that changed something is recorded, on `fs://`
 and `s3://` targets, so the latest change can be undone. These commands address only the storage
-root, so the URL needs no dist or components →
-[STORAGE.md](../../STORAGE.md#history-commands).
+root, so the URL needs no dist or components → [STORAGE.md](../../STORAGE.md#history-commands).
 
 ```bash
 debkit --target-url="debian" log

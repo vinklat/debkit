@@ -16,7 +16,8 @@ skips, or recopies. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 ## Storage URLs
 
 Implemented by `storage_url()` in `action/__init__.py` for `--target-url`, `--source-url`, and
-`--incoming-url`; txstore validates what it receives → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#storage-urls),
+`--incoming-url`; txstore validates what it receives →
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#storage-urls),
 including HTTP joins and the S3 path split.
 
 | Rule | Constraint | Failure |
@@ -295,7 +296,8 @@ path.
 ## S3 canned ACLs
 
 Implemented by `object_acl_type()` and `bucket_acl_type()` in `argtypes.py` over txstore's
-`parse_object_acl()` and `parse_bucket_acl()`; values → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#s3-canned-acls).
+`parse_object_acl()` and `parse_bucket_acl()`; values →
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.1/VALIDATION.md#s3-canned-acls).
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |

@@ -59,8 +59,8 @@ Read only the relevant sections; locate code from [STRUCTURE.md](STRUCTURE.md#la
 2. Implement through the layer path in [STRUCTURE.md](STRUCTURE.md#dependencies). Write errors as
    `condition → ExceptionClass (group)` and link `EXCEPTIONS.md` instead of copying its table. A new
    flag → [CONFIG.md](CONFIG.md#maintenance); a new module →
-   [STRUCTURE.md](STRUCTURE.md#maintenance); a storage need txstore's public names do not meet is
-   a txstore change, never a private import.
+   [STRUCTURE.md](STRUCTURE.md#maintenance); a storage need txstore's public names do not meet is a
+   txstore change, never a private import.
 3. Add the narrowest test that falsifies the change per [TESTING.md](TESTING.md#maintenance).
 4. Run the [SETUP.md quality gates](SETUP.md#quality-gates); contract and `docs/` edits also run
    `uv run python scripts/check_docs.py`. CI runs the gates again.

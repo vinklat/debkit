@@ -6,9 +6,8 @@ style conflicts. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 ## Python baseline
 
 - Use the [SETUP.md prerequisites](SETUP.md#prerequisites-and-install) Python floor. Apply PEP 8
-  where Ruff is silent, strict type hints, and Google-style docstrings for public symbols.
-  Docstring `Args:`, `Attributes:`, `Returns:`, and `Yields:` entries do not repeat the annotated
-  types.
+  where Ruff is silent, strict type hints, and Google-style docstrings for public symbols. Docstring
+  `Args:`, `Attributes:`, `Returns:`, and `Yields:` entries do not repeat the annotated types.
 - Ruff owns formatting, lint, and import order at line length 100: standard library, third-party
   (`txstore` among them), then `debkit`. Commands → [SETUP.md](SETUP.md#quality-gates).
 - Every module starts with `from __future__ import annotations` (Ruff `I002`); annotations use the
@@ -22,8 +21,8 @@ style conflicts. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 - In `src/debkit`, import at module top; no import is deferred →
   [STRUCTURE.md](STRUCTURE.md#dependencies). Tests and scripts are exempt.
 - Use snake-case modules; a leading underscore marks a module that only debkit imports.
-- No side effects at import time: no argv parsing, environment reads, network, or filesystem
-  writes. Expose such logic through functions callers and tests invoke, e.g. `argparser.parse_cli`.
+- No side effects at import time: no argv parsing, environment reads, network, or filesystem writes.
+  Expose such logic through functions callers and tests invoke, e.g. `argparser.parse_cli`.
 - Prefer immutable inputs and results; do not mutate a caller's namespace or dict.
 
 ## Layers
@@ -39,8 +38,8 @@ Import directions → [STRUCTURE.md](STRUCTURE.md#dependencies).
 
 ## Logging
 
-- A module that logs does so through `logger = logging.getLogger(__name__)`, never the root
-  logger (Ruff `LOG`), and installs `logging.NullHandler()` on it.
+- A module that logs does so through `logger = logging.getLogger(__name__)`, never the root logger
+  (Ruff `LOG`), and installs `logging.NullHandler()` on it.
 - Use `%` formatting in logger calls, never f-strings or `str.format` (Ruff `G`).
 - Only `cli.main` configures handlers, through `_logging.configure_logging` →
   [CONFIG.md](CONFIG.md#global-flags).

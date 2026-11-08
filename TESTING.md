@@ -7,13 +7,12 @@ not copied here.
 ## Harness and gates
 
 - Run with `uv run pytest` → [SETUP.md](SETUP.md#test).
-- Keep tests isolated: no real network, no real cloud account, no real user GPG home; a
-  throwaway home from `tests/helpers/gpg.py` is allowed. Real-gpg tests skip without a gpg
-  binary, except under `CI`, where they fail instead. S3-backed
-  tests use the session-scoped `moto_server` fixture; CLI and action tests use `fake_pars`, both
-  from `tests/conftest.py`.
-- `tests/conftest.py` clears every `DEBKIT_*` and `TXSTORE_*` variable before each test; a test
-  sets one with `monkeypatch.setenv`.
+- Keep tests isolated: no real network, no real cloud account, no real user GPG home; a throwaway
+  home from `tests/helpers/gpg.py` is allowed. Real-gpg tests skip without a gpg binary, except
+  under `CI`, where they fail instead. S3-backed tests use the session-scoped `moto_server` fixture;
+  CLI and action tests use `fake_pars`, both from `tests/conftest.py`.
+- `tests/conftest.py` clears every `DEBKIT_*` and `TXSTORE_*` variable before each test; a test sets
+  one with `monkeypatch.setenv`.
 - Factory helpers and storage stubs live in `tests/helpers/`; prefer them over ad-hoc setup.
 - Import txstore through its façade only; a storage need its public names do not meet goes to
   txstore, not into a private import.

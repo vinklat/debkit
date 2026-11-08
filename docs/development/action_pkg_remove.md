@@ -26,8 +26,7 @@ in [examples.md](../guides/examples.md#remove-packages).
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed pattern exits 2
-  before the target is read →
-  [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
+  before the target is read → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 - `Packages.remove` only drops matching entries from its in-memory index and returns their
   filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
   listed by every binary arch index. The rewritten indices reach storage only through
