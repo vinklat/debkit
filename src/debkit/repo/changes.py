@@ -61,6 +61,7 @@ class Changes(HexDigests):
 
         Raises:
             ChangesException: If the file is not UTF-8.
+            ChangesException: If a field appears twice, its name compared without case.
             ChangesException: If no SHA256 checksums found in changes file.
             ChangesException: If a listed file is not a bare, safe file name.
             ChangesException: If a clearsigned file is malformed.
@@ -80,7 +81,13 @@ class Changes(HexDigests):
         data = re.sub("\n\n", "\n", data)  # fix - remove blank lines
         parser = Parser()
         parsed = parser.parsestr(data)
-        self.fields = dict(parsed)
+        # Debian Policy 5.1 field names ignore case, and dpkg refuses a repeated one: a reader
+        # keeping another copy would see other digests and architectures than debkit checks
+        # -> [VALIDATION.md](VALIDATION.md#repeated-fields)
+        names = [name.lower() for name in parsed.keys()]
+        if repeated := sorted({name for name in names if names.count(name) > 1}):
+            raise ChangesException(f"repeated field: {', '.join(repeated)}")
+        self.fields = dict(parsed.items())
 
         if SHA256KEY not in self.fields:
             raise ChangesException("No SHA256 checksums found")

@@ -231,6 +231,16 @@ requires UTF-8 control data; indices → [Index decoding](#index-decoding).
 | `.changes` file | UTF-8; a clearsigned one is checked on its signed body. | → `ChangesException` (Read) |
 | `Release` | UTF-8, else read as latin-1, as some repositories publish it; an `InRelease` body is decoded the same way. | — |
 
+## Repeated fields
+
+Implemented by `Changes.parse()`, `Release.parse()`, and the `Sources` stanza expansion;
+`Package.parse()` reads stanzas through `debian.deb822`, which keeps the last value.
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| `.changes` | No field appears twice, names compared without case, as dpkg refuses one: its digests and architectures gate the insert. | → `ChangesException` (Read) |
+| `Release` and `Sources` | A repeated field keeps its last value, so a sloppy mirror still syncs. | — |
+
 ## Log levels
 
 Flag and variable → [CONFIG.md](CONFIG.md#global-flags).

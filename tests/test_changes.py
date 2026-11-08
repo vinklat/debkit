@@ -44,6 +44,21 @@ def test_parse_without_sha256_raises() -> None:
         changes.parse(b"Format: 1.8\nArchitecture: amd64\n")
 
 
+@pytest.mark.parametrize(
+    "repeat",
+    [
+        b"Checksums-Sha256:\n bbbb 2 foo_1.0_amd64.deb\n",
+        b"checksums-sha256:\n bbbb 2 foo_1.0_amd64.deb\n",
+        b"Architecture: source\n",
+    ],
+    ids=["checksums", "checksums-other-case", "architecture"],
+)
+def test_parse_refuses_a_repeated_field(repeat: bytes) -> None:
+    """dpkg refuses a repeated field; another reader keeping another copy sees other digests."""
+    with pytest.raises(ChangesException, match="repeated field"):
+        Changes(_storage_with(b"")).parse(_CHANGES_BLOB + repeat)
+
+
 def test_get_archs_returns_every_token() -> None:
     blob = b"Format: 1.8\nArchitecture: amd64 all\nChecksums-Sha256:\n deadbeef 1 x.deb\n"
     changes = Changes(_storage_with(blob))
