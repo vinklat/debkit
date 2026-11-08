@@ -43,6 +43,17 @@ def _is_unbounded_brace(pattern: str, i: int) -> bool:
     return j < length and pattern[j] == "}"  # True only for {n,}
 
 
+def _identity(data: bytes) -> bytes:
+    """Decode an uncompressed index: its bytes are the content."""
+    return data
+
+
+# Discovery order: every compression in decompression-map order, then the uncompressed index
+_INDEX_FORMS: tuple[tuple[str, Callable[[bytes], bytes]], ...] = (
+    *DECOMPRESS_MAP.items(),
+    ("", _identity),
+)
+
 # Soft cap on decompressed Packages-indices size (bytes). Guards against
 # zip-bomb-style payloads served over http(s). Documented in VALIDATION.md.
 MAX_INDICES_BYTES = 256 * 1024 * 1024
@@ -225,9 +236,9 @@ class Packages:
         """
         ret: None | tuple[str, str, Callable[[bytes], bytes]] = None
 
-        for suffix, decompress_fun in DECOMPRESS_MAP.items():
-            # search for all Packages indices files
-            # .xz compression preferred for use; verify path from Release file
+        for suffix, decompress_fun in _INDEX_FORMS:
+            # search for all Packages indices files, the uncompressed one included, so a
+            # save rewrites every form the Release lists; .xz is preferred for reading
             indices_path = self.params.indices_path(self._index_inner(arch, suffix), comp)
             indices_path_short = self.params.release_key(indices_path)
 
@@ -341,7 +352,7 @@ class Packages:
         data = raw.decode("utf-8")
 
         pkgs_total = self._parse_indices(data, modify_rules=modify_rules)
-        self.compress_fun = COMPRESS_MAP[suffix]
+        self.compress_fun = COMPRESS_MAP.get(suffix)
 
         if comp and arch:
             logging.info("Found %s packages in %s arch %s.", pkgs_total, comp, arch)

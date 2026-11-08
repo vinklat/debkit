@@ -7,12 +7,15 @@ Storage is mocked; no real backend or .deb payloads.
 
 from __future__ import annotations
 
+import gzip
 import logging
+from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from helpers.factories import make_package, make_packages_block, make_params, make_storage_mock
+from txstore import StorageFS, calc_digests
 
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.packages import MAX_INDICES_BYTES, Packages, PackagesException
@@ -144,6 +147,23 @@ def test_packages_find_packages_file_prefers_xz() -> None:
     assert path == "dists/bookworm/main/binary-amd64/Packages.xz"
     assert suffix == ".xz"
     assert "dists/bookworm/main/binary-amd64/Packages.gz" in pkgs.found_indices_paths
+
+
+def test_packages_find_packages_file_reads_the_uncompressed_index_last() -> None:
+    """A Release listing only the plain index is readable; a compressed form wins over it."""
+    pkgs = _new_packages()
+    root = MagicMock(spec=Release)
+    root.digests = {"main/binary-amd64/Packages": {}}
+    _storage(pkgs).exists.return_value = True
+    path, suffix, fun = pkgs._find_packages_file(root, "main", "amd64")
+    assert (path, suffix, fun(b"raw")) == ("dists/bookworm/main/binary-amd64/Packages", "", b"raw")
+
+    pkgs = _new_packages()
+    root.digests["main/binary-amd64/Packages.gz"] = {}
+    _storage(pkgs).exists.return_value = True
+    path, suffix, _fun = pkgs._find_packages_file(root, "main", "amd64")
+    assert suffix == ".gz"
+    assert pkgs.found_indices_paths == [path, "dists/bookworm/main/binary-amd64/Packages"]
 
 
 def test_packages_find_packages_file_raises_when_release_empty() -> None:
@@ -385,6 +405,34 @@ def test_packages_save_writes_each_indices_and_release_once() -> None:
     pkgs.release.save.assert_called_once()  # regression: was called once per file
     assert ret is not None
     assert "dists/bookworm/main/binary-amd64/Release" in ret
+
+
+def test_packages_save_rewrites_the_uncompressed_index_the_release_lists(tmp_path: Path) -> None:
+    """A plain `Packages` the Release lists is rewritten with its compressed sibling.
+
+    Skipping it left a stale index whose Release digest no longer matched once the
+    component Release was rewritten.
+    """
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    plain = make_packages_block("foo").encode()
+    root = Release(storage, params)
+    for suffix, data in (("", plain), (".gz", gzip.compress(plain))):
+        storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", data)
+        root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(data))
+    pkgs = Packages(storage, params)
+    assert pkgs.load(root, "main", "amd64") is True
+
+    pkgs.insert(make_package("pool/main/b/bar/bar_1.0_amd64.deb", SHA256="aa"))
+    ret = pkgs.save()
+
+    plain_path = "dists/bookworm/main/binary-amd64/Packages"
+    assert ret is not None
+    assert set(ret) == {plain_path, f"{plain_path}.gz"}
+    written = storage.get(plain_path)
+    assert gzip.decompress(storage.get(f"{plain_path}.gz")) == written
+    assert b"bar_1.0_amd64.deb" in written
+    assert ret[plain_path] == calc_digests(written)
 
 
 # ---------------------------------------------------------------------------
