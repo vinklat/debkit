@@ -695,10 +695,11 @@ class RepoSync(Repo):
         ret_err_total: int = 0
         ret_err_fixed_total: int = 0
 
+        missing = set(missing_list)
         for file in all_pkg_files:
             cnt += 1
 
-            if file in missing_list:
+            if file in missing:
                 logger.warning("Skip (%d/%d): %s (missing)", cnt, total, file)
                 continue
 
