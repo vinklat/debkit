@@ -21,6 +21,7 @@ or the work is planned; drop it when it no longer applies.
 | `ReleaseKey`/`StoragePath` NewTypes and a coordinate-aware `Packages` owning its component, arch, and codec | The next change to Release or Packages loading | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `IndexKind` value object owning the arch directory, index name, container class, and writability, replacing the `SOURCE_ARCH` comparisons | A second index kind is written, or 0.2.0 starts | [STRUCTURE.md](STRUCTURE.md#dependencies) |
 | Signer fingerprint pinning per source | One keyring must serve several sources | [CRYPTO.md](CRYPTO.md#gpg) |
+| `Layout` value object (componented, flat, rootless flat) owning the index prefix, component slot, component Release, `Components` field, and pool-key rules, replacing the `is_flat`/`is_real_dist` branches | A new layout is added, or the `IndexKind` work starts | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 
 ## Known deviations
 
