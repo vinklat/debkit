@@ -2,10 +2,12 @@
 
 import logging
 import re
+import tarfile
 from io import BytesIO, UnsupportedOperation
-from typing import TYPE_CHECKING
+from typing import IO, TYPE_CHECKING
 
 from debian import debfile
+from debian.arfile import ArError
 from txstore import StorageException, is_unsafe_path
 
 from debkit.repo.package import Package
@@ -30,16 +32,23 @@ class DebFileException(Exception):
         super().__init__(f"DebFile: {message}")
 
 
+def _control_of(fp: IO[bytes]) -> bytes | str | None:
+    """Return the ``control`` file of the ``.deb`` read from `fp`."""
+    return debfile.DebFile(fileobj=fp).control["control"]  # type: ignore[arg-type]
+
+
 class DebFile:
     """Read-side wrapper around a ``.deb`` package on a `Storage` backend.
+
+    The control file is read once at construction; the storage handle is closed before the
+    constructor returns, whether it succeeds or fails.
 
     Attributes:
         storage (Storage): Storage backend the file lives on.
         path (str): Path of the ``.deb`` file inside ``storage``.
         comp (Optional[str]): Component name the package belongs to.
         filename_field (str): Pool-relative filename (populated by ``get_package``).
-        fileobj (IO[bytes]): File-like object backing the parsed deb.
-        deb (debfile.DebFile): Underlying parsed deb archive.
+        control (bytes | str | None): Content of the ``control`` file in ``control.tar``.
     """
 
     def __init__(self, storage: "Storage", path: str, comp: str | None = None) -> None:
@@ -51,26 +60,34 @@ class DebFile:
             comp (Optional[str]): Component name. Defaults to None.
 
         Raises:
-            DebFileException: If the underlying ``.deb`` cannot be opened or parsed.
+            DebFileException: If the underlying ``.deb`` cannot be read or parsed.
         """
         self.storage = storage
         self.path = path
         self.filename_field = path
         self.comp = comp
         try:
-            try:
-                self.fileobj = storage.get_stream(path)
-                self.deb = debfile.DebFile(fileobj=self.fileobj)  # type: ignore[arg-type]
-            except UnsupportedOperation as exc:
-                logger.debug(
-                    "UnsupportedOperation: %s in stream; falling back to get memory object", exc
-                )
-                self.fileobj = BytesIO(storage.get(path))
-                self.deb = debfile.DebFile(fileobj=self.fileobj)
+            self.control = self._read_control()
         except StorageException as exc:
             raise DebFileException(f"Cannot read .deb file {path}: {exc}") from exc
-        except debfile.DebError as exc:
+        # `ArError` is the base of `DebError`; a truncated ar header raises a bare `OSError`,
+        # and a truncated `control.tar` member an `EOFError` or a `TarError`
+        except (ArError, tarfile.TarError, EOFError, OSError) as exc:
             raise DebFileException(f"Invalid .deb file {path}: {exc}") from exc
+
+    def _read_control(self) -> bytes | str | None:
+        """Read the ``control`` file, streaming when the backend can seek.
+
+        Returns:
+            bytes | str | None: The ``control`` file content.
+        """
+        try:
+            with self.storage.get_stream(self.path) as fp:
+                return _control_of(fp)
+        except UnsupportedOperation as exc:
+            logger.debug("%s cannot stream (%s); reading it into memory.", self.path, exc)
+        with BytesIO(self.storage.get(self.path)) as fp:
+            return _control_of(fp)
 
     def get_package(self) -> "Package":
         """Get control data from the Debian package.
@@ -86,7 +103,7 @@ class DebFile:
         Returns:
             Package: Package object with control data.
         """
-        control_lines = self.deb.control["control"]
+        control_lines = self.control
         if not isinstance(control_lines, bytes):
             raise DebFileException(f"control file of {self.path} is not a bytes object")
         control_lines = control_lines.decode()

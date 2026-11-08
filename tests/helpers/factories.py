@@ -7,6 +7,8 @@ RepoSync, RepoRW) with the minimum state needed by the unit under test.
 
 from __future__ import annotations
 
+import io
+import tarfile
 from argparse import Namespace
 from collections.abc import Iterable
 from pathlib import Path
@@ -31,6 +33,43 @@ def make_action_namespace(repo_dir: Path, **flags: object) -> Namespace:
     ``history_keep``, ...).
     """
     return storage_namespace(target_url=f"fs://{repo_dir} bookworm main", **flags)
+
+
+def _ar_member(name: str, data: bytes) -> bytes:
+    header = f"{name:<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(data):<10}`\n".encode()
+    return header + data + (b"\n" if len(data) % 2 else b"")
+
+
+def make_tar_gz(members: dict[str, bytes]) -> bytes:
+    """Gzipped tar archive holding *members*, name to content."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def make_deb(
+    control: bytes = b"Package: foo\nVersion: 1.0\nArchitecture: amd64\n",
+    control_tar: bytes | None = None,
+) -> bytes:
+    """Minimal real ``.deb``: an ar archive of ``debian-binary``, ``control.tar.gz``, and an
+    empty ``data.tar.gz``.
+
+    ``control.tar.gz`` holds *control*, unless *control_tar* replaces the whole member.
+    """
+    if control_tar is None:
+        control_tar = make_tar_gz({"./control": control})
+    return b"!<arch>\n" + b"".join(
+        _ar_member(name, data)
+        for name, data in (
+            ("debian-binary", b"2.0\n"),
+            ("control.tar.gz", control_tar),
+            ("data.tar.gz", make_tar_gz({})),
+        )
+    )
 
 
 def make_params(
