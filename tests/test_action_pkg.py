@@ -11,7 +11,7 @@ from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-from helpers.factories import make_package, make_params
+from helpers.factories import make_deb, make_package, make_params
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history
 from txstore import (
     HistoryRetention,
@@ -59,6 +59,7 @@ def _make_pkg_action(*, storage: object = None) -> ActionPkg:
     target.get_archs.return_value = ["amd64"]
     target.params.is_flat = False
     target.transfer_from.return_value = {"SHA256": "abc", "Size": "100"}
+    target.held_digests.return_value = None
     target.diff.return_value = MagicMock(
         is_empty=MagicMock(return_value=False),
         count_pkgs_to_copy=MagicMock(return_value=1),
@@ -938,3 +939,66 @@ def test_target_archs_refuses_an_unusable_architecture(
 
     with pytest.raises(ActionException, match=message):
         ActionPkg._target_archs("foo.deb", package, binary_archs)
+
+
+# ---------------------------------------------------------------------------
+# Insert pool object: a pool key is replaced only by identical bytes
+# ---------------------------------------------------------------------------
+
+_FOO_V1 = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: amd64\n")
+_FOO_REBUILT = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: amd64\nDescription: rebuilt\n")
+
+
+def _insert_deb(tmp_path: Path, dist: str, deb: str, data: bytes) -> None:
+    """Insert *data* as *deb* into *dist* of an `fs` root under *tmp_path*, through `parse_cli`."""
+    from debkit.argparser import parse_cli
+
+    incoming = tmp_path / "in"
+    incoming.mkdir(exist_ok=True)
+    (incoming / deb).write_bytes(data)
+    pars = parse_cli(
+        [
+            *("--target-url", f"fs://{tmp_path / 'repo'} {dist} main", "--skip-verify-gpg"),
+            *("insert", "--deb-filename", deb),
+            *("--incoming-url", f"fs://{incoming}"),
+        ]
+    )
+    ActionPkg(pars, create_path=True).insert()
+
+
+def test_insert_refuses_to_replace_a_pool_object_another_dist_lists(tmp_path: Path) -> None:
+    from debkit.action import ActionException
+
+    deb = "foo_1.0_amd64.deb"
+    _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)
+    _insert_deb(tmp_path, "trixie", deb, _FOO_V1)
+
+    with pytest.raises(ActionException, match="already holds a different build"):
+        _insert_deb(tmp_path, "bookworm", deb, _FOO_REBUILT)
+
+    assert (tmp_path / "repo" / pool_path("main", "foo", deb)).read_bytes() == _FOO_V1
+
+
+def test_insert_refuses_two_arch_builds_under_one_upload_name(tmp_path: Path) -> None:
+    """The pool key takes the upload file name, so `foo.deb` for two arches is one key."""
+    from debkit.action import ActionException
+
+    arm = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: arm64\n")
+    _insert_deb(tmp_path, "bookworm", "foo.deb", _FOO_V1)
+
+    with pytest.raises(ActionException, match="already holds a different build"):
+        _insert_deb(tmp_path, "bookworm", "foo.deb", arm)
+
+    assert (tmp_path / "repo" / pool_path("main", "foo", "foo.deb")).read_bytes() == _FOO_V1
+    assert not (tmp_path / "repo/dists/bookworm/main/binary-arm64").exists()
+
+
+def test_insert_of_identical_bytes_into_another_dist_shares_the_pool_object(
+    tmp_path: Path,
+) -> None:
+    deb = "foo_1.0_amd64.deb"
+    _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)
+    _insert_deb(tmp_path, "trixie", deb, _FOO_V1)
+
+    assert (tmp_path / "repo" / pool_path("main", "foo", deb)).read_bytes() == _FOO_V1
+    assert b"foo" in (tmp_path / "repo/dists/trixie/main/binary-amd64/Packages").read_bytes()

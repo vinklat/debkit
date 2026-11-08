@@ -186,6 +186,19 @@ class RepoRW(Repo):
         """
         return source_storage.transfer(path_src, self.storage, path_dst=path_dst)
 
+    def held_digests(self, path: str) -> dict[str, str] | None:
+        """Read an object of this repo's storage through and return its digests.
+
+        Args:
+            path: The object path.
+
+        Returns:
+            Its digests, or None when the storage does not hold it.
+        """
+        if not self.storage.exists(path):
+            return None
+        return self._read_digests(path)
+
     def check(self, *, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
         """Check the repository against its own indices.
 
@@ -258,8 +271,7 @@ class RepoRW(Repo):
         """
         logger.info("Verify (%d/%d): %s", progress[0], progress[1], file)
 
-        # read through to a digest sink -> [ROADMAP.md](ROADMAP.md#known-deviations)
-        digests = self.storage.transfer(file, StorageNull())
+        digests = self._read_digests(file)
 
         if self.params.verify_digests and not self.verify_checksum(file, digests):
             return False
@@ -268,3 +280,15 @@ class RepoRW(Repo):
             self.storage.add_metadata(file, digests)
 
         return True
+
+    def _read_digests(self, path: str) -> dict[str, str]:
+        """Read an object of this repo's storage through and return its digests.
+
+        Args:
+            path: The object path.
+
+        Returns:
+            Its digests.
+        """
+        # read through to a digest sink -> [ROADMAP.md](ROADMAP.md#known-deviations)
+        return self.storage.transfer(path, StorageNull())

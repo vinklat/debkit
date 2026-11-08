@@ -34,6 +34,10 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred
   digests differ from its `.changes` entry is refused after it →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
+- The pool key holds no dist and no arch beyond the upload file name, so other dists and arch
+  indices may list it; a pool key already holding different bytes is refused after the transfer,
+  read through once before it, and an identical upload passes →
+  [VALIDATION.md](../../VALIDATION.md#filename-safety).
 - `transfer_from` is the only path that writes package content; index files (`Packages`, `Release`,
   and its signatures) are emitted by `target.save()` only when the diff is non-empty →
   [CRYPTO.md](../../CRYPTO.md#gpg).
@@ -50,7 +54,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 `tests/test_action_pkg.py` covers argument combinations, error propagation, and the transaction
 wiring (begin/commit on success, discard on failure, no-op on a non-transactional storage);
 `tests/test_repo_rw.py` covers the index mutations; `tests/test_debfile.py` and
-`tests/test_changes.py` cover the upload-name refusals →
+`tests/test_changes.py` cover the upload-name refusals; `tests/test_action_pkg.py` refuses a rebuild
+under a held pool key on a real `StorageFS` →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts

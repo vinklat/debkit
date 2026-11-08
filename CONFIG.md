@@ -75,7 +75,8 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 
 Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither or both →
 `ActionException` (Generic). A `--deb-filename` without the `.deb` suffix → `ActionException`
-(Generic).
+(Generic). An upload whose pool key holds different bytes is refused →
+[VALIDATION.md](VALIDATION.md#filename-safety).
 
 ## Remove
 

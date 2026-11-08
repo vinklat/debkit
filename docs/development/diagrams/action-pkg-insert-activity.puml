@@ -76,9 +76,16 @@ partition "with maybe_transaction(target.storage)" {
       note right: refused before any transfer
       stop
     endif
+    :held = target.held_digests(pool_key);
     :digests = target.transfer_from(
         incoming_storage, filename,
-        path_dst=package.get_filename());
+        path_dst=pool_key);
+    if (pool key held, and its digests differ?) then (yes)
+      :raise ActionException
+       ("... already holds a different build ...");
+      note right: the transaction discards the staged transfer
+      stop
+    endif
     if (.changes upload, digest verification on,\n and digests differ from its entry?) then (yes)
       :raise ChecksumException;
       note right: the transaction discards the staged transfer;\noff under --skip-verify

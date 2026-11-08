@@ -8,7 +8,7 @@ from copy import copy
 from typing import TYPE_CHECKING, Any
 
 from humanize import naturalsize
-from txstore import maybe_transaction
+from txstore import compare_digests, maybe_transaction
 
 from debkit.action import (
     Action,
@@ -254,9 +254,19 @@ class ActionPkg(Action):
                 package = debfile_obj.get_package()
                 archs = self._target_archs(filename, package, binary_archs)
 
+                pool_key = package.get_filename()
+                held = self.target_repo.held_digests(pool_key)
                 digests = self.target_repo.transfer_from(
-                    self.incoming_storage, filename, path_dst=package.get_filename()
+                    self.incoming_storage, filename, path_dst=pool_key
                 )
+                # every dist of the root and every arch index may list the pool key, and their
+                # records name the bytes it holds, so different bytes are refused; raising
+                # discards the staged transfer -> [VALIDATION.md](VALIDATION.md#filename-safety)
+                if held is not None and not compare_digests(held, digests):
+                    raise ActionException(
+                        f"{pool_key} already holds a different build of {filename}; "
+                        "publish a rebuild under a new version"
+                    )
                 # the pinned `.changes` lists each payload's digest, so a payload swapped in
                 # the incoming storage is refused; raising discards the staged transfer
                 # -> [CRYPTO.md](CRYPTO.md#verification-failures)
