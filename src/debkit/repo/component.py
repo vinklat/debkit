@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from txstore import StorageException
 
-from debkit.repo.packages import Packages, PackagesException
+from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
 from debkit.repo.release import Release
 from debkit.repo.sources import Sources
@@ -131,15 +131,26 @@ class Component:
         kind = container_for(arch)
         return next((pkgs for pkgs in self.packages.values() if type(pkgs) is kind), None)
 
-    def load(self, archs: list[str], strict_arch: bool = False) -> int:
+    def load(
+        self, archs: list[str], strict_arch: bool = False, skip_unreadable: bool = False
+    ) -> int:
         """Load package sets (Packages objects) for all architectures.
+
+        An arch with no index file is skipped unless `strict_arch`, so an insert can start its
+        index. One whose index or per-arch Release exists but cannot be read is skipped only
+        with `skip_unreadable` or for the never-written `Sources` index: a caller that saves
+        would replace it with a fresh index holding its own changes alone
+        -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Args:
             archs: The list of architectures.
-            strict_arch: If True, strict architecture check is performed. Defaults to False.
+            strict_arch: If True, an arch that does not load raises. Defaults to False.
+            skip_unreadable: If True, an arch whose index cannot be read is skipped too. Defaults
+                to False.
 
         Raises:
-            ComponentException: If the architecture check fails.
+            ComponentException: If an arch cannot be loaded and may not be skipped, or the
+                architecture check fails.
 
         Returns:
             The total number of packages loaded.
@@ -150,27 +161,28 @@ class Component:
             if shared is not None:
                 self.packages[arch] = shared
                 continue
-            packages = container_for(arch)(self.storage, self.params)
+            kind = container_for(arch)
+            packages = kind(self.storage, self.params)
+            may_skip_unreadable = not strict_arch and (skip_unreadable or kind is Sources)
 
             if not self.is_flat:
                 try:
                     packages.release.load_component(self.name, arch, root_release=self.root_release)
                 except StorageException as exc:
-                    if strict_arch:
-                        raise ComponentException(f"Cannot load {self.name}: {arch}") from exc
+                    if not may_skip_unreadable:
+                        raise ComponentException(f"Cannot load {self.name}: {arch}: {exc}") from exc
 
-                    # If the architecture is not available, skip it
                     logger.warning("Architecture %s not available.", arch)
                     continue
 
             try:
                 packages.load(self.root_release, self.name, arch)
             except PackagesException as exc:
-                if strict_arch:
-                    raise ComponentException(f"Cannot load {self.name}: {arch}") from exc
+                missing = isinstance(exc, PackagesNotFoundException)
+                if strict_arch or not (missing or may_skip_unreadable):
+                    raise ComponentException(f"Cannot load {self.name}: {arch}: {exc}") from exc
 
-                # If the Packages not available, skip it
-                logger.warning("Packages for %s failed.", arch)
+                logger.warning("Packages for %s failed: %s", arch, exc)
                 continue
 
             # Release file validation check

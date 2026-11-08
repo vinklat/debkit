@@ -17,7 +17,7 @@ from helpers.factories import make_package, make_params, make_storage_mock
 from txstore import StorageException
 
 from debkit.repo.component import Component, ComponentException, container_for
-from debkit.repo.packages import Packages, PackagesException
+from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
 from debkit.repo.params import SOURCE_ARCH, RepoParams
 from debkit.repo.release import Release
 from debkit.repo.sources import Sources
@@ -66,7 +66,7 @@ def test_component_load_non_flat_aggregates_size() -> None:
     pkgs_mock.load.assert_called_once()
 
 
-def test_component_load_storage_exception_non_strict_skips(
+def test_component_load_storage_exception_skips_when_unreadable_may_be_skipped(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     comp = _component()
@@ -75,9 +75,21 @@ def test_component_load_storage_exception_non_strict_skips(
         pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with caplog.at_level(logging.WARNING):
-            total = comp.load(["amd64"], strict_arch=False)
+            total = comp.load(["amd64"], strict_arch=False, skip_unreadable=True)
     assert total == 0
     assert "Architecture amd64 not available" in caplog.text
+
+
+def test_component_load_storage_exception_stops_a_load_that_may_save() -> None:
+    """A fresh slot would overwrite the arch's index, so an unread Release stops the load."""
+    comp = _component()
+    with patch("debkit.repo.component.Packages") as PackagesCls:
+        pkgs_mock = MagicMock()
+        pkgs_mock.release.load_component.side_effect = StorageException("timeout")
+        PackagesCls.return_value = pkgs_mock
+        with pytest.raises(ComponentException, match="Cannot load main: amd64: timeout"):
+            comp.load(["amd64"])
+    assert comp.packages == {}
 
 
 def test_component_load_storage_exception_strict_raises() -> None:
@@ -123,6 +135,55 @@ def test_component_load_packages_failure_strict_raises() -> None:
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main"):
             comp.load(["amd64"], strict_arch=True)
+
+
+@pytest.mark.parametrize("skip_unreadable", [False, True])
+def test_component_load_skips_an_arch_without_an_index(skip_unreadable: bool) -> None:
+    """An insert starts the index of an arch that has none yet."""
+    comp = _component()
+    with patch("debkit.repo.component.Packages") as PackagesCls:
+        pkgs_mock = MagicMock()
+        pkgs_mock.load.side_effect = PackagesNotFoundException("missing indices file")
+        PackagesCls.return_value = pkgs_mock
+        assert comp.load(["amd64"], skip_unreadable=skip_unreadable) == 0
+    assert comp.packages == {}
+
+
+def test_component_load_stops_on_an_index_that_does_not_load() -> None:
+    """Regression: the arch was skipped, so a save replaced its index with a fresh one."""
+    comp = _component()
+    with patch("debkit.repo.component.Packages") as PackagesCls:
+        pkgs_mock = MagicMock()
+        pkgs_mock.load.side_effect = PackagesException("Cannot decode indices")
+        PackagesCls.return_value = pkgs_mock
+        with pytest.raises(ComponentException, match="amd64: Packages: Cannot decode"):
+            comp.load(["amd64"])
+    assert comp.packages == {}
+
+
+def test_component_load_skips_an_unreadable_index_when_asked(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    comp = _component()
+    with patch("debkit.repo.component.Packages") as PackagesCls:
+        pkgs_mock = MagicMock()
+        pkgs_mock.load.side_effect = PackagesException("Cannot decode indices")
+        PackagesCls.return_value = pkgs_mock
+        with caplog.at_level(logging.WARNING):
+            assert comp.load(["amd64"], skip_unreadable=True) == 0
+    assert comp.packages == {}
+    assert "Packages for amd64 failed: Packages: Cannot decode indices" in caplog.text
+
+
+def test_component_load_skips_an_unreadable_sources_index() -> None:
+    """A `Sources` index is never written, so no save can replace it."""
+    comp = _component()
+    with patch("debkit.repo.component.Sources") as SourcesCls:
+        pkgs_mock = MagicMock()
+        pkgs_mock.load.side_effect = PackagesException("carries no SHA digest")
+        SourcesCls.return_value = pkgs_mock
+        assert comp.load(["source"]) == 0
+    assert comp.packages == {}
 
 
 def test_component_load_source_arch_builds_a_sources_container() -> None:

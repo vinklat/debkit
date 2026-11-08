@@ -21,7 +21,9 @@ from txstore import (
 
 from debkit.action import OutputType
 from debkit.action.action_pkg import ActionPkg
+from debkit.repo.component import ComponentException
 from debkit.repo.debfile import DebFileException
+from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import pool_path
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 from debkit.repo.repo_rw import RepoRW
@@ -210,9 +212,11 @@ def _insert_into_real_repo(
     *,
     gpg: MagicMock | None = None,
     output: OutputType = OutputType.brief,
+    arch: str = "amd64",
+    verify_digests: bool = False,
 ) -> ActionPkg:
-    """Insert one amd64 deb into an `fs` repository under *tmp_path*, signed only with *gpg*."""
-    deb = f"{name}_1.0_amd64.deb"
+    """Insert one *arch* deb into an `fs` repository under *tmp_path*, signed only with *gpg*."""
+    deb = f"{name}_1.0_{arch}.deb"
     incoming = StorageFS(str(tmp_path / "in"))
     incoming.put(deb, name.encode())
 
@@ -220,12 +224,11 @@ def _insert_into_real_repo(
     action.output = output
     action.incoming_storage = incoming
     action.deb_filename = deb
-    action.target_repo = RepoRW(
-        StorageFS(str(tmp_path / "repo")), make_params(verify_gpg=gpg is not None), gpg=gpg
-    )
+    params = make_params(verify_gpg=gpg is not None, verify_digests=verify_digests)
+    action.target_repo = RepoRW(StorageFS(str(tmp_path / "repo")), params, gpg=gpg)
     instance = MagicMock()
     instance.get_package.return_value = make_package(
-        pool_path("main", name, deb), Package=name, Version="1.0", Architecture="amd64"
+        pool_path("main", name, deb), Package=name, Version="1.0", Architecture=arch
     )
     mock_debfile_cls.return_value = instance
 
@@ -280,6 +283,78 @@ def test_insert_refuses_an_unsigned_repo_without_setting_it_up_again(
     assert not isinstance(excinfo.value, ReleaseNotFoundException)
     setup.assert_not_called()
     assert _target(first).storage.get(_PACKAGES) == before
+
+
+# ---------------------------------------------------------------------------
+# insert() / remove() — an index that exists but does not load is never replaced
+# ---------------------------------------------------------------------------
+
+
+def _damage_amd64_index(tmp_path: Path, mock_debfile_cls: MagicMock) -> tuple[StorageFS, bytes]:
+    """Insert foo, then truncate its amd64 `Packages.gz`; return the storage and those bytes."""
+    storage = StorageFS(str(tmp_path / "repo"))
+    _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo")
+    storage.put(_PACKAGES, storage.get(_PACKAGES)[:-8])
+    return storage, storage.get(_PACKAGES)
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_stops_on_a_target_index_that_does_not_decode(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """Regression: the arch was skipped and its index rewritten with the new package alone."""
+    storage, damaged = _damage_amd64_index(tmp_path, mock_debfile_cls)
+
+    with pytest.raises(ComponentException, match="Cannot decode indices"):
+        _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar")
+
+    assert storage.get(_PACKAGES) == damaged
+    assert not storage.exists("pool/main/b/bar/bar_1.0_amd64.deb")
+
+
+def test_remove_stops_on_a_target_index_that_does_not_decode(tmp_path: Path) -> None:
+    with patch("debkit.action.action_pkg.DebFile") as mock_debfile_cls:
+        storage, damaged = _damage_amd64_index(tmp_path, mock_debfile_cls)
+    action = _make_pkg_action()
+    action.pkg_pattern = {"Package": re.compile("foo")}
+    action.target_repo = RepoRW(storage, make_params())
+
+    with pytest.raises(ComponentException, match="Cannot decode indices"):
+        action.remove()
+
+    assert storage.get(_PACKAGES) == damaged
+    assert storage.exists("pool/main/f/foo/foo_1.0_amd64.deb")
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_stops_on_a_target_index_that_fails_its_digest(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    storage, damaged = _damage_amd64_index(tmp_path, mock_debfile_cls)
+
+    with pytest.raises(ChecksumException, match="Packages.gz"):
+        _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar", verify_digests=True)
+
+    assert storage.get(_PACKAGES) == damaged
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_starts_the_index_of_an_arch_that_has_none(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """The repo set up by the first insert lists arm64 but holds no arm64 index yet."""
+    first = _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo")
+    storage = _target(first).storage
+    assert not storage.exists(_PACKAGES.replace("amd64", "arm64"))
+
+    _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar", arch="arm64")
+
+    repo = RepoRW(storage, make_params())
+    repo.update()
+    assert set(repo.components["main"].packages["arm64"].packages) == {
+        "pool/main/b/bar/bar_1.0_arm64.deb"
+    }
+    assert _amd64_filenames(storage) == {"pool/main/f/foo/foo_1.0_amd64.deb"}
 
 
 # ---------------------------------------------------------------------------
@@ -575,6 +650,19 @@ def test_list_json_prints_the_fields_of_every_package(
 
     packages = json.loads(capsys.readouterr().out)
     assert sorted(pkg["Filename"] for pkg in packages) == [_HELLO, _WORLD]
+
+
+def test_list_skips_an_arch_whose_index_does_not_decode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A read-only command still reads the arches it can."""
+    action = _view_action(tmp_path, OutputType.brief)
+    index = tmp_path / _PACKAGES
+    index.write_bytes(index.read_bytes()[:-8])
+
+    action.list_packages()
+
+    assert capsys.readouterr().out.split() == [_WORLD]
 
 
 @pytest.mark.parametrize(

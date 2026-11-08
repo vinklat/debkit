@@ -24,6 +24,7 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | `ReleaseWriteException` | `repo/release.py` | Release signing failure, including an empty signature from GnuPG |
 | `ReleaseFreshnessException` | `repo/release.py` | Source Release expired, older than the target Release, missing its `Date`, or carrying a malformed date |
 | `PackagesException` | `repo/packages.py` | Packages or Sources index parse or serialize failure, or a mutation of the read-only Sources index |
+| `PackagesNotFoundException` | `repo/packages.py` | No index file the Release lists for an arch is in storage; subclass of `PackagesException` |
 | `PackageException` | `repo/package.py` | Single package parse or serialize failure |
 | `ComponentException` | `repo/component.py` | Component load failure, or an index slot refused for an invalid architecture |
 | `ChangesException` | `repo/changes.py` | `.changes` parse or validation failure |

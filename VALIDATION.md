@@ -125,6 +125,18 @@ inherits, through the decoders in `repo/compress.py`.
 | Stanza separation | A blank or whitespace-only line ends a stanza, as Debian Policy 5.1 allows. | — |
 | Line ends | CRLF line ends are read as LF. | — |
 
+## Index loading
+
+Implemented by `Component.load()` in `repo/component.py`, called through `Repo.update()`.
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Missing index | An arch whose Release lists no `Packages*` file present in storage is skipped, so `insert` starts its index; only the strict `sync` source refuses it. | Strict → `ComponentException` (Read) |
+| Unreadable index | An index that exists but does not decode, passes the size cap, or holds a bad `Sources` stanza, or a per-arch Release storage fails to read, stops `insert`, `remove`, and `check --fix`, which would replace that index or delete what it lists. | → `ComponentException` (Read) |
+| Skipped unreadable index | `list`, `dump`, `stats`, `check` without `--fix`, and the `sync` target, which plans from the source, skip an unreadable index with a warning. | Logged |
+| Sources index | A mirrored `Sources` index is never written, so every non-strict load skips an unreadable one. | Logged |
+| Index digest | A digest mismatch is never skipped; the `sync` target resets instead → [Index selection](#index-selection). | → `ChecksumException` (Distrustful) |
+
 ## Package stanzas
 
 Parsed and written by `Package.parse()` and `Package.serialize()` through `debian.deb822`.

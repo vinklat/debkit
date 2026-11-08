@@ -21,7 +21,7 @@ from txstore import StorageFS, calc_digests
 from debkit.repo import packages as packages_module
 from debkit.repo.compress import codec_for
 from debkit.repo.hashes import ChecksumException
-from debkit.repo.packages import Packages, PackagesException
+from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import Release
 
@@ -177,7 +177,7 @@ def test_packages_find_packages_file_raises_when_release_empty() -> None:
     pkgs = _new_packages()
     root = MagicMock(spec=Release)
     root.digests = {}
-    with pytest.raises(PackagesException, match="missing indices file"):
+    with pytest.raises(PackagesNotFoundException, match="missing indices file"):
         pkgs._find_packages_file(root, "main", "amd64")
 
 
@@ -407,9 +407,11 @@ def test_packages_load_refuses_a_truncated_or_corrupt_index(
     storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
     pkgs = Packages(storage, params)
 
-    with pytest.raises(PackagesException, match="Cannot decode indices"):
+    with pytest.raises(PackagesException, match="Cannot decode indices") as excinfo:
         pkgs.load(root, "main", "amd64")
 
+    # a present index that fails is not a missing one, which a writer may start afresh
+    assert not isinstance(excinfo.value, PackagesNotFoundException)
     assert pkgs.packages == {}
 
 

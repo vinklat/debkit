@@ -194,18 +194,22 @@ class Repo:
                 continue
             yield arch
 
-    def update(self, strict_arch: bool = False) -> None:
+    def update(self, strict_arch: bool = False, skip_unreadable: bool = False) -> None:
         """Load Debian repository.
 
         This method does a similar thing to `apt-get update` command.
 
         Args:
             strict_arch: Whether to use strict architecture. Defaults to False. If True, it will
-                raise an exception if the architecture is not available. If False, it will skip the
-                architecture and continue loading other architectures.
+                raise an exception if the architecture is not available. If False, it will skip an
+                architecture without an index and continue loading other architectures.
+            skip_unreadable: Whether an architecture whose index exists but cannot be read is
+                skipped as well. Defaults to False, which raises: a caller that saves would
+                replace that index -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Raises:
             RepoReadException: Error in reading the repository.
+            ComponentException: An architecture cannot be loaded and may not be skipped.
         """
         try:
             self.release.load()
@@ -221,7 +225,9 @@ class Repo:
         for component_name in self.get_components():
             component = Component(self.storage, self.params, self.release, component_name)
 
-            pkgs_total += component.load(list(self.get_archs()), strict_arch=strict_arch)
+            pkgs_total += component.load(
+                list(self.get_archs()), strict_arch=strict_arch, skip_unreadable=skip_unreadable
+            )
 
             self.components[component_name] = component
 

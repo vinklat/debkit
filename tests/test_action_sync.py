@@ -28,6 +28,7 @@ from txstore import (
 
 from debkit.action import ActionException, OutputType
 from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionSync
+from debkit.repo.component import ComponentException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 from debkit.repo.repo_sync import SyncPlan
@@ -575,11 +576,25 @@ def test_sync_floors_against_a_peer_commit_that_lands_before_the_lock(tmp_path: 
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
 
 
+def test_sync_skips_a_target_index_that_does_not_decode(tmp_path: Path) -> None:
+    """The sync copies the source index over it; it never writes one from the target load."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    index = f"{_PREFIX}/main/binary-amd64/Packages.gz"
+    (tmp_path / "tgt" / index).write_bytes((tmp_path / "tgt" / index).read_bytes()[:-8])
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.target_repo.params.verify_digests = False
+
+    action.sync()
+
+    assert (tmp_path / "tgt" / index).read_bytes() == (tmp_path / "src" / index).read_bytes()
+
+
 def test_sync_loads_the_target_inside_the_transaction() -> None:
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
     began_at_load: list[bool] = []
-    _target(action).update.side_effect = lambda: began_at_load.append(txn.began)
+    _target(action).update.side_effect = lambda **_: began_at_load.append(txn.began)
 
     action.sync()
 
@@ -628,7 +643,7 @@ def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction
     action.verify_existing = True
     began_at_load: list[bool] = []
     began_at_check: list[bool] = []
-    _target(action).update.side_effect = lambda: began_at_load.append(txn.began)
+    _target(action).update.side_effect = lambda **_: began_at_load.append(txn.began)
 
     def check(missing: list[str], orphans: list[str], fix: bool = False) -> tuple[int, int]:
         began_at_check.append(txn.began and not txn.committed)
@@ -768,6 +783,29 @@ def test_check_reports_an_orphan_and_fix_deletes_it(tmp_path: Path, fix: bool) -
 
     assert _check_action(StorageFS(str(tmp_path)), fix=fix).check() is fix
     assert orphan.exists() is not fix
+
+
+def _check_with_undecodable_index(tmp_path: Path, *, fix: bool) -> ActionSync:
+    """A check over a one-package tree whose index digest matches but does not decode."""
+    _write_tree(tmp_path, "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    index = tmp_path / _PREFIX / "main/binary-amd64/Packages.gz"
+    index.write_bytes(index.read_bytes()[:-8])
+    action = _check_action(StorageFS(str(tmp_path)), fix=fix)
+    action.target_repo.params.verify_digests = False
+    return action
+
+
+def test_check_reports_the_payloads_of_an_undecodable_index_as_orphans(tmp_path: Path) -> None:
+    assert _check_with_undecodable_index(tmp_path, fix=False).check() is False
+    assert (tmp_path / "pool/main/f/foo/foo_2_amd64.deb").exists()
+
+
+def test_check_fix_stops_on_an_undecodable_index(tmp_path: Path) -> None:
+    """Regression: the index was skipped, so `--fix` deleted every payload it lists."""
+    with pytest.raises(ComponentException, match="Cannot decode indices"):
+        _check_with_undecodable_index(tmp_path, fix=True).check()
+
+    assert (tmp_path / "pool/main/f/foo/foo_2_amd64.deb").exists()
 
 
 def test_check_fix_cannot_repair_a_missing_payload(tmp_path: Path) -> None:

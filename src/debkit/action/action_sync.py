@@ -236,7 +236,10 @@ class ActionSync(Action):
             A snapshot of the target Release as read, taken before any reset.
         """
         try:
-            self.target_repo.update()
+            # the sync plans from the source and only copies indices, never writing one from
+            # this load, so an unreadable target index is skipped
+            # -> [VALIDATION.md](VALIDATION.md#index-loading)
+            self.target_repo.update(skip_unreadable=True)
         except ReleaseNotFoundException as exc:
             logger.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
@@ -300,7 +303,9 @@ class ActionSync(Action):
             else nullcontext()
         ):
             try:
-                self.target_repo.update()
+                # `--fix` deletes what no loaded index claims, so it never skips one
+                # -> [VALIDATION.md](VALIDATION.md#index-loading)
+                self.target_repo.update(skip_unreadable=not self.fix)
             except ReleaseNotFoundException as exc:
                 logger.error("Target repo is empty: %s", exc)
                 return False

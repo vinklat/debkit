@@ -47,6 +47,10 @@ class PackagesException(Exception):
         super().__init__(f"Packages: {message}")
 
 
+class PackagesNotFoundException(PackagesException):
+    """No index file the Release lists for the arch is in storage; nothing was read."""
+
+
 class Packages:
     """Container to store packages (Package objects).
 
@@ -192,7 +196,7 @@ class Packages:
             arch: The architecture name.
 
         Raises:
-            PackagesException: There is no Packages* file.
+            PackagesNotFoundException: There is no Packages* file.
 
         Returns:
             The path of the file to read and its decompression function.
@@ -231,10 +235,12 @@ class Packages:
 
         #  there is no any Packages indices file found / 404 everywhere
         if self.params.is_flat:
-            raise PackagesException("there is no indices file.")
+            raise PackagesNotFoundException("there is no indices file.")
 
         # else
-        raise PackagesException(f"missing indices file for arch {arch} in component {comp}.")
+        raise PackagesNotFoundException(
+            f"missing indices file for arch {arch} in component {comp}."
+        )
 
     def _verify_indices_checksum(
         self, root_release: Release, path: str, digests: dict[str, str]
@@ -275,7 +281,8 @@ class Packages:
 
         Raises:
             ChecksumException: Checksum mismatch for Packages file.
-            PackagesException: The decompressed index exceeds `MAX_INDICES_BYTES`.
+            PackagesNotFoundException: No Packages* file the Release lists is in storage.
+            PackagesException: The index does not decode or decodes past `MAX_INDICES_BYTES`.
 
         Returns:
             True if the packages indices file is successfully loaded, False otherwise.

@@ -64,7 +64,7 @@ class ActionPkg(Action):
 
     def dump(self) -> None:
         """Dump repository to stdout."""
-        self.target_repo.update()
+        self.target_repo.update(skip_unreadable=True)
         logger.debug("%s", str(self.target_repo.storage.metrics))
         dump_dict = self.target_repo.dump(brief=self.output == OutputType.brief)
 
@@ -105,7 +105,7 @@ class ActionPkg(Action):
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
-        self.target_repo.update()
+        self.target_repo.update(skip_unreadable=True)
         stats = self.target_repo.stats()
 
         if self.output == OutputType.brief:
@@ -152,7 +152,7 @@ class ActionPkg(Action):
 
     def list_packages(self) -> None:
         """List packages in repository to stdout."""
-        self.target_repo.update()
+        self.target_repo.update(skip_unreadable=True)
 
         if self.output == OutputType.brief:
             print("\n".join(str(package) for package in self.target_repo.get_packages()))
