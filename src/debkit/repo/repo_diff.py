@@ -1,13 +1,9 @@
 """Repository diff class."""
 
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from debkit.repo.package import Package
-
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 class RepoDiff:

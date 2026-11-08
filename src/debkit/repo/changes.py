@@ -12,8 +12,8 @@ from debkit.repo.params import SOURCE_ARCH
 if TYPE_CHECKING:
     from txstore import Storage
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 SHA256KEY = "Checksums-Sha256"
 DEFAULT_ARCH = "amd64"
@@ -29,9 +29,6 @@ class ChangesException(Exception):
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
         super().__init__(f"Changes: {message}")
-
-
-logger = logging.getLogger(__name__)
 
 
 class Changes(HexDigests):

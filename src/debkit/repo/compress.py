@@ -2,13 +2,10 @@
 
 import bz2
 import gzip
-import logging
 import lzma
 from collections.abc import Callable
 from functools import partial
 from typing import NamedTuple
-
-logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 class Codec(NamedTuple):

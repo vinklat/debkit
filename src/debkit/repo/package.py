@@ -1,6 +1,5 @@
 """Class containing fields data from Debian package."""
 
-import logging
 import os
 import re
 from email import policy
@@ -33,9 +32,6 @@ MANDATORY_FIELDS = ["Package", "Filename", "Size"]
 # ]
 
 FILENAME_FIELD_KEY = "Filename"
-
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 class PackageException(Exception):

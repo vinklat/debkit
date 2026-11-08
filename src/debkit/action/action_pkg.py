@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     from debkit.repo.repo_diff import RepoDiff
 
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 DEFAULT_REPO_FIELDS = {"Architectures": "amd64 arm64 all", "Components": "main"}
 
@@ -73,7 +73,7 @@ class ActionPkg(Action):
     def dump(self) -> None:
         """Dump repository to stdout."""
         self.target_repo.update()
-        logging.debug("%s", str(self.target_repo.storage.metrics))
+        logger.debug("%s", str(self.target_repo.storage.metrics))
         dump_dict = self.target_repo.dump(brief=self.output == OutputType.brief)
 
         if self.output == OutputType.brief:
@@ -260,7 +260,7 @@ class ActionPkg(Action):
         except ReleaseNotFoundException as exc:
             # no repository - create new one; any other read failure must not reset an
             # existing one
-            logging.debug("Target repository not found... (%s)", exc)
+            logger.debug("Target repository not found... (%s)", exc)
 
             self.target_repo.setup(fields=DEFAULT_REPO_FIELDS)
         prev_repo = copy(self.target_repo)

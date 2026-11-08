@@ -18,8 +18,8 @@ if TYPE_CHECKING:
     from debkit.repo.package import Package
     from debkit.repo.params import RepoParams
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class RepoWriteException(Exception):
@@ -60,7 +60,7 @@ class RepoRW(Repo):
         Args:
             fields (Optional[Dict[str, str]]): The fields to set. Defaults to None.
         """
-        logging.info("Setting up a new repository.")
+        logger.info("Setting up a new repository.")
         self.release.setup(fields=fields)
         self.modified = True
 
@@ -118,7 +118,7 @@ class RepoRW(Repo):
         Returns:
             bool: True iff at least one package was removed.
         """
-        logging.info(
+        logger.info(
             "Removing packages with fields patterns: %s",
             {field: rx.pattern for field, rx in fields_patterns.items()},
         )
@@ -127,7 +127,7 @@ class RepoRW(Repo):
         for component in self.components.values():
             removed |= component.remove_pkg(fields_patterns)
         for filename in sorted(removed):
-            logging.info("Remove package: %s", filename)
+            logger.info("Remove package: %s", filename)
             self.storage.delete(filename)
         if removed:
             self.modified = True

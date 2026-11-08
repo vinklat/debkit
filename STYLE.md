@@ -33,9 +33,11 @@ Import directions → [STRUCTURE.md](STRUCTURE.md#dependencies).
 
 ## Logging
 
-- Use `%` formatting in `logging.*` calls, never f-strings.
-- Every module logger installs `logging.NullHandler()`; only `cli.main` configures handlers,
-  through `_logging.configure_logging` → [CONFIG.md](CONFIG.md#global-flags).
+- A module that logs does so through `logger = logging.getLogger(__name__)`, never the root
+  logger (Ruff `LOG`), and installs `logging.NullHandler()` on it.
+- Use `%` formatting in logger calls, never f-strings or `str.format` (Ruff `G`).
+- Only `cli.main` configures handlers, through `_logging.configure_logging` →
+  [CONFIG.md](CONFIG.md#global-flags).
 - Keep messages factual and low-noise; secrets never appear → [CONFIG.md](CONFIG.md#secrets).
 - Exception raising and chaining rules → [EXCEPTIONS.md](EXCEPTIONS.md#rules).
 

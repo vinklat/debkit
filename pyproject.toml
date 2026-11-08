@@ -65,6 +65,8 @@ select = [
     "DTZ", # flake8-datetimez
     "D",   # pydocstyle — Google-style docstrings
     "PT",  # flake8-pytest-style
+    "LOG", # flake8-logging: module loggers, never the root logger
+    "G",   # flake8-logging-format: %-style lazy arguments
     "PLC0415", # import-outside-toplevel: local imports only for a named cycle or deferral
     "RUF100",  # unused noqa: every suppression names an enabled rule
 ]

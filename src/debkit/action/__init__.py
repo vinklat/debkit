@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
     from debkit._options import EnvArgumentParser
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class OutputType(Enum):
@@ -257,12 +257,12 @@ class Action:
         # one warning per run, as for `--allow-release-rollback`
         # -> [CRYPTO.md](CRYPTO.md#verification-switches)
         if skip_verify:
-            logging.warning(
+            logger.warning(
                 "GPG and digest verification skipped: --skip-verify is set; "
                 "Release files are neither verified nor signed"
             )
         elif skip_verify_gpg:
-            logging.warning(
+            logger.warning(
                 "GPG verification skipped: --skip-verify-gpg is set; "
                 "Release files are neither verified nor signed"
             )
@@ -270,12 +270,12 @@ class Action:
             self.gpg = GnuPG(pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase)
 
         if hasattr(pars, "source_url"):
-            logging.debug("Prepare source URL: %s", pars.source_url)
+            logger.debug("Prepare source URL: %s", pars.source_url)
             (source_storage, source_repo_params) = attach_storage_repo(pars, url=pars.source_url)
             self.source_repo = RepoSync(source_storage, source_repo_params, gpg=self.gpg)
 
         # `--target-url` is required, so every action has a target
-        logging.debug("Prepare target URL: %s", pars.target_url)
+        logger.debug("Prepare target URL: %s", pars.target_url)
         (target_storage, target_repo_params) = attach_storage_repo(
             pars, url=pars.target_url, create_path=create_path
         )

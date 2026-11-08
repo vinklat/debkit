@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
     from debkit.repo.params import RepoParams
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 # Soft cap on decompressed Packages-indices size (bytes). Guards against
@@ -156,9 +156,7 @@ class Packages:
             # storage root; a rejected stanza is dropped rather than failing the load, so one
             # bad record cannot stop a mirror -> [VALIDATION.md](VALIDATION.md#filename-safety)
             if is_unsafe_path(pkg_name):
-                logging.warning(
-                    "%s named in an index is an unsafe package path. Skipped.", pkg_name
-                )
+                logger.warning("%s named in an index is an unsafe package path. Skipped.", pkg_name)
                 continue
 
             # apply modification rules; only mark `modified` if a rule actually changed a field
@@ -169,7 +167,7 @@ class Packages:
                     if package.fields.get(field) != before:
                         self.modified = True
                 except PackageException as exc:
-                    logging.warning("Modify rule failed for %s: %s", pkg_name, exc)
+                    logger.warning("Modify rule failed for %s: %s", pkg_name, exc)
 
             self.packages[pkg_name] = package
         self.size = len(self.packages)
@@ -212,7 +210,7 @@ class Packages:
 
             if indices_path_short in root_release.digests:
                 if not self.storage.exists(indices_path):
-                    logging.debug("%s not exist...", indices_path)
+                    logger.debug("%s not exist...", indices_path)
                     continue
 
                 # add found Package* files for sync
@@ -220,16 +218,16 @@ class Packages:
 
                 # get packages from first found Packages* file (.xz)
                 if not self.used_indices_path:
-                    logging.debug("%s found... (use this)", indices_path)
+                    logger.debug("%s found... (use this)", indices_path)
                     ret = indices_path, codec.decompress
                     self.used_indices_path = indices_path
                     continue
 
                 # else
-                logging.debug("%s found... (skip)", indices_path)
+                logger.debug("%s found... (skip)", indices_path)
 
             else:
-                logging.debug("%s not in Release...", indices_path)
+                logger.debug("%s not in Release...", indices_path)
 
         if ret is not None:
             return ret
@@ -303,7 +301,7 @@ class Packages:
                 raise ChecksumException(f"Mismatch for {indices_path}.")
 
         if not enc_data:
-            logging.info("No packages indices.")
+            logger.info("No packages indices.")
             return False
 
         raw = decompress_fun(enc_data)
@@ -319,9 +317,9 @@ class Packages:
         pkgs_total = self._parse_indices(data, modify_rules=modify_rules)
 
         if comp and arch:
-            logging.info("Found %s packages in %s arch %s.", pkgs_total, comp, arch)
+            logger.info("Found %s packages in %s arch %s.", pkgs_total, comp, arch)
         else:
-            logging.info("Found %s packages.", pkgs_total)
+            logger.info("Found %s packages.", pkgs_total)
         return True
 
     def save(self) -> dict[str, dict[str, str]] | None:
@@ -341,7 +339,7 @@ class Packages:
         for filename in self.found_indices_paths:
             enc_data = codec_for(filename).compress(raw)
 
-            logging.info("Save %s...", filename)
+            logger.info("Save %s...", filename)
             self.storage.put(filename, enc_data)
             ret[filename] = calc_digests(enc_data)
 

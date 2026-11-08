@@ -14,8 +14,8 @@ from debkit.repo.hashes import COMPARE_HASH_LIST, parse_hash_block
 from debkit.repo.package import FILENAME_FIELD_KEY, Package
 from debkit.repo.packages import Packages, PackagesException
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # Sources hash-block field -> the digest key `Package.get_digests()` reads.
 HASH_FIELDS = {
@@ -60,7 +60,7 @@ class Sources(Packages):
             int: The number of payload files known after parsing.
         """
         if modify_rules:
-            logging.debug("Modify rules do not apply to a read-only Sources index.")
+            logger.debug("Modify rules do not apply to a read-only Sources index.")
 
         for block in re.split(r"\n{2,}", data):
             if not block.strip():
@@ -70,7 +70,7 @@ class Sources(Packages):
                 name = str(package)
                 previous = self.packages.get(name)
                 if previous is not None and previous.get_digests() != package.get_digests():
-                    logging.debug("%s is listed with differing digests across stanzas.", name)
+                    logger.debug("%s is listed with differing digests across stanzas.", name)
                 self.packages[name] = package
 
         self.size = len(self.packages)

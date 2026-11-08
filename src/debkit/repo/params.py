@@ -4,8 +4,8 @@ import logging
 import re
 from pprint import pformat
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class RepoParamsException(Exception):
@@ -144,7 +144,7 @@ class RepoParams:
         except ValueError as exc:
             raise RepoParamsException(f"invalid deb source: {deb_source} - {exc}") from exc
 
-        logging.debug(
+        logger.debug(
             "Parse deb source: url=%s, dist=%s, components=%s", self.url, self.dist, self.components
         )
 

@@ -37,6 +37,9 @@ from debkit.repo.release import (
 from debkit.repo.repo_rw import RepoWriteException
 from debkit.repo.repo_sync import RepoSyncException
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def err_exit(message: object) -> None:
     """Log a critical message and exit with status 1.
@@ -44,11 +47,8 @@ def err_exit(message: object) -> None:
     Args:
         message: Error message; coerced to ``str`` for logging.
     """
-    logging.critical(message)
+    logger.critical(message)
     sys.exit(1)
-
-
-logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> None:
         # txstore logs one warning per storage; urllib3 would add one per request.
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    logging.debug("debkit version: %s", __version__)
+    logger.debug("debkit version: %s", __version__)
 
     try:
         match pars.command:
@@ -104,11 +104,11 @@ def main(argv: list[str] | None = None) -> None:
         PackagesException,
         ReleaseReadException,
     ) as exc:
-        logging.critical(exc)
+        logger.critical(exc)
         err_exit("Can't read repository.")
 
     except (ChecksumException, ReleaseFreshnessException) as exc:
-        logging.critical(exc)
+        logger.critical(exc)
         err_exit("Distrustful object.")
 
     except (
@@ -116,13 +116,13 @@ def main(argv: list[str] | None = None) -> None:
         ReleaseWriteException,
         ChangesException,
     ) as exc:
-        logging.critical(exc)
-        logging.warning("Some data may have been left unfinished.")
+        logger.critical(exc)
+        logger.warning("Some data may have been left unfinished.")
         err_exit("Can't write repository.")
 
     except RepoSyncException as exc:
-        logging.critical(exc)
-        logging.warning("Some data may have remained incomplete.")
+        logger.critical(exc)
+        logger.warning("Some data may have remained incomplete.")
         err_exit("Sync failed.")
 
     except (

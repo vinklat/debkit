@@ -9,8 +9,8 @@ import re
 
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, RepoParams
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # Index directories no container parses. `Packages` opens only
 # `<component>/binary-<arch>/Packages*` and `<component>/source/Sources*`, so an index
@@ -179,16 +179,16 @@ def select_index_entry(
         return False
 
     if _is_source_index(below) and SOURCE_ARCH not in archs:
-        logging.debug("%s is a source index and source is not selected. Skipped.", key)
+        logger.debug("%s is a source index and source is not selected. Skipped.", key)
         return False
 
     if _is_unparsed_index(below, arch_universe):
-        logging.debug("%s is an index nothing parses. Skipped.", key)
+        logger.debug("%s is an index nothing parses. Skipped.", key)
         return False
 
     unselected = _unselected_arch_token(below, archs, arch_universe)
     if unselected is not None:
-        logging.debug("%s carries unselected architecture %s. Skipped.", key, unselected)
+        logger.debug("%s carries unselected architecture %s. Skipped.", key, unselected)
         return False
 
     return True

@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 ARCHITECTURES_DEFAULT = "amd64,arm64"
 INDICES_EXCLUDE_DEFAULT = ""
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 RESET_TARGET_DEFAULT = False
 IGNORE_TARGET_INDEX_DEFAULT = False
@@ -145,13 +145,13 @@ class ActionSync(Action):
             raise ActionException("sync needs a source repository (--source-url)")
 
         if self.allow_release_rollback:
-            logging.warning("Release freshness checks skipped: --allow-release-rollback is set")
+            logger.warning("Release freshness checks skipped: --allow-release-rollback is set")
 
         prev_hash: str = ""
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             # a peer may commit before `history_lock` is granted, so the target every pass
             # plans and floors against is read under it -> txstore locking rules
-            logging.info("---------- Load target repo (%s)...", self.target_repo.params.url)
+            logger.info("---------- Load target repo (%s)...", self.target_repo.params.url)
             target_floor = run_floor = self._load_target()
             # the report compares against the target as this run found it
             target_before = copy(self.target_repo)
@@ -160,16 +160,16 @@ class ActionSync(Action):
 
             for attempt in range(MAX_UPDATED_REPO_RETRIES):
                 if attempt == 0:
-                    logging.info("---------- Load source repo (%s)...", self.source_repo.params.url)
+                    logger.info("---------- Load source repo (%s)...", self.source_repo.params.url)
                 else:
-                    logging.info("---------- Retrieve load to verify source repo changes...")
+                    logger.info("---------- Retrieve load to verify source repo changes...")
 
                 self.source_repo.update(strict_arch=True)
 
                 if attempt > 0:
                     if prev_hash == self.source_repo.release.hash:
                         break
-                    logging.info("Source repo modified during synchronisation! Repeat sync...")
+                    logger.info("Source repo modified during synchronisation! Repeat sync...")
                     # reads go through the transaction, so the target now describes the
                     # bytes the previous pass staged -> txstore footmark rules
                     target_floor = self._load_target()
@@ -182,13 +182,13 @@ class ActionSync(Action):
                         # -> [CRYPTO.md](CRYPTO.md#release-freshness)
                         self.source_repo.release.check_fresh_against(run_floor, now)
 
-                logging.info("Building filelists...")
+                logger.info("Building filelists...")
                 copy_list, delete_list, unproven = self.source_repo.build_sync_lists(
                     self.target_repo, indices_only=self.indices_only
                 )
 
                 if len(copy_list) == 0 and len(delete_list) == 0:
-                    logging.info("Nothing to sync.")
+                    logger.info("Nothing to sync.")
                     break
 
                 try:
@@ -196,13 +196,13 @@ class ActionSync(Action):
                         self.target_repo, copy_list, delete_list, unproven=unproven
                     )
                 except ChecksumException as exc:
-                    logging.error("Checksum error: %s", exc)
+                    logger.error("Checksum error: %s", exc)
                     raise
 
                 prev_hash = self.source_repo.release.hash
             else:
                 # -> [VALIDATION.md](VALIDATION.md#index-selection)
-                logging.warning(
+                logger.warning(
                     "Source repo still changing after %d passes; committing the last pass",
                     MAX_UPDATED_REPO_RETRIES,
                 )
@@ -227,9 +227,9 @@ class ActionSync(Action):
         try:
             self.target_repo.update()
         except ReleaseNotFoundException as exc:
-            logging.warning("Target repo is empty: %s", exc)
+            logger.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
-            logging.warning("Target repo corrupted: %s indices IGNORED", exc)
+            logger.warning("Target repo corrupted: %s indices IGNORED", exc)
             floor = copy(self.target_repo.release)
             self.target_repo.reset()
             return floor
@@ -246,12 +246,12 @@ class ActionSync(Action):
         Args:
             target (RepoRW): The loaded target repository.
         """
-        logging.info("---------- Verify target repo packages...")
+        logger.info("---------- Verify target repo packages...")
         checker = _checker_for(target)
         missing_list, _ = checker.consistency_lists()
         err_total, err_fixed_total = checker.check(missing_list, [], fix=True)
         if err_total > err_fixed_total:
-            logging.warning(
+            logger.warning(
                 "%d target files failed verification and were not deleted",
                 err_total - err_fixed_total,
             )
@@ -291,7 +291,7 @@ class ActionSync(Action):
             try:
                 self.target_repo.update()
             except ReleaseNotFoundException as exc:
-                logging.error("Target repo is empty: %s", exc)
+                logger.error("Target repo is empty: %s", exc)
                 return False
             status = self._check_target(self.target_repo)
 
@@ -316,15 +316,15 @@ class ActionSync(Action):
 
         list_err_total: int = 0
         if len(missing_list) > 0:
-            logging.warning(
+            logger.warning(
                 "Files is not in sync with indices... %s files missing.", len(missing_list)
             )
-            logging.debug("Missing files: %s", missing_list)
+            logger.debug("Missing files: %s", missing_list)
             list_err_total = len(missing_list)
 
         if len(orphan_list) > 0:
-            logging.warning("Found %s orphan files in storage.", len(orphan_list))
-            logging.info("Orphan files: %s", orphan_list)
+            logger.warning("Found %s orphan files in storage.", len(orphan_list))
+            logger.info("Orphan files: %s", orphan_list)
             list_err_total += len(orphan_list)
 
         file_err_total, file_err_fixed_total = dup_repo.check(

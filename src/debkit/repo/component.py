@@ -20,8 +20,8 @@ if TYPE_CHECKING:
     from debkit.repo.package import Package
     from debkit.repo.params import RepoParams
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def container_for(arch: str) -> type[Packages]:
@@ -148,7 +148,7 @@ class Component:
                         raise ComponentException(f"Cannot load {self.name}: {arch}") from exc
 
                     # If the architecture is not available, skip it
-                    logging.warning("Architecture %s not available.", arch)
+                    logger.warning("Architecture %s not available.", arch)
                     continue
 
             try:
@@ -158,7 +158,7 @@ class Component:
                     raise ComponentException(f"Cannot load {self.name}: {arch}") from exc
 
                 # If the Packages not available, skip it
-                logging.warning("Packages for %s failed.", arch)
+                logger.warning("Packages for %s failed.", arch)
                 continue
 
             # Release file validation check
@@ -246,7 +246,7 @@ class Component:
             packages.setup(self.name, arch)
             self.packages[arch] = packages
 
-        logging.info("Insert package: %s %s", package, arch)
+        logger.info("Insert package: %s %s", package, arch)
         # package.fields["X-Factory-Architecture"] = arch
 
         self.packages[arch].insert(package)

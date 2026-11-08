@@ -4,7 +4,6 @@ The digest helpers and the algorithm-name lists come from `txstore`; this module
 is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 """
 
-import logging
 import re
 from typing import Any
 
@@ -17,9 +16,6 @@ __all__ = [
     "HexDigests",
     "parse_hash_block",
 ]
-
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
 
 
 def parse_hash_block(text: str) -> list[tuple[str, str, str]]:

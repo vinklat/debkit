@@ -33,8 +33,8 @@ if TYPE_CHECKING:
     from debkit.repo.repo_rw import RepoRW
 
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 TRANSFER_MAX_ERR_RETRIES = 3
 
@@ -178,7 +178,7 @@ class RepoSync(Repo):
             if self.params.release_key(path) in owned_keys:
                 if path not in self._owned_payloads_warned:
                     self._owned_payloads_warned.add(path)
-                    logging.warning(
+                    logger.warning(
                         "%s is named by a Release digest block, not mirrored as a package", path
                     )
                 continue
@@ -222,8 +222,8 @@ class RepoSync(Repo):
                 diff, indices, target_repo, existing_files, can_list=can_list
             )
 
-        logging.info("     indices: %d objects", len(indices))
-        logging.info(" target repo: %d objects already existing", len(existing_files))
+        logger.info("     indices: %d objects", len(indices))
+        logger.info(" target repo: %d objects already existing", len(existing_files))
 
         index_copies = self._indices_to_copy(
             indices, target_repo, existing_files, forced=forced, can_list=can_list
@@ -278,11 +278,11 @@ class RepoSync(Repo):
         # files a previous failed sync never got to delete
         remove_pkg_files &= existing_files
 
-        logging.info(" source repo: %d packages (total)", len(all_pkg_files))
-        logging.info("     to copy: %d packages", len(copy_pkg_files))
-        logging.info("   to remove: %d packages", len(remove_pkg_files))
-        logging.info("   to repair: %d objects (corrupted or missing)", len(repair_files))
-        logging.info("    to purge: %d objects (orphans)", len(purge_files))
+        logger.info(" source repo: %d packages (total)", len(all_pkg_files))
+        logger.info("     to copy: %d packages", len(copy_pkg_files))
+        logger.info("   to remove: %d packages", len(remove_pkg_files))
+        logger.info("   to repair: %d objects (corrupted or missing)", len(repair_files))
+        logger.info("    to purge: %d objects (orphans)", len(purge_files))
 
         return sorted(copy_pkg_files | repair_files), sorted(remove_pkg_files | purge_files)
 
@@ -310,7 +310,7 @@ class RepoSync(Repo):
             pkg_name = str(package)
             if pkg_name in seen:
                 if package.get_digests() != seen[pkg_name]:
-                    logging.warning(
+                    logger.warning(
                         "%s has inconsistent digests across indices in source repo", package
                     )
                 continue
@@ -322,7 +322,7 @@ class RepoSync(Repo):
             ):
                 ret.discard(pkg_name)
             else:
-                logging.warning(
+                logger.warning(
                     "%s have not valid checksums in target repo. It will be copied again.",
                     package,
                 )
@@ -450,7 +450,7 @@ class RepoSync(Repo):
             bool: True when the path is safe to mirror.
         """
         if is_unsafe_path(entry.key) or is_unsafe_path(entry.path):
-            logging.warning("%s listed in Release is an unsafe index path. Skipped.", entry.key)
+            logger.warning("%s listed in Release is an unsafe index path. Skipped.", entry.key)
             return False
         return True
 
@@ -512,13 +512,13 @@ class RepoSync(Repo):
                     continue
                 if self._digest_unchanged(file, target.digests, target_repo):
                     continue
-                logging.debug(
+                logger.debug(
                     "%s has different checksums in target repo. It will be copied again.", file
                 )
 
             ret.append(file)
 
-        logging.info("     indices: %d objects to copy", len(ret))
+        logger.info("     indices: %d objects to copy", len(ret))
         return ret
 
     def _transfer_file(
@@ -550,9 +550,9 @@ class RepoSync(Repo):
                 is set and the source lacks it. False otherwise.
         """
         if progress is None:
-            logging.info("Copy: %s", file)
+            logger.info("Copy: %s", file)
         else:
-            logging.info("Copy (%d/%d): %s", progress[0], progress[1], file)
+            logger.info("Copy (%d/%d): %s", progress[0], progress[1], file)
 
         try:
             digests = self.storage.transfer(
@@ -562,12 +562,12 @@ class RepoSync(Repo):
             )
         except StorageNotFoundException as exc:
             if missing_ok:
-                logging.debug("%s listed in Release but missing in source. Skipped.", file)
+                logger.debug("%s listed in Release but missing in source. Skipped.", file)
                 return True
-            logging.error("Error transfer file %s: %s", file, exc)
+            logger.error("Error transfer file %s: %s", file, exc)
             return False
         except StorageException as exc:
-            logging.error("Error transfer file %s: %s", file, exc)
+            logger.error("Error transfer file %s: %s", file, exc)
             return False
 
         if self.params.verify_digests:
@@ -586,7 +586,7 @@ class RepoSync(Repo):
             file (str): The file to delete.
             target_repo (Repo): The target repo to delete from.
         """
-        logging.info("Delete: %s", file)
+        logger.info("Delete: %s", file)
         target_repo.storage.delete(file)
 
     def _verify_file(
@@ -607,9 +607,9 @@ class RepoSync(Repo):
         dev_null = StorageNull()
 
         if progress is None:
-            logging.info("Verify: %s", file)
+            logger.info("Verify: %s", file)
         else:
-            logging.info("Verify (%d/%d): %s", progress[0], progress[1], file)
+            logger.info("Verify (%d/%d): %s", progress[0], progress[1], file)
 
         digests = self.storage.transfer(file, dev_null)
 
@@ -656,7 +656,7 @@ class RepoSync(Repo):
         """
         # break recursion if max retries reached
         if depth >= TRANSFER_MAX_ERR_RETRIES:
-            logging.debug("failed packages: %s", copy_list)
+            logger.debug("failed packages: %s", copy_list)
             raise RepoSyncException("Max retries reached.")
 
         failed_list: list[str] = []
@@ -703,18 +703,18 @@ class RepoSync(Repo):
             cnt += 1
 
             if file in missing_list:
-                logging.warning("Skip (%d/%d): %s (missing)", cnt, total, file)
+                logger.warning("Skip (%d/%d): %s (missing)", cnt, total, file)
                 continue
 
             try:
                 if not self._verify_file(file, progress=(cnt, total), fix=fix):
-                    logging.warning("Checksum verify failed: %s", file)
+                    logger.warning("Checksum verify failed: %s", file)
                     ret_err_total += 1
                     if fix:
                         self._delete_file(file, self)
                         ret_err_fixed_total += 1
             except StorageException as exc:
-                logging.error("Error checking file: %s: %s", file, exc)
+                logger.error("Error checking file: %s: %s", file, exc)
                 ret_err_total += 1
 
         if fix:
@@ -723,6 +723,6 @@ class RepoSync(Repo):
                     self._delete_file(file, self)
                     ret_err_fixed_total += 1
                 except StorageException as exc:
-                    logging.error("Error deleting file: %s: %s", file, exc)
+                    logger.error("Error deleting file: %s: %s", file, exc)
 
         return ret_err_total, ret_err_fixed_total

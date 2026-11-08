@@ -23,8 +23,8 @@ if TYPE_CHECKING:
     from debkit.repo.gnupg import GnuPG
     from debkit.repo.package import Package
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # the architecture directory of a binary index key, `<comp>/binary-<arch>/Packages[.<ext>]`
 _BINARY_INDEX_KEY = re.compile(r"binary-(?P<arch>[^/]+)/Packages(?:\.[^/]+)?")
@@ -71,7 +71,7 @@ class Repo:
         self.components: dict[str, Component] = {}
         self.modified = False
 
-        logging.debug(
+        logger.debug(
             "Repo: Storage=%s, Dist=%s, Components=%s",
             storage,
             params.dist,
@@ -165,11 +165,11 @@ class Repo:
                 if arch == ARCH_ANY:
                     continue
                 if not is_valid_arch(arch):
-                    logging.warning("%r in a Release index path is not an architecture.", arch)
+                    logger.warning("%r in a Release index path is not an architecture.", arch)
                     continue
                 archs.add(arch)
         if archs:
-            logging.info("Release declares no Architectures; using its indices: %s", sorted(archs))
+            logger.info("Release declares no Architectures; using its indices: %s", sorted(archs))
         return sorted(archs)
 
     def release_archs(self) -> Generator[str]:
@@ -194,7 +194,7 @@ class Repo:
             if arch == ARCH_ANY:
                 continue
             if not is_valid_arch(arch):
-                logging.warning("%r in Release %s is not an architecture. Skipped.", arch, field)
+                logger.warning("%r in Release %s is not an architecture. Skipped.", arch, field)
                 continue
             yield arch
 
@@ -217,7 +217,7 @@ class Repo:
             raise RepoReadException(f"{exc}") from exc
 
         if not self.params.is_flat and "Components" not in self.release.fields:
-            logging.warning("Components field not found in Release of non-flat repo.")
+            logger.warning("Components field not found in Release of non-flat repo.")
 
         # a reload replaces the components: one the new Release drops must not survive
         self.components = {}
@@ -229,9 +229,9 @@ class Repo:
 
             self.components[component_name] = component
 
-        logging.debug("Total %s packages in %s.", pkgs_total, self.storage)
+        logger.debug("Total %s packages in %s.", pkgs_total, self.storage)
         if pkgs_total == 0:
-            logging.warning("Empty repo.")
+            logger.warning("Empty repo.")
 
     def dump(self, brief: bool = False) -> dict[str, dict[str, Any]]:
         """Dump the repository data to a dict.

@@ -6,7 +6,6 @@ Every option is listed in [CONFIG.md](CONFIG.md); resolution order →
 
 from __future__ import annotations
 
-import logging
 from argparse import BooleanOptionalAction, Namespace, RawDescriptionHelpFormatter
 
 from txstore import HISTORY_KEEP_DEFAULT, HISTORY_MAX_AGE_DAYS_DEFAULT, get_supported_schemes
@@ -24,8 +23,6 @@ from debkit.argtypes import (
     object_acl_type,
     positive_int_type,
 )
-
-logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 LOG_LEVEL_DEFAULT = "INFO"
 GNUPG_HOME_DEFAULT = ".gnupg"

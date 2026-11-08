@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -31,9 +30,6 @@ if TYPE_CHECKING:
 def _record(model: TransactionModel) -> dict[str, object]:
     """Return the history-file form of `model`: ``{"id", "timestamp"}``."""
     return {"id": model.id, "timestamp": model.timestamp.to_json()}
-
-
-logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 class ActionHistory:

@@ -29,8 +29,8 @@ if TYPE_CHECKING:
     from debkit.repo.params import RepoParams
 
 
-# create logger
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # Fields for which bare unindented continuation tokens are folded onto the
 # previous line.  Hash-block fields (MD5Sum, SHA1, SHA256, SHA512, …) are
@@ -261,7 +261,7 @@ class Release(HexDigests):
                 if fixed and current_field in _CONTINUATION_FIELDS:
                     fixed[-1] = fixed[-1].rstrip("\n\r") + " " + stripped + "\n"
                     if not warned:
-                        logging.getLogger(__name__).warning(
+                        logger.warning(
                             "Release: non-standard unindented continuation lines detected "
                             "and normalised"
                         )
@@ -414,10 +414,10 @@ class Release(HexDigests):
             return ret_data
 
         if detach_sign is None:
-            logging.debug("Verify signed InRelease...")
+            logger.debug("Verify signed InRelease...")
             ret_data = self.gpg.verify(data)
         else:
-            logging.debug("Verify detached GPG signature...")
+            logger.debug("Verify detached GPG signature...")
             ret_data = self.gpg.verify(data, detach_sign=detach_sign)
 
         return ret_data
@@ -484,7 +484,7 @@ class Release(HexDigests):
             self.parse(data)
             self.hash = hashlib.sha256(data).hexdigest()
         if self.hashfuns:
-            logging.debug("Available hexdigests: %s", self.hashfuns)
+            logger.debug("Available hexdigests: %s", self.hashfuns)
 
     def load(self) -> bool:
         """Load the root Release file, verifying its signatures when they are checked.
@@ -500,7 +500,7 @@ class Release(HexDigests):
         """
         use_inrelease, self.filename = self._find_root_files()
         self._parse_loaded(self._load_root_files(use_inrelease))
-        logging.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
+        logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
         return True
 
     def load_component(
@@ -536,7 +536,7 @@ class Release(HexDigests):
                 raise ChecksumException(f"{key} checksum mismatch.")
 
         self._parse_loaded(data)
-        logging.info(
+        logger.info(
             "Component=%s Storage=%s Release=%s", comp, self.storage.get_type(), self.fields
         )
         return True
@@ -564,7 +564,7 @@ class Release(HexDigests):
                             " ".join([filesums[hashfun], f"{filesums['Size']:>16}", filename])
                         )
                     except KeyError as exc:
-                        logging.debug("key error: %s", exc)
+                        logger.debug("key error: %s", exc)
                 if hlist:
                     ret += f"\n{hashfun}:\n " + "\n ".join(hlist)
 
@@ -588,7 +588,7 @@ class Release(HexDigests):
         signed_data = self.gpg.sign(enc_data).encode("utf-8")
         if len(signed_data):
             signed_filename = re.sub(r"Release", "InRelease", filename)
-            logging.info("Save signed InRelease...")
+            logger.info("Save signed InRelease...")
             self.storage.put(signed_filename, signed_data)
         else:
             raise ReleaseWriteException(GPG_ERR_MSG)
@@ -596,7 +596,7 @@ class Release(HexDigests):
         detached_signature = self.gpg.sign(enc_data, detach=True).encode("utf-8")
         if len(detached_signature):
             detached_filename = f"{filename}.gpg"
-            logging.info("Save detached GPG signature...")
+            logger.info("Save detached GPG signature...")
             self.storage.put(detached_filename, detached_signature)
         else:
             raise ReleaseWriteException(GPG_ERR_MSG)
@@ -615,7 +615,7 @@ class Release(HexDigests):
                 self.storage.delete(path)
             except StorageNotFoundException:
                 continue
-            logging.warning("Release saved unsigned: removed stale signature %s", path)
+            logger.warning("Release saved unsigned: removed stale signature %s", path)
             self.found_indices_files = [f for f in self.found_indices_files if f != path]
 
     def save(self) -> dict[str, str] | None:
@@ -630,12 +630,12 @@ class Release(HexDigests):
             return None
 
         if not self.modified:
-            logging.debug("%s not modified.", self.filename)
+            logger.debug("%s not modified.", self.filename)
             return None
 
         data = self.serialize()
         enc_data = data.encode("utf-8")
-        logging.info("Save %s...", self.filename)
+        logger.info("Save %s...", self.filename)
         self.storage.put(self.filename, enc_data)
         digests = calc_digests(enc_data)
 
@@ -733,7 +733,7 @@ class Release(HexDigests):
         try:
             target_date = target.date("Date")
         except ValueError as exc:
-            logging.warning("Target Release Date is %s; not compared with the source", exc)
+            logger.warning("Target Release Date is %s; not compared with the source", exc)
             return
         if target_date is None:
             return
