@@ -108,7 +108,7 @@ def test_load_checksum_mismatch_raises() -> None:
     sub = Release(storage, _params(verify_digests=True))
     sub.params.indices_prefix = ""  # the seeded key cannot match, so load must raise
     with pytest.raises(ChecksumException):
-        sub.load(comp="main", arch="amd64", root_release=root_release)
+        sub.load_component("main", "amd64", root_release=root_release)
 
 
 def test_setup_initializes_root_release() -> None:
@@ -188,7 +188,7 @@ def test_save_signed_keeps_and_rewrites_the_root_signatures() -> None:
 def test_save_of_a_component_release_leaves_the_root_signatures() -> None:
     storage = MagicMock()
     r = Release(storage, _params())
-    r.setup(comp="main", arch="amd64")
+    r.setup_component("main", "amd64")
 
     r.save()
 
@@ -319,7 +319,7 @@ def test_find_file_source_arch_reads_the_source_release() -> None:
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _params())
-    r.load(comp="main", arch="source")
+    r.load_component("main", "source")
 
     assert r.filename == "dists/bookworm/main/source/Release"
 
@@ -331,7 +331,7 @@ def test_find_file_flat_component_release_path_carries_no_leading_slash() -> Non
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _flat_params())
-    r.load(comp="main", arch="amd64")
+    r.load_component("main", "amd64")
 
     assert r.filename == "bookworm/binary-amd64/Release"
     assert not r.filename.startswith("/")
@@ -347,13 +347,36 @@ def test_find_file_reads_the_component_release_setup_wrote(
     storage.get.return_value = b"Origin: x\n"
 
     writer = Release(storage, params_fn())
-    writer.setup(comp="main", arch=arch)
+    writer.setup_component("main", arch)
 
     storage.exists.side_effect = lambda path: path == writer.filename
     reader = Release(storage, params_fn())
-    reader.load(comp="main", arch=arch)
+    reader.load_component("main", arch)
 
     assert reader.filename == writer.filename
+
+
+@pytest.mark.parametrize(("comp", "arch"), [("main", ""), ("", "amd64")])
+def test_component_entry_points_refuse_an_empty_coordinate(comp: str, arch: str) -> None:
+    """An empty arch composed `binary-/Release`, an empty component the root Release path."""
+    storage = MagicMock()
+    r = Release(storage, _params())
+
+    with pytest.raises(ValueError, match="needs a component and an arch"):
+        r.load_component(comp, arch)
+    with pytest.raises(ValueError, match="needs a component and an arch"):
+        r.setup_component(comp, arch)
+
+    storage.exists.assert_not_called()
+    storage.get.assert_not_called()
+    assert r.filename is None
+
+
+def test_setup_copies_the_fields_it_is_given() -> None:
+    """The caller's mapping, e.g. a module-level default, must not gain generated fields."""
+    fields = {"Components": "main"}
+    Release(MagicMock(), _params()).setup(fields=fields)
+    assert fields == {"Components": "main"}
 
 
 def test_load_component_release_verifies_against_its_flat_release_key() -> None:
@@ -369,7 +392,7 @@ def test_load_component_release_verifies_against_its_flat_release_key() -> None:
     root_release.digests["binary-amd64/Release"] = calc_digests(data)
 
     sub = Release(storage, params)
-    assert sub.load(comp="main", arch="amd64", root_release=root_release) is True
+    assert sub.load_component("main", "amd64", root_release=root_release) is True
 
 
 # ---------- Root Release files

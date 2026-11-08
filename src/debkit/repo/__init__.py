@@ -218,8 +218,6 @@ class Repo:
         if not self.params.is_flat and "Components" not in self.release.fields:
             logging.warning("Components field not found in Release of non-flat repo.")
 
-        self.release.is_flat = self.params.is_flat
-
         # a reload replaces the components: one the new Release drops must not survive
         self.components = {}
         pkgs_total = 0

@@ -248,8 +248,9 @@ def test_packages_verify_indices_checksum_both_miss() -> None:
 
 def test_packages_setup_non_flat_paths_under_binary_arch() -> None:
     pkgs = _new_packages()
-    with patch.object(Release, "setup"):
+    with patch.object(Release, "setup_component") as setup_component:
         pkgs.setup("main", "amd64")
+    setup_component.assert_called_once_with("main", "amd64")
     assert pkgs.used_indices_path == "dists/bookworm/main/binary-amd64/Packages.gz"
     assert pkgs.found_indices_paths == [
         "dists/bookworm/main/binary-amd64/Packages",
@@ -266,16 +267,32 @@ def test_packages_setup_flat_paths_at_dist_root() -> None:
     re-discovered by the loader.
     """
     pkgs = _new_packages(params=make_params(flat=True))
-    with patch.object(Release, "setup"):
-        pkgs.setup("main", "amd64")
+    pkgs.setup("main", "amd64")
     assert pkgs.used_indices_path == "bookworm/Packages.gz"
     assert pkgs.found_indices_paths == ["bookworm/Packages", "bookworm/Packages.gz"]
+
+
+def test_packages_setup_flat_writes_no_component_release() -> None:
+    """A flat repo reads no per-component Release, so its empty arch must not set one up.
+
+    Composed from the empty arch, that Release used the root Release path, and the root
+    Release then listed its own digests.
+    """
+    pkgs = _new_packages(params=make_params(flat=True))
+    pkgs.setup("main", "")
+    pkgs.insert(make_package("pool/main/f/foo/foo_1.0_amd64.deb"))
+
+    ret = pkgs.save()
+
+    assert pkgs.release.filename is None
+    assert ret is not None
+    assert set(ret) == {"bookworm/Packages", "bookworm/Packages.gz"}
 
 
 def test_packages_setup_source_arch_writes_under_source_dir() -> None:
     """The write path names the source index exactly as `_find_packages_file()` reads it."""
     pkgs = _new_packages()
-    with patch.object(Release, "setup"):
+    with patch.object(Release, "setup_component"):
         pkgs.setup("main", "source")
     assert pkgs.used_indices_path == "dists/bookworm/main/source/Sources.gz"
     assert pkgs.found_indices_paths == [
@@ -287,8 +304,7 @@ def test_packages_setup_source_arch_writes_under_source_dir() -> None:
 def test_packages_setup_flat_source_arch_writes_at_the_dist_root() -> None:
     """A flat repo carries no architecture directory on the write path either."""
     pkgs = _new_packages(params=make_params(flat=True))
-    with patch.object(Release, "setup"):
-        pkgs.setup("main", "source")
+    pkgs.setup("main", "source")
     assert pkgs.used_indices_path == "bookworm/Sources.gz"
     assert pkgs.found_indices_paths == ["bookworm/Sources", "bookworm/Sources.gz"]
 

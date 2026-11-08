@@ -27,7 +27,6 @@ def _component(name: str = "main", params: RepoParams | None = None) -> Componen
     p = params or make_params()
     storage = make_storage_mock()
     release = MagicMock(spec=Release)
-    release.is_flat = p.is_flat
     return Component(storage, p, release, name)
 
 
@@ -61,8 +60,8 @@ def test_component_load_non_flat_aggregates_size() -> None:
         PackagesCls.return_value = pkgs_mock
         total = comp.load(["amd64"])
     assert total == 7
-    pkgs_mock.release.load.assert_called_once_with(
-        comp="main", arch="amd64", root_release=comp.root_release
+    pkgs_mock.release.load_component.assert_called_once_with(
+        "main", "amd64", root_release=comp.root_release
     )
     pkgs_mock.load.assert_called_once()
 
@@ -73,7 +72,7 @@ def test_component_load_storage_exception_non_strict_skips(
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
         pkgs_mock = MagicMock()
-        pkgs_mock.release.load.side_effect = StorageException("not found")
+        pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with caplog.at_level(logging.WARNING):
             total = comp.load(["amd64"], strict_arch=False)
@@ -85,7 +84,7 @@ def test_component_load_storage_exception_strict_raises() -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
         pkgs_mock = MagicMock()
-        pkgs_mock.release.load.side_effect = StorageException("not found")
+        pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main"):
             comp.load(["amd64"], strict_arch=True)

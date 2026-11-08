@@ -126,6 +126,8 @@ class Packages:
     def setup(self, comp: str, arch: str) -> None:
         """Initialize the new empty Packages object.
 
+        A flat repo carries no per-component Release, as its loader reads none.
+
         Args:
             comp (str): The component name.
             arch (str): The architecture name.
@@ -133,7 +135,8 @@ class Packages:
         self.used_indices_path = self.params.indices_path(self._index_inner(arch, ".gz"), comp)
         plain_path = self.params.indices_path(self._index_inner(arch), comp)
         self.found_indices_paths = [plain_path, self.used_indices_path]
-        self.release.setup(comp=comp, arch=arch)
+        if not self.params.is_flat:
+            self.release.setup_component(comp, arch)
 
     def _parse_indices(
         self, data: str, modify_rules: list[tuple[str, str, str]] | None = None

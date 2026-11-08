@@ -140,7 +140,6 @@ class Release(HexDigests):
         filename (str): The filename of the release.
         found_indices_files List[str]: List of all found Release files.
         hashfuns List[str]: Available hexdigest algorithms in data.
-        is_flat (bool): Whether it's a repo without components.
         hash (str): Hexdigest of a file content (for changes detection).
         root_digests (Dict[str, Dict[str, str]]): Release key → digests of each root
             Release file as the last load fetched it.
@@ -163,7 +162,6 @@ class Release(HexDigests):
         self.filename: str | None = None
         self.found_indices_files: list[str] = []
         self.hashfuns: list[str] = []
-        self.is_flat = False
         self.hash = ""
         self.root_digests: dict[str, dict[str, str]] = {}
         super().__init__()
@@ -191,7 +189,6 @@ class Release(HexDigests):
         ret.found_indices_files = self.found_indices_files.copy()
         ret.hashfuns = self.hashfuns.copy()
         ret.modified = self.modified
-        ret.is_flat = self.is_flat
         ret.hash = self.hash
         ret.root_digests = self.root_digests.copy()
         return ret
@@ -330,14 +327,8 @@ class Release(HexDigests):
         filename = self.params.indices_path(f"{self.params.arch_dir(arch)}/Release", comp)
         return filename
 
-    def __find_file(
-        self, comp: str | None = None, arch: str | None = None
-    ) -> tuple[bool, bool, str | None]:
-        """Find the right Release file in storage.
-
-        Args:
-            comp (Optional[str]): The component to find. Defaults to None (root Release).
-            arch (Optional[str]): The architecture to find. Defaults to None (root Release).
+    def _find_root_files(self) -> tuple[bool, str]:
+        """Find the root Release files in storage and pick the one to parse.
 
         Raises:
             ReleaseNotFoundException: Neither `Release` nor `InRelease` exists.
@@ -345,21 +336,8 @@ class Release(HexDigests):
                 `InRelease` exists.
 
         Returns:
-            Tuple[bool, bool, str|None]: A boolean indicating whether it's a detached signature,
-                a boolean indicating whether to use InRelease, and the found filename.
+            Tuple[bool, str]: Whether to parse `InRelease`, and the file to parse.
         """
-        # detched signature, use InRelease instead of Release if True
-        use_inrelease = False
-
-        # not root release
-        if comp and arch:
-            filename = self._component_release_path(comp, arch)
-            if self.storage.exists(filename):
-                self.found_indices_files = [filename]
-                return False, False, filename
-            # else:
-            return False, False, None
-
         # the layout decides the prefix -> [VALIDATION.md](VALIDATION.md#repository-index-paths)
         release_path = self.params.indices_path("Release")
         release_gpg_path = self.params.indices_path("Release.gpg")
@@ -380,30 +358,34 @@ class Release(HexDigests):
                 f"GPG signature file missing: {release_gpg_path} or {inrelease_path}"
             )
 
-        self.found_indices_files = []
-
-        # Release found
-        if release_path_exists:
-            self.found_indices_files.append(release_path)
-
-        # Release.gpg found
-        if release_gpg_path_exists:
-            self.found_indices_files.append(release_gpg_path)
-
-        # InRelease found
-        if inrelease_path_exists:
-            self.found_indices_files.append(inrelease_path)
+        self.found_indices_files = [
+            path
+            for path, exists in (
+                (release_path, release_path_exists),
+                (release_gpg_path, release_gpg_path_exists),
+                (inrelease_path, inrelease_path_exists),
+            )
+            if exists
+        ]
 
         # not Release or without Release.gpg if required -> use InRelease, when there is one
-        if inrelease_path_exists and (
+        use_inrelease = inrelease_path_exists and (
             (not release_path_exists) or (self.params.verify_gpg and not release_gpg_path_exists)
-        ):
-            use_inrelease = True
-            filename = inrelease_path
-        else:
-            filename = release_path
+        )
+        return use_inrelease, inrelease_path if use_inrelease else release_path
 
-        return True, use_inrelease, filename
+    @staticmethod
+    def _require_coordinates(comp: str, arch: str) -> None:
+        """Refuse an empty component or architecture for a per-component Release.
+
+        Either one empty would compose a path over the root Release or under
+        `binary-/` -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+
+        Raises:
+            ValueError: `comp` or `arch` is empty.
+        """
+        if not comp or not arch:
+            raise ValueError(f"component Release needs a component and an arch: {comp!r} {arch!r}")
 
     def _checks_signatures(self) -> bool:
         """Whether a root Release load verifies signatures.
@@ -493,63 +475,67 @@ class Release(HexDigests):
         """
         return compare_digests(self.root_digests.get(key, {}), incoming_digests)
 
-    def load(
-        self,
-        comp: str | None = None,
-        arch: str | None = None,
-        root_release: Optional["Release"] = None,
-    ) -> bool:
-        """Load Release file.
+    def _parse_loaded(self, data: bytes) -> None:
+        """Parse loaded Release bytes and record their hash for change detection."""
+        if data:
+            self.parse(data)
+            self.hash = hashlib.sha256(data).hexdigest()
+        if self.hashfuns:
+            logging.debug("Available hexdigests: %s", self.hashfuns)
 
-        Args:
-            comp (str, optional): The component to load. Defaults to None (root Release)
-            arch (str, optional): The architecture to load. Defaults to None (root Release).
-            root_release (Optional[Release]): The root Release object. Defaults to None.
+    def load(self) -> bool:
+        """Load the root Release file, verifying its signatures when they are checked.
 
         Raises:
             ReleaseNotFoundException: Neither a root `Release` nor an `InRelease` exists.
             ReleaseReadException: Signatures are checked and the root Release has none.
             GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
-            ChecksumException: Checksum mismatch.
+            ChecksumException: `Release` and `InRelease` carry different content.
 
         Returns:
-            bool: True if the Release file was loaded successfully, False otherwise.
+            bool: Always True; a missing root Release raises.
         """
-        is_root_release, use_inrelease, self.filename = self.__find_file(comp, arch)
+        use_inrelease, self.filename = self._find_root_files()
+        self._parse_loaded(self._load_root_files(use_inrelease))
+        logging.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
+        return True
 
-        if self.filename is None:
+    def load_component(
+        self, comp: str, arch: str, root_release: Optional["Release"] = None
+    ) -> bool:
+        """Load the per-component Release of one architecture.
+
+        Args:
+            comp (str): The component to load.
+            arch (str): The architecture to load.
+            root_release (Optional[Release]): The root Release listing its digests.
+                Defaults to None (not verified).
+
+        Raises:
+            ValueError: `comp` or `arch` is empty.
+            ChecksumException: Checksum mismatch against the root Release.
+
+        Returns:
+            bool: True if the Release file was loaded, False when storage lacks it.
+        """
+        self._require_coordinates(comp, arch)
+        filename = self._component_release_path(comp, arch)
+        if not self.storage.exists(filename):
+            self.filename = None
             return False
+        self.filename = filename
+        self.found_indices_files = [filename]
 
-        data: bytes = (
-            self._load_root_files(use_inrelease)
-            if is_root_release
-            else self.storage.get(self.filename)
+        data = self.storage.get(filename)
+        if self.params.verify_digests and root_release is not None:
+            key = self.params.release_key(filename)
+            if not root_release.verify_digests(key, calc_digests(data)):
+                raise ChecksumException(f"{key} checksum mismatch.")
+
+        self._parse_loaded(data)
+        logging.info(
+            "Component=%s Storage=%s Release=%s", comp, self.storage.get_type(), self.fields
         )
-
-        if self.params.verify_digests and root_release is not None and not is_root_release:
-            filename = self.params.release_key(self.filename)
-            digests = calc_digests(data)
-            if not root_release.verify_digests(filename, digests):
-                raise ChecksumException(f"{filename} checksum mismatch.")
-
-        # logging.debug("release length=%d", len(data))
-
-        if data:
-            self.parse(data)
-            self.hash = hashlib.sha256(data).hexdigest()
-            # if root_release:
-            #     logging.debug("hash=%s", self.hash)
-
-        if is_root_release:
-            logging.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
-        else:
-            logging.info(
-                "Component=%s Storage=%s Release=%s", comp, self.storage.get_type(), self.fields
-            )
-        if self.hashfuns:
-            logging.debug("Available hexdigests: %s", self.hashfuns)
-
-        # TODO: return None ?
         return True
 
     def serialize(self) -> str:
@@ -767,37 +753,43 @@ class Release(HexDigests):
         """
         return bool(len(self.fields) == 0)
 
-    def setup(
-        self,
-        comp: str | None = None,
-        arch: str | None = None,
-        fields: dict[str, str] | None = None,
-    ) -> None:
-        """Reset indices attributes to defaults.
+    def setup(self, fields: dict[str, str] | None = None) -> None:
+        """Start a new root Release.
 
         Args:
-            comp (Optional[str]): The component to set. Defaults to None.
-            arch (Optional[str]): The architecture to set. Defaults to None.
-            fields (Optional[Dict[str, str]]): The fields to set. Defaults to None.
+            fields (Optional[Dict[str, str]]): Initial fields, copied; the generated
+                identity fields are added to them. Defaults to None (keep the current ones).
         """
         if fields is not None:
-            self.fields = fields
+            self.fields = dict(fields)
+        self.fields.update(
+            {
+                "Origin": self.params.dist,
+                "Label": self.params.dist,
+                "Suite": self.params.dist,
+                "Codename": self.params.dist,
+                "Description": "Generated by debkit",
+            }
+        )
+        self._start_file(self.params.indices_path("Release"))
 
+    def setup_component(self, comp: str, arch: str) -> None:
+        """Start a new per-component Release of one architecture.
+
+        Args:
+            comp (str): The component.
+            arch (str): The architecture.
+
+        Raises:
+            ValueError: `comp` or `arch` is empty.
+        """
+        self._require_coordinates(comp, arch)
+        self.fields = {"Component": comp, "Architecture": arch}
+        self._start_file(self._component_release_path(comp, arch))
+
+    def _start_file(self, filename: str) -> None:
+        """Point this Release at a new file to write with every supported digest."""
         self.hashfuns = list(SUPPORT_HASH_LIST)
-
-        if comp and arch:
-            self.filename = self._component_release_path(comp, arch)
-            self.fields = {"Component": comp, "Architecture": arch}
-        else:
-            self.filename = self.params.indices_path("Release")
-            self.fields.update(
-                {
-                    "Origin": self.params.dist,
-                    "Label": self.params.dist,
-                    "Suite": self.params.dist,
-                    "Codename": self.params.dist,
-                    "Description": "Generated by debkit",
-                }
-            )
-        self.found_indices_files = [self.filename]
+        self.filename = filename
+        self.found_indices_files = [filename]
         self.modified = True

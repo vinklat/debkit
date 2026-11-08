@@ -127,7 +127,7 @@ class Component:
 
             if not self.is_flat:
                 try:
-                    packages.release.load(comp=self.name, arch=arch, root_release=self.root_release)
+                    packages.release.load_component(self.name, arch, root_release=self.root_release)
                 except StorageException as exc:
                     if strict_arch:
                         raise ComponentException(f"Cannot load {self.name}: {arch}") from exc
