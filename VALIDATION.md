@@ -121,7 +121,9 @@ inherits, through the decoders in `repo/compress.py`.
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Decompressed size | Decoding stops as soon as the output passes `MAX_INDICES_BYTES` (256 MiB), so a compression bomb is never inflated in full. | → `PackagesException` (Read) |
-| Stanza separation | A blank or whitespace-only line ends a stanza, as Debian Policy 5.1 allows; CRLF line ends are read as LF. | — |
+| Stream integrity | A compressed index decodes to its end-of-stream marker; truncated or corrupt data is refused. | → `PackagesException` (Read) |
+| Stanza separation | A blank or whitespace-only line ends a stanza, as Debian Policy 5.1 allows. | — |
+| Line ends | CRLF line ends are read as LF. | — |
 
 ## Package stanzas
 

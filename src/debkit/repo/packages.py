@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import lzma
 import re
+import zlib
 from collections.abc import Callable
 from copy import copy
 from typing import (
@@ -303,6 +305,9 @@ class Packages:
             raise PackagesException(
                 f"Decompressed indices {indices_path} exceeds soft cap ({MAX_INDICES_BYTES} bytes)."
             ) from exc
+        except (EOFError, lzma.LZMAError, OSError, zlib.error) as exc:
+            # truncated or corrupt stream; bz2 reports garbage as OSError
+            raise PackagesException(f"Cannot decode indices {indices_path}: {exc}") from exc
 
         data = raw.decode("utf-8")
 

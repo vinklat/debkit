@@ -392,6 +392,27 @@ def test_packages_load_refuses_an_index_past_the_size_cap(
     assert pkgs.packages == {}
 
 
+@pytest.mark.parametrize("suffix", [".gz", ".xz", ".bz2", ".lzma"])
+@pytest.mark.parametrize("damage", ["truncated", "garbage"])
+def test_packages_load_refuses_a_truncated_or_corrupt_index(
+    tmp_path: Path, suffix: str, damage: str
+) -> None:
+    """A stream that ends early or does not decode is a typed refusal, not a traceback."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    whole = codec_for(suffix).compress(make_packages_block("foo").encode())
+    stored = whole[: len(whole) // 2] if damage == "truncated" else b"not a compressed index"
+    root = Release(storage, params)
+    root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(stored))
+    storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
+    pkgs = Packages(storage, params)
+
+    with pytest.raises(PackagesException, match="Cannot decode indices"):
+        pkgs.load(root, "main", "amd64")
+
+    assert pkgs.packages == {}
+
+
 # ---------------------------------------------------------------------------
 # save
 # ---------------------------------------------------------------------------
