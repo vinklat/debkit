@@ -20,7 +20,7 @@ from debkit.action import (
 from debkit.repo.changes import Changes
 from debkit.repo.debfile import DebFile
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
-from debkit.repo.release import ReleaseReadException
+from debkit.repo.release import ReleaseNotFoundException
 
 if TYPE_CHECKING:
     from argparse import Namespace
@@ -237,8 +237,9 @@ class ActionPkg(Action):
         # load or setup target repository
         try:
             self.target_repo.update()
-        except ReleaseReadException as exc:
-            # no repository - create new one
+        except ReleaseNotFoundException as exc:
+            # no repository - create new one; any other read failure must not reset an
+            # existing one
             logging.debug("Target repository not found... (%s)", exc)
 
             self.target_repo.setup(fields=DEFAULT_REPO_FIELDS)

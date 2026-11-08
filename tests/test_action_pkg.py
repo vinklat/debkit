@@ -7,11 +7,14 @@ from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from helpers.factories import make_package, make_params
 from helpers.storage import NonTxnStorageStub, TxnStorageStub, iso_timestamp, seed_history
 from txstore import HistoryRetention, StorageFS, TransactionHistory, is_transactional
 
 from debkit.action import OutputType
 from debkit.action.action_pkg import ActionPkg
+from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
+from debkit.repo.repo_rw import RepoRW
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -234,6 +237,78 @@ def test_insert_prunes_expired_history_on_a_real_storage(
     action.insert()
 
     assert [rec.id for rec in TransactionHistory(storage).load()] == [3]
+
+
+# ---------------------------------------------------------------------------
+# insert() — an existing repository is never set up again
+# ---------------------------------------------------------------------------
+
+_PACKAGES = "dists/bookworm/main/binary-amd64/Packages.gz"
+
+
+def _amd64_filenames(storage: StorageFS) -> set[str]:
+    """Package filenames a fresh read of the `fs` repository finds in `main` amd64."""
+    repo = RepoRW(storage, make_params())
+    repo.update()
+    return set(repo.components["main"].packages["amd64"].packages)
+
+
+def _insert_into_real_repo(
+    tmp_path: Path, mock_debfile_cls: MagicMock, name: str, *, gpg: MagicMock | None = None
+) -> ActionPkg:
+    """Insert one amd64 deb into an `fs` repository under *tmp_path*, signed only with *gpg*."""
+    deb = f"{name}_1.0_amd64.deb"
+    incoming = StorageFS(str(tmp_path / "in"))
+    incoming.put(deb, name.encode())
+
+    action = _make_pkg_action()
+    action.incoming_storage = incoming
+    action.deb_filename = deb
+    action.target_repo = RepoRW(
+        StorageFS(str(tmp_path / "repo")), make_params(verify_gpg=gpg is not None), gpg=gpg
+    )
+    instance = MagicMock()
+    instance.filename_field = f"pool/main/{name[0]}/{name}/{deb}"
+    instance.get_package.return_value = make_package(
+        instance.filename_field, Package=name, Version="1.0", Architecture="amd64"
+    )
+    mock_debfile_cls.return_value = instance
+
+    action.insert()
+    return action
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_into_an_unsigned_repo_keeps_its_packages(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """`--skip-verify-gpg` writes no signature, and a later insert must still read the repo."""
+    _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo")
+    action = _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar")
+
+    assert _amd64_filenames(_target(action).storage) == {
+        "pool/main/f/foo/foo_1.0_amd64.deb",
+        "pool/main/b/bar/bar_1.0_amd64.deb",
+    }
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_refuses_an_unsigned_repo_without_setting_it_up_again(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """Only a missing Release means a new repository; a missing signature is a read failure."""
+    first = _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo")
+    before = _target(first).storage.get(_PACKAGES)
+
+    with (
+        patch.object(RepoRW, "setup") as setup,
+        pytest.raises(ReleaseReadException, match="signature file missing") as excinfo,
+    ):
+        _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar", gpg=MagicMock())
+
+    assert not isinstance(excinfo.value, ReleaseNotFoundException)
+    setup.assert_not_called()
+    assert _target(first).storage.get(_PACKAGES) == before
 
 
 # ---------------------------------------------------------------------------

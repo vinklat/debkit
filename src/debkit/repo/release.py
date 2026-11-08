@@ -66,6 +66,14 @@ class ReleaseReadException(Exception):
         super().__init__(f"Release: {message}")
 
 
+class ReleaseNotFoundException(ReleaseReadException):
+    """Exception raised when a repository has neither a root `Release` nor an `InRelease`.
+
+    The only read failure that means "no repository here": every other one is a
+    repository that exists but cannot be trusted or parsed.
+    """
+
+
 class ReleaseWriteException(Exception):
     """Exception raised for write errors in the Release class.
 
@@ -332,7 +340,9 @@ class Release(HexDigests):
             arch (Optional[str]): The architecture to find. Defaults to None (root Release).
 
         Raises:
-            ReleaseReadException: File not found.
+            ReleaseNotFoundException: Neither `Release` nor `InRelease` exists.
+            ReleaseReadException: Signatures are checked and neither `Release.gpg` nor
+                `InRelease` exists.
 
         Returns:
             Tuple[bool, bool, str|None]: A boolean indicating whether it's a detached signature,
@@ -361,10 +371,11 @@ class Release(HexDigests):
 
         # Release or InRelease not found
         if not (release_path_exists or inrelease_path_exists):
-            raise ReleaseReadException(f"File not found: {release_path} or {inrelease_path}")
+            raise ReleaseNotFoundException(f"File not found: {release_path} or {inrelease_path}")
 
-        # Release.gpg or InRelease not found
-        if not (release_gpg_path_exists or inrelease_path_exists):
+        # an unsigned Release reads as-is when no signature is checked
+        # -> [CRYPTO.md](CRYPTO.md#verification-switches)
+        if self._checks_signatures() and not (release_gpg_path_exists or inrelease_path_exists):
             raise ReleaseReadException(
                 f"GPG signature file missing: {release_gpg_path} or {inrelease_path}"
             )
@@ -383,14 +394,24 @@ class Release(HexDigests):
         if inrelease_path_exists:
             self.found_indices_files.append(inrelease_path)
 
-        # not Release or without Release.gpg if required -> use InRelease
-        if (not release_path_exists) or (self.params.verify_gpg and not release_gpg_path_exists):
+        # not Release or without Release.gpg if required -> use InRelease, when there is one
+        if inrelease_path_exists and (
+            (not release_path_exists) or (self.params.verify_gpg and not release_gpg_path_exists)
+        ):
             use_inrelease = True
             filename = inrelease_path
         else:
             filename = release_path
 
         return True, use_inrelease, filename
+
+    def _checks_signatures(self) -> bool:
+        """Whether a root Release load verifies signatures.
+
+        Returns:
+            bool: True with GPG verification on and a `GnuPG` to verify with.
+        """
+        return self.params.verify_gpg and self.gpg is not None
 
     def _verify_gpg(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
         """Verify GPG signature.
@@ -439,7 +460,7 @@ class Release(HexDigests):
         }
         self.root_digests = {key: calc_digests(data) for key, data in raw.items()}
 
-        if self.params.verify_gpg and self.gpg is not None:
+        if self._checks_signatures():
             if "InRelease" in raw:
                 raw["InRelease"] = self._verify_gpg(raw["InRelease"])
             if "Release" in raw and "Release.gpg" in raw:
@@ -453,8 +474,9 @@ class Release(HexDigests):
             ):
                 raise ChecksumException("Release and InRelease carry different content.")
         elif use_inrelease:
-            # a sync target is read without a keyring, yet its signed body still holds the
-            # Date a source must not undercut -> [CRYPTO.md](CRYPTO.md#release-freshness)
+            # unverified, as under `--skip-verify-gpg` or for a sync target, yet the signed
+            # body still holds the fields and the Date a source must not undercut
+            # -> [CRYPTO.md](CRYPTO.md#release-freshness)
             raw["InRelease"] = cleartext_body(raw["InRelease"])
 
         return raw["InRelease" if use_inrelease else "Release"]
@@ -485,7 +507,8 @@ class Release(HexDigests):
             root_release (Optional[Release]): The root Release object. Defaults to None.
 
         Raises:
-            ReleaseReadException: Only InRelease file found, but GnuPG verification is disabled.
+            ReleaseNotFoundException: Neither a root `Release` nor an `InRelease` exists.
+            ReleaseReadException: Signatures are checked and the root Release has none.
             GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
             ChecksumException: Checksum mismatch.
 
@@ -496,11 +519,6 @@ class Release(HexDigests):
 
         if self.filename is None:
             return False
-
-        if is_root_release and use_inrelease and not self.params.verify_gpg:
-            raise ReleaseReadException(
-                "Only InRelease file found, but GnuPG verification is disabled"
-            )
 
         data: bytes = (
             self._load_root_files(use_inrelease)

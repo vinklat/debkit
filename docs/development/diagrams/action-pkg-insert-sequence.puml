@@ -11,8 +11,8 @@ participant "maybe_transaction" as CM
 Caller -> ActionPkg: insert()
 
 ActionPkg -> Tgt: update()
-Tgt --> ActionPkg: ok / ReleaseReadException
-opt ReleaseReadException
+Tgt --> ActionPkg: ok / ReleaseNotFoundException
+opt ReleaseNotFoundException
   ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)
 end
 

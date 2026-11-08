@@ -14,7 +14,7 @@ from txstore import get_supported_schemes, maybe_transaction
 from debkit.action import Action, ActionException, OutputType, dump_json
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import is_valid_arch
-from debkit.repo.release import ReleaseReadException
+from debkit.repo.release import ReleaseNotFoundException
 from debkit.repo.repo_sync import RepoSync
 
 if TYPE_CHECKING:
@@ -220,7 +220,7 @@ class ActionSync(Action):
             return
         try:
             self.target_repo.update()
-        except ReleaseReadException as exc:
+        except ReleaseNotFoundException as exc:
             logging.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
             logging.warning("Target repo corrupted: %s indices IGNORED", exc)
@@ -259,7 +259,7 @@ class ActionSync(Action):
 
         try:
             self.target_repo.update()
-        except ReleaseReadException as exc:
+        except ReleaseNotFoundException as exc:
             logging.error("Target repo is empty: %s", exc)
             return False
 

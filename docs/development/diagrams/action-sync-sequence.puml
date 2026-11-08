@@ -23,7 +23,7 @@ CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
 ActionSync -> Tgt: update()
-Tgt --> ActionSync: ok / ReleaseReadException / ChecksumException
+Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
 note over ActionSync: target_before = copy(target)
 
 loop pass_cnt > 0

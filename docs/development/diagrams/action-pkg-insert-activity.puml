@@ -13,8 +13,9 @@ endif
 partition "load or setup target" {
   :target.update();
   note right
-    ReleaseReadException -> target.setup(fields=DEFAULT_REPO_FIELDS)
-    (creates an empty repo if none exists)
+    ReleaseNotFoundException -> target.setup(fields=DEFAULT_REPO_FIELDS)
+    (creates an empty repo if none exists;
+    any other read failure propagates)
   end note
   :prev_repo = copy(target);
 }

@@ -21,6 +21,7 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | `RepoWriteException`        | `repo/repo_rw.py`    | Repository write or persist failure                                                                     |
 | `RepoSyncException`         | `repo/repo_sync.py`  | Sync or mirror failure                                                                                  |
 | `ReleaseReadException`      | `repo/release.py`    | Release parse or verify failure                                                                         |
+| `ReleaseNotFoundException` | `repo/release.py` | Neither a root `Release` nor an `InRelease` exists; subclass of `ReleaseReadException` |
 | `ReleaseWriteException`     | `repo/release.py`    | Release write or sign failure                                                                           |
 | `ReleaseFreshnessException` | `repo/release.py`    | Source Release expired, older than the target Release, missing its `Date`, or carrying a malformed date |
 | `PackagesException`         | `repo/packages.py`   | Packages or Sources index parse or serialize failure, or a mutation of the read-only Sources index      |
@@ -60,6 +61,8 @@ Exits outside the groups:
 | Condition                                                                                 | Result                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `remove` matches no package                                                               | `RepoRW.remove_pkg` returns `False`; `ActionPkg.remove` raises `ActionException` (Generic).                                                                                           |
+| `insert` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: a new repository is set up; any other `ReleaseReadException` (Read) stops the run, so an existing repository is never set up again. |
+| `sync` or `check` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: `sync` treats the target as empty, `check` reports it inconsistent; any other `ReleaseReadException` (Read) stops the run. |
 | Release file cannot be saved                                                              | `RepoWriteException` (Write); reserved for true persistence failures.                                                                                                                 |
 | `log` / `revert` / `prune` on a non-transactional backend, or `revert` with empty history | `ActionException` (Generic) → [STORAGE.md](STORAGE.md#history-commands).                                                                                                              |
 | `log` / `revert` / `prune` hit any storage failure                                        | `ActionHistory` re-wraps `StorageException` as `ActionException` (Generic), so a malformed history record reaches the CLI as `ActionException`. Same group, so the exit is unchanged. |

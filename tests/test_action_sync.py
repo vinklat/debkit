@@ -18,6 +18,7 @@ from txstore import HistoryRetention, Storage, StorageFS, is_transactional, mayb
 from debkit.action import OutputType
 from debkit.action.action_sync import ActionSync
 from debkit.repo.params import RepoParams
+from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -356,6 +357,30 @@ def test_sync_loads_the_target_inside_the_transaction() -> None:
     action.sync()
 
     assert began_at_load == [True]
+
+
+def test_sync_treats_a_missing_target_as_empty() -> None:
+    txn = TxnStorageStub()
+    action = _make_action(storage=txn)
+    _target(action).update.side_effect = ReleaseNotFoundException("File not found")
+
+    action.sync()
+
+    assert txn.committed
+    _source(action).sync.assert_called_once()
+
+
+def test_sync_stops_on_a_target_it_cannot_read() -> None:
+    """Only a missing Release means an empty target; any other read failure is not one."""
+    txn = TxnStorageStub()
+    action = _make_action(storage=txn)
+    _target(action).update.side_effect = ReleaseReadException("GPG signature file missing")
+
+    with pytest.raises(ReleaseReadException):
+        action.sync()
+
+    assert txn.discarded
+    _source(action).sync.assert_not_called()
 
 
 def test_sync_verify_existing_reads_the_target_again_under_the_lock() -> None:

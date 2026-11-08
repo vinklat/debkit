@@ -20,6 +20,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 
 ## Details that matter
 
+- Only a target with neither `Release` nor `InRelease` is set up as a new repository; any other
+  read failure stops the run, so an existing repository is never set up again →
+  [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
   concurrent writer on the same root waits and — on S3 — fails after the 300 s acquire timeout →
   [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.1/STORAGE.md#locking). A

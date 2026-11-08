@@ -17,6 +17,7 @@ from debkit.repo.release import (
     IndexEntry,
     Release,
     ReleaseFreshnessException,
+    ReleaseNotFoundException,
     ReleaseReadException,
     parse_release_date,
 )
@@ -85,11 +86,12 @@ def test_reset_clears_the_digest_block() -> None:
     assert r.digests == {}
 
 
-def test_load_missing_files_raises() -> None:
+def test_load_missing_files_raises_not_found() -> None:
+    """The one read failure `insert` may answer by setting up a new repository."""
     storage = MagicMock()
     storage.exists.return_value = False
     r = Release(storage, _params())
-    with pytest.raises(ReleaseReadException):
+    with pytest.raises(ReleaseNotFoundException):
         r.load()
 
 
@@ -486,6 +488,44 @@ def test_load_root_without_a_keyring_refuses_a_malformed_inrelease() -> None:
     storage = _root_storage({"dists/bookworm/InRelease": _INRELEASE + b"unsigned tail\n"})
     with pytest.raises(GPGVerifyException, match="after the signature"):
         Release(storage, _params(verify_gpg=True)).load()
+
+
+def test_load_root_refuses_an_unsigned_release_when_signatures_are_checked() -> None:
+    """The repository exists, so the failure must not read as not-found."""
+    storage = _root_storage({"dists/bookworm/Release": _RELEASE_BODY})
+    r = Release(storage, _params(verify_gpg=True), gpg=_accepting_gpg())
+
+    with pytest.raises(ReleaseReadException, match="signature file missing") as excinfo:
+        r.load()
+    assert not isinstance(excinfo.value, ReleaseNotFoundException)
+
+
+@pytest.mark.parametrize(
+    ("verify_gpg", "gpg"),
+    [(False, MagicMock()), (False, None), (True, None)],
+    ids=["skip-verify-gpg", "skip-verify", "sync-target"],
+)
+def test_load_root_reads_an_unsigned_release_when_signatures_are_not_checked(
+    verify_gpg: bool, gpg: MagicMock | None
+) -> None:
+    storage = _root_storage({"dists/bookworm/Release": _RELEASE_BODY})
+    r = Release(storage, _params(verify_gpg=verify_gpg), gpg=gpg)
+
+    assert r.load() is True
+    assert r.fields["Origin"] == "detached"
+    if gpg is not None:
+        gpg.verify.assert_not_called()
+
+
+def test_load_root_reads_an_inrelease_body_unverified_with_verification_disabled() -> None:
+    """`--skip-verify-gpg` reads an `InRelease`-only repository as apt's `trusted=yes` does."""
+    gpg = MagicMock()
+    r = Release(_root_storage({"dists/bookworm/InRelease": _INRELEASE}), _params(), gpg=gpg)
+
+    assert r.load() is True
+    assert r.filename == "dists/bookworm/InRelease"
+    assert r.fields["Origin"] == "inline"
+    gpg.verify.assert_not_called()
 
 
 def test_reset_and_copy_carry_the_root_digests() -> None:

@@ -41,6 +41,8 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - Corrupted target indices are logged, the target is reset, and the sync proceeds, copying every
   selected index again; `--verify-existing` re-checks and fixes existing packages first.
+- A target with neither `Release` nor `InRelease` is synced as empty; any other read failure stops
+  the run → [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - A later pass reloads the target inside the transaction, so it plans against what the previous pass
   staged. The printed package counts compare against a copy of the target taken before the first
   pass.
