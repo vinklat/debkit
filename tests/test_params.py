@@ -5,6 +5,8 @@ Mirrors the deb-source rules in ``VALIDATION.md`` § "Debian Source Strings".
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from debkit.repo.params import SOURCE_ARCH, RepoParams, RepoParamsException, is_valid_arch
@@ -40,6 +42,30 @@ def test_whitespace_collapsed() -> None:
 def test_one_field_raises() -> None:
     with pytest.raises(RepoParamsException):
         RepoParams().from_deb_source("https://example.com/debian")
+
+
+_SECRET = "s3cr3tpw"
+
+
+def test_parse_logs_the_source_url_without_its_credentials(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """URL userinfo is a secret -> CONFIG.md#secrets."""
+    p = RepoParams()
+    with caplog.at_level(logging.DEBUG, logger="debkit.repo.params"):
+        p.from_deb_source(f"https://u:{_SECRET}@host/debian bookworm main")
+
+    assert p.url == f"https://u:{_SECRET}@host/debian"
+    assert "url=https://***@host/debian" in caplog.text
+    assert all(_SECRET not in rec.getMessage() for rec in caplog.records)
+
+
+def test_one_field_raises_without_the_credentials_of_the_url() -> None:
+    with pytest.raises(RepoParamsException) as excinfo:
+        RepoParams().from_deb_source(f"https://u:{_SECRET}@host/debian")
+
+    assert _SECRET not in str(excinfo.value)
+    assert "https://***@host/debian" in str(excinfo.value)
 
 
 def test_non_string_input_raises() -> None:

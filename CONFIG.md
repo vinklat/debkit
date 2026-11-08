@@ -140,6 +140,9 @@ Root-scoped, and accepts `--dry-run` and `-o`.
 - Never print, log, or fixture a secret.
 - The S3 access key ID (`-u`, `DEBKIT_S3_ACCESS`, `TXSTORE_S3_ACCESS`) is an identifier, not a
   secret, but is never logged next to the secret.
+- Userinfo and query of a repository or storage URL are secrets: debkit logs and raises a URL only
+  through txstore's `redact_url` →
+  [txstore CONFIG.md](https://github.com/vinklat/txstore/blob/v0.1.1/CONFIG.md#secrets).
 
 ## Maintenance
 

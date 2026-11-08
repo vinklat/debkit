@@ -6,7 +6,7 @@ import os
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from txstore import HistoryRetention, StorageException, make_storage
+from txstore import HistoryRetention, StorageException, make_storage, redact_url
 
 from debkit.repo import RepoReadException
 from debkit.repo.gnupg import GnuPG
@@ -266,12 +266,12 @@ class Action:
             self.gpg = GnuPG(pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase)
 
         if hasattr(pars, "source_url"):
-            logger.debug("Prepare source URL: %s", pars.source_url)
+            logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
             (source_storage, source_repo_params) = attach_storage_repo(pars, url=pars.source_url)
             self.source_repo = RepoSync(source_storage, source_repo_params, gpg=self.gpg)
 
         # `--target-url` is required, so every action has a target
-        logger.debug("Prepare target URL: %s", pars.target_url)
+        logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
         (target_storage, target_repo_params) = attach_storage_repo(
             pars, url=pars.target_url, create_path=create_path
         )

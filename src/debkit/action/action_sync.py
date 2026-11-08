@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from humanize import naturalsize
-from txstore import get_supported_schemes, maybe_transaction
+from txstore import get_supported_schemes, maybe_transaction, redact_url
 
 from debkit.action import Action, ActionException, OutputType, dump_json
 from debkit.repo.hashes import ChecksumException
@@ -147,7 +147,9 @@ class ActionSync(Action):
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             # a peer may commit before `history_lock` is granted, so the target every pass
             # plans and floors against is read under it -> txstore locking rules
-            logger.info("---------- Load target repo (%s)...", self.target_repo.params.url)
+            logger.info(
+                "---------- Load target repo (%s)...", redact_url(self.target_repo.params.url or "")
+            )
             target_floor = run_floor = self._load_target()
             # the report compares against the target as this run found it
             target_before = copy(self.target_repo)
@@ -156,7 +158,10 @@ class ActionSync(Action):
 
             for attempt in range(MAX_UPDATED_REPO_RETRIES):
                 if attempt == 0:
-                    logger.info("---------- Load source repo (%s)...", self.source_repo.params.url)
+                    logger.info(
+                        "---------- Load source repo (%s)...",
+                        redact_url(self.source_repo.params.url or ""),
+                    )
                 else:
                     logger.info("---------- Retrieve load to verify source repo changes...")
 

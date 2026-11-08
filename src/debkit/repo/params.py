@@ -3,6 +3,8 @@
 import logging
 import re
 
+from txstore import redact_url
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -116,31 +118,29 @@ class RepoParams:
         # remove trailing and leading spaces
         deb_source = re.sub(r"^\s+|\s+$", "", deb_source)
 
-        try:
-            parts: list[str] = deb_source.split(" ")
-            nparts = len(parts)
+        parts: list[str] = deb_source.split(" ")
+        if len(parts) < 2:
+            # the URL may carry credentials -> [CONFIG.md](CONFIG.md#secrets)
+            raise RepoParamsException(
+                f"there is no dist/components fields in source {redact_url(deb_source)}"
+            )
 
-            if nparts < 2:
-                raise RepoParamsException(
-                    f"there is no dist/components fields in source {deb_source}"
-                )
-
+        url, self.dist, *components = parts
+        self.url = url
+        if components:
+            self.indices_prefix = f"dists/{self.dist}"
+            self.components = components
+        else:
             # flat repo without components
-            if nparts == 2:
-                self.url, self.dist = parts
-                self.components = None
-                self.is_flat = True
-                self.indices_prefix = ""
-
-            elif nparts > 2:
-                self.url, self.dist, *self.components = parts
-                self.indices_prefix = f"dists/{self.dist}"
-
-        except ValueError as exc:
-            raise RepoParamsException(f"invalid deb source: {deb_source} - {exc}") from exc
+            self.components = None
+            self.is_flat = True
+            self.indices_prefix = ""
 
         logger.debug(
-            "Parse deb source: url=%s, dist=%s, components=%s", self.url, self.dist, self.components
+            "Parse deb source: url=%s, dist=%s, components=%s",
+            redact_url(url),
+            self.dist,
+            self.components,
         )
 
     def __eq__(self, other: object) -> bool:

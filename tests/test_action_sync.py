@@ -125,6 +125,22 @@ def test_sync_discards_on_checksum_exception() -> None:
     assert txn.discarded
 
 
+def test_sync_logs_the_repository_urls_without_their_credentials(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """URL userinfo is a secret -> CONFIG.md#secrets."""
+    action = _make_action(storage=TxnStorageStub())
+    _source(action).params.url = "https://u:s3cr3tpw@host/debian"
+    _target(action).params.url = "s3://k:s3cr3tpw@host/bucket"
+
+    with caplog.at_level(logging.DEBUG):
+        action.sync()
+
+    assert "Load source repo (https://***@host/debian)" in caplog.text
+    assert "Load target repo (s3://***@host/bucket)" in caplog.text
+    assert all("s3cr3tpw" not in rec.getMessage() for rec in caplog.records)
+
+
 def test_sync_reloads_the_target_before_a_later_pass() -> None:
     """A pass after the source changed plans against what the previous pass staged."""
     action = _make_action(storage=TxnStorageStub())

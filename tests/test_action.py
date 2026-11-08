@@ -192,6 +192,20 @@ def test_action_init_does_not_warn_with_verification_on(
     assert "verification skipped" not in caplog.text
 
 
+def test_action_init_logs_the_repository_urls_without_their_credentials(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """URL userinfo is a secret -> CONFIG.md#secrets."""
+    secret = "s3cr3tpw"
+    pars = _pars(tmp_path, source_url=f"https://u:{secret}@host/debian bookworm main")
+
+    with caplog.at_level(logging.DEBUG):
+        Action(pars)
+
+    assert "Prepare source URL: https://***@host/debian bookworm main" in caplog.text
+    assert all(secret not in rec.getMessage() for rec in caplog.records)
+
+
 # --- attach_storage_* ----------------------------------------------------------------------------
 
 
