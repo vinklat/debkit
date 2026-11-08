@@ -160,7 +160,7 @@ class ActionSync(Action):
         json_dict["transfer"]["metrics"]["source_storage"] = source.storage.metrics.dump()
         json_dict["transfer"]["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
 
-        print(dump_json(json_dict, indent=4))
+        print(dump_json(json_dict))
 
     def sync(self) -> None:
         """Sync debian repo from source storage to target storage."""
@@ -297,7 +297,7 @@ class ActionSync(Action):
         json_dict: dict[str, dict[str, Any]] = {"status": status, "metrics": {}}
         json_dict["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
 
-        print(dump_json(json_dict, indent=4))
+        print(dump_json(json_dict))
 
     def check(self) -> bool:
         """Check debian repo for consistency.

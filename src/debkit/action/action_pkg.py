@@ -102,15 +102,8 @@ class ActionPkg(Action):
 
         Args:
             dump (Dict[str, Any]): A dictionary containing the dump data.
-
-        Raises:
-            TypeError: If the dump is not JSON serializable.
         """
-        try:
-            json_formatted_str = dump_json(dump)
-        except TypeError as type_error:
-            raise TypeError(f"Repo is not JSON serializable: {type_error}") from type_error
-        print(json_formatted_str)
+        print(dump_json(dump))
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
@@ -410,7 +403,7 @@ class ActionPkg(Action):
         }
         json_dict["transfer"]["metrics"]["target_storage"] = self.target_repo.storage.metrics.dump()
 
-        print(dump_json(json_dict, indent=4))
+        print(dump_json(json_dict))
 
     @staticmethod
     def add_insert_cli_args(parser: "EnvArgumentParser") -> None:

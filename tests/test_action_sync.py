@@ -781,7 +781,9 @@ def test_check_prints_json_status(tmp_path: Path, capsys: pytest.CaptureFixture[
     (tmp_path / "junk").write_bytes(b"x")
 
     assert _check_action(StorageFS(str(tmp_path)), output=OutputType.json).check() is False
-    assert json.loads(capsys.readouterr().out)["status"] == {
+    out = capsys.readouterr().out
+    assert out.startswith('{\n  "status"'), "JSON output uses dump_json's shared indent"
+    assert json.loads(out)["status"] == {
         "errors_total": 1,
         "errors_fixed_total": 0,
     }

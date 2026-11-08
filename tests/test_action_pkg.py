@@ -703,6 +703,7 @@ def test_insert_and_remove_print_their_diff(
         assert inserted_out.endswith("transferred.\n")
         assert removed_out == "Removed 1 packages.\n"
         return
+    assert inserted_out.startswith('{\n  "packages"'), "dump_json's shared indent"
     inserted, removed = json.loads(inserted_out), json.loads(removed_out)
     assert list(inserted) == list(removed) == ["packages", "transfer"]
     assert inserted["packages"]["added"]["main"]["amd64"][0]["Package"] == "foo"
