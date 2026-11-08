@@ -110,6 +110,13 @@ def test_equality() -> None:
     assert a != b
 
 
+def test_equality_with_another_type_is_false() -> None:
+    """Regression: comparing with a non-RepoParams raised instead of answering False."""
+    p = RepoParams(dist="bookworm")
+    assert p != None  # noqa: E711
+    assert p not in [None, 1]
+
+
 _LAYOUTS = [
     # non-flat: dists/<dist>/<comp>/<inner>
     (

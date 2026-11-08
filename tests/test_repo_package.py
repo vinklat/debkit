@@ -57,3 +57,20 @@ def test_package_parse_newline_in_single_line_field_raises() -> None:
     pkg = Package()
     with pytest.raises(PackageException, match="newline in field: Size"):
         pkg.parse("Package: foo\nFilename: pool/main/foo.deb\nSize:\n 1\n 2\n")
+
+
+def test_package_equality_compares_the_fields() -> None:
+    a, b = Package(), Package()
+    a.parse(_STANZA)
+    b.parse(_STANZA)
+    assert a == b
+    b.fields["Size"] = "2"
+    assert a != b
+
+
+def test_package_equality_with_another_type_is_false() -> None:
+    """Regression: comparing with a non-Package raised, so `pkg in [None]` failed."""
+    pkg = Package()
+    pkg.parse(_STANZA)
+    assert pkg != None  # noqa: E711
+    assert pkg not in [None, 1]

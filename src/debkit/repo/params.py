@@ -194,23 +194,15 @@ class RepoParams:
         """Check if this RepoParams is equal to another RepoParams.
 
         Args:
-            other (object): The other RepoParams to compare with.
+            other (object): The object to compare with.
 
         Returns:
-            bool: True if equal, False otherwise.
+            bool: True if equal, False otherwise; NotImplemented for an object that is not
+                a RepoParams.
         """
+        if not isinstance(other, RepoParams):
+            return NotImplemented
         return vars(self) == vars(other)
-
-    def __ne__(self, other: object) -> bool:
-        """Check if this RepoParams is not equal to another RepoParams.
-
-        Args:
-            other (object): The other RepoParams to compare with.
-
-        Returns:
-            bool: True if not equal, False otherwise.
-        """
-        return vars(self) != vars(other)
 
     @staticmethod
     def arch_dir(arch: str) -> str:

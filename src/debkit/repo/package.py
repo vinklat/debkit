@@ -148,29 +148,16 @@ class Package:
         for alg, value in digests.items():
             self.fields[alg] = value
 
-    def compare(self, other: object) -> bool:
-        """Compare this Package with another Package.
-
-        Args:
-            other (object): The other Package to compare with.
-
-        Raises:
-            ValueError: If the other object is not a Package.
-
-        Returns:
-            bool: True if the fields of the two Packages are equal, False otherwise.
-        """
-        if not isinstance(other, Package):
-            raise ValueError("Can only compare a Package with another Package.")
-        return self.fields == other.fields
-
     def __eq__(self, other: object) -> bool:
         """Check if this Package is equal to another Package.
 
         Args:
-            other (object): The other Package to compare with.
+            other (object): The object to compare with.
 
         Returns:
-            bool: True if the fields of the two Packages are equal, False otherwise.
+            bool: True if the fields of the two Packages are equal, False otherwise;
+                NotImplemented for an object that is not a Package.
         """
-        return self.compare(other)
+        if not isinstance(other, Package):
+            return NotImplemented
+        return self.fields == other.fields
