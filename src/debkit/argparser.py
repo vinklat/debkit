@@ -111,13 +111,11 @@ def add_common_args(parser: EnvArgumentParser) -> None:
         help="keyring whose keys are trusted for Release signatures",
         default=GNUPG_KEYRING_DEFAULT,
     )
-    parser.add_env_argument(
-        "--gnupg-passphrase",
-        env="DEBKIT_GNUPG_PASSPHRASE",
+    parser.add_env_variable(
+        "DEBKIT_GNUPG_PASSPHRASE",
         dest="gnupg_passphrase",
         help="passphrase of the signing key",
         default=GNUPG_PASSPHRASE_DEFAULT,
-        secret=True,
     )
     parser.add_env_argument(
         "--history-keep",
@@ -148,16 +146,12 @@ def add_s3_args(parser: EnvArgumentParser) -> None:
         "--s3-access",
         env="DEBKIT_S3_ACCESS",
         dest="s3_access",
-        help="S3 access key; falls back to TXSTORE_S3_ACCESS",
-        secret=True,
+        help="S3 access key ID; falls back to TXSTORE_S3_ACCESS",
     )
-    parser.add_env_argument(
-        "-t",
-        "--s3-secret",
-        env="DEBKIT_S3_SECRET",
+    parser.add_env_variable(
+        "DEBKIT_S3_SECRET",
         dest="s3_secret",
         help="S3 secret key; falls back to TXSTORE_S3_SECRET",
-        secret=True,
     )
     parser.add_env_argument(
         "--s3-default-acl",

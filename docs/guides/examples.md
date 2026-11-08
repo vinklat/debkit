@@ -34,14 +34,7 @@ From a local directory (`debian` under the current working directory; `..` canno
 debkit --target-url="debian" list
 ```
 
-From an S3 bucket:
-
-```bash
-debkit --target-url="s3://s3.example.com/bucket/prefix" \
-  --s3-access=XXX --s3-secret=YYY list
-```
-
-The same with environment variables, which suits Docker and pipelines:
+From an S3 bucket; the secret key is read only from its variable, never from a flag:
 
 ```bash
 export DEBKIT_TARGET_URL="s3://s3.example.com/bucket/prefix"

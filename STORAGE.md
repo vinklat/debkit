@@ -21,7 +21,7 @@ through it or the `attach_storage_*` helpers built on it →
 | URL                      | A value without `://` is a filesystem path, made absolute and prefixed with `fs://`; any other value passes to txstore unchanged → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | `create_path`            | Set for `insert`, `remove`, and `sync`: creates the target S3 bucket or FS directory when missing.                                                                              |
 | `verify_ssl`             | `not (skip_verify or skip_verify_ssl)` → [CRYPTO.md](CRYPTO.md#verification-switches).                                                                                          |
-| `s3_access`, `s3_secret` | The resolved flag values; when unset, txstore reads `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET`, and an `s3://` URL resolving neither → `StorageException` (Generic).             |
+| `s3_access`, `s3_secret` | The resolved `--s3-access` and `DEBKIT_S3_SECRET` values; when unset, txstore reads `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET`, and an `s3://` URL resolving neither → `StorageException` (Generic). |
 | `s3_default_acl`         | `--s3-default-acl`, default `public-read`: an apt repository serves its objects anonymously. `none` sends no ACL → [CONFIG.md](CONFIG.md#storage-flags).                        |
 | `s3_bucket_acl`          | `--s3-bucket-acl`, else none; never derived from the object ACL, since a public bucket ACL lists every key.                                                                     |
 | Rejected URL             | txstore's URL rules → `ValueError` (Generic) or `StorageException` (Generic) → [EXCEPTIONS.md](EXCEPTIONS.md#orchestration-vs-repo-semantics).                                  |

@@ -337,3 +337,33 @@ def test_secrets_never_appear_in_help(
     out = capsys.readouterr().out
     assert "hunter2-secret" not in out
     assert "DEBKIT_S3_SECRET" in out
+    assert "DEBKIT_GNUPG_PASSPHRASE" in out
+
+
+@pytest.mark.parametrize("flag", ["--s3-secret=x", "-t", "--gnupg-passphrase=x"])
+def test_secret_flags_are_refused(flag: str) -> None:
+    """CONFIG.md#secrets: a secret on argv is visible to other local users, so it has no flag."""
+    with pytest.raises(SystemExit) as excinfo:
+        parse_cli([flag, "x", "--target-url", "fs:///tmp d c", "list"])
+    assert excinfo.value.code == 2
+
+
+def test_secrets_resolve_from_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEBKIT_S3_SECRET", "s3-secret-value")
+    monkeypatch.setenv("DEBKIT_GNUPG_PASSPHRASE", "gpg-passphrase-value")
+    ns = parse_cli(["--target-url", "fs:///tmp d c", "list"])
+    assert ns.s3_secret == "s3-secret-value"
+    assert ns.gnupg_passphrase == "gpg-passphrase-value"
+
+
+def test_unset_secrets_take_their_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEBKIT_S3_SECRET", raising=False)
+    monkeypatch.setenv("DEBKIT_GNUPG_PASSPHRASE", "")
+    ns = parse_cli(["--target-url", "fs:///tmp d c", "list"])
+    assert ns.s3_secret is None
+    assert ns.gnupg_passphrase == ""
+
+
+def test_access_key_id_keeps_its_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEBKIT_S3_ACCESS", "from-env")
+    assert parse_cli(["-u", "AKID", "--target-url", "fs:///tmp d c", "list"]).s3_access == "AKID"

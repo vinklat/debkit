@@ -7,7 +7,8 @@ Checks (SETUP.md quality gates; AGENTS.md contract writing rules):
   document: a ``.md`` target must exist and its ``#anchor`` must be a heading slug; any other
   relative file target must exist. External links, ``]()``, and fenced code blocks are ignored;
 - ``CONFIG.md`` flag rows equal the ``add_env_argument`` / ``add_argument`` registrations, flag
-  and ``DEBKIT_*`` variable alike, in both directions;
+  and ``DEBKIT_*`` variable alike, and its variable-only rows equal the ``add_env_variable``
+  registrations, in both directions;
 - the ``EXCEPTIONS.md`` exception table equals the ``class *Exception`` definitions in the source
   plus the txstore classes ``cli.py`` groups, and every backticked ``*Exception`` name in any
   document is one of them;
@@ -50,6 +51,7 @@ PACKAGE = Path("src") / "debkit"
 LINE_LIMIT = 100
 PYPI_REGISTRY = "https://pypi.org/simple"
 OPTION_CALLS = frozenset({"add_argument", "add_env_argument"})
+ENV_ONLY_CALL = "add_env_variable"
 
 # txstore exception classes `cli.py` groups, with their bases → EXCEPTIONS.md#domain-exceptions.
 EXTERNAL_EXCEPTIONS: dict[str, tuple[str, ...]] = {
@@ -85,6 +87,7 @@ URL_RE = re.compile(r"https?://")
 CODE_REF_RE = re.compile(r"\b([A-Z][A-Z]+\.md)#([a-z0-9-]+)")
 FLAG_CELL_RE = re.compile(r"^(?:`-[A-Za-z]`,\s*)?`(--[a-z][a-z0-9-]*)`$")
 ENV_CELL_RE = re.compile(r"^(?:`(DEBKIT_[A-Z0-9_]+)`|none)$")
+ENV_ONLY_CELL_RE = re.compile(r"^`(DEBKIT_[A-Z0-9_]+)`$")
 IDENT_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`")
 # ``Class (Group)``, allowing the message form contracts use: `ValueError("...")` (Generic).
 GROUP_NOTATION_RE = re.compile(
@@ -296,11 +299,18 @@ def _const_str(node: ast.expr | None) -> str | None:
 
 
 def parse_cli_flags(sources: list[Path]) -> dict[str, set[str | None]]:
-    """Longest option string → the ``env=`` names it is registered with (``None`` = none)."""
+    """Longest option string → the ``env=`` names it is registered with (``None`` = none).
+
+    A variable registered without a flag maps to itself.
+    """
     flags: dict[str, set[str | None]] = {}
     for path in sources:
         for node in ast.walk(_parse(path)):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr == ENV_ONLY_CALL:
+                if node.args and (env_only := _const_str(node.args[0])):
+                    flags.setdefault(env_only, set()).add(env_only)
                 continue
             if node.func.attr not in OPTION_CALLS:
                 continue
@@ -315,10 +325,20 @@ def parse_cli_flags(sources: list[Path]) -> dict[str, set[str | None]]:
 
 
 def check_config(docs: dict[str, str], flags: dict[str, set[str | None]]) -> list[str]:
-    """``CONFIG.md`` flag rows and their variables equal the option registrations."""
+    """``CONFIG.md`` flag and variable-only rows equal the option registrations."""
     errors: list[str] = []
     documented: dict[str, tuple[int, str | None]] = {}
     for _, header, rows in _tables(docs["CONFIG.md"]):
+        if header[:1] == ["Variable"]:
+            for lineno, cells in rows:
+                env_only = ENV_ONLY_CELL_RE.match(cells[0]) if cells else None
+                if env_only is None:
+                    errors.append(f"CONFIG.md:{lineno}: unparsable variable row")
+                    continue
+                if env_only.group(1) in documented:
+                    errors.append(f"CONFIG.md:{lineno}: {env_only.group(1)} documented twice")
+                documented[env_only.group(1)] = (lineno, env_only.group(1))
+            continue
         if header[:2] != ["Flag", "Variable"]:
             continue
         for lineno, cells in rows:
@@ -334,7 +354,9 @@ def check_config(docs: dict[str, str], flags: dict[str, set[str | None]]) -> lis
         if len(envs) > 1:
             names = ", ".join(sorted(e or "none" for e in envs))
             errors.append(f"src: {flag} registered with conflicting variables: {names}")
-        if flag not in documented:
+        if flag not in documented and not flag.startswith("--"):
+            errors.append(f"CONFIG.md: missing variable-only row {flag}")
+        elif flag not in documented:
             first = sorted(e or "none" for e in envs)[0]
             errors.append(f"CONFIG.md: missing flag {flag} (variable {first})")
     for flag, (lineno, env) in sorted(documented.items()):

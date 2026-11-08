@@ -178,6 +178,12 @@ _CONFIG = """# C
 | `--doc-only` | none | x | y |
 | `--wrong-env` | `DEBKIT_OTHER` | x | y |
 | `alpha` | none | x | y |
+
+| Variable | Default | Interpretation |
+| -- | -- | -- |
+| `DEBKIT_SECRET` | none | y |
+| `DEBKIT_STALE` | none | y |
+| `--gamma` | none | y |
 """
 
 
@@ -187,9 +193,14 @@ def test_cli_flags_read_env_keyword_and_longest_option(repo: Path) -> None:
         "src/debkit/a.py",
         'p.add_env_argument("-a", "--alpha", env="DEBKIT_ALPHA", help="x")\n'
         'p.add_argument("--beta", action="store_true")\n'
-        'p.add_argument("-x")\n',
+        'p.add_argument("-x")\n'
+        'p.add_env_variable("DEBKIT_SECRET", dest="secret", help="x")\n',
     )
-    assert check_docs.parse_cli_flags([src]) == {"--alpha": {"DEBKIT_ALPHA"}, "--beta": {None}}
+    assert check_docs.parse_cli_flags([src]) == {
+        "--alpha": {"DEBKIT_ALPHA"},
+        "--beta": {None},
+        "DEBKIT_SECRET": {"DEBKIT_SECRET"},
+    }
 
 
 def test_config_parity_both_directions(repo: Path) -> None:
@@ -199,14 +210,19 @@ def test_config_parity_both_directions(repo: Path) -> None:
         "--wrong-env": {"DEBKIT_WRONG_ENV"},
         "--code-only": {None},
         "--twice": {"DEBKIT_A", "DEBKIT_B"},
+        "DEBKIT_SECRET": {"DEBKIT_SECRET"},
+        "DEBKIT_CODE_ONLY": {"DEBKIT_CODE_ONLY"},
     }
     assert check_docs.check_config({"CONFIG.md": _CONFIG}, flags) == [
         "CONFIG.md:9: unparsable flag row",
+        "CONFIG.md:15: unparsable variable row",
         "CONFIG.md: missing flag --code-only (variable none)",
         "src: --twice registered with conflicting variables: DEBKIT_A, DEBKIT_B",
         "CONFIG.md: missing flag --twice (variable DEBKIT_A)",
+        "CONFIG.md: missing variable-only row DEBKIT_CODE_ONLY",
         "CONFIG.md:7: --doc-only is not registered",
         "CONFIG.md:8: --wrong-env variable documented as DEBKIT_OTHER, code DEBKIT_WRONG_ENV",
+        "CONFIG.md:14: DEBKIT_STALE is not registered",
     ]
 
 

@@ -15,6 +15,7 @@ flags in `argparser.py`, subcommand flags in the owning `Action*` module.
 | Switches  | A boolean flag is a bare switch with a `--no-` form, so `--no-skip-verify` overrides `DEBKIT_SKIP_VERIFY=1`; its variable takes the boolean vocabulary → [VALIDATION.md](VALIDATION.md#environment-values). |
 | Values    | A variable passes through the flag's converter and choices; a rejected value exits 2 naming the variable → [VALIDATION.md](VALIDATION.md#principles).                                                       |
 | Required  | A required flag with neither flag nor variable exits 2 naming both.                                                                                                                                         |
+| Variable only | A [variable-only setting](#variable-only-settings) has no flag: its variable, then the default. |
 | Lazy read | A variable is read only when its flag is absent, after argparse parses the command line.                                                                                                                    |
 | Reader    | Only `src/debkit/_env.py` reads the environment.                                                                                                                                                            |
 | txstore   | debkit passes every storage setting resolved, except S3 credentials left unset: txstore then reads `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET` → [STORAGE.md](STORAGE.md#construction).                       |
@@ -32,7 +33,6 @@ flags in `argparser.py`, subcommand flags in the owning `Action*` module.
 | `--skip-verify-gpg` | `DEBKIT_SKIP_VERIFY_GPG` | off | Disables GPG verification and Release signing → [CRYPTO.md](CRYPTO.md#verification-switches) |
 | `--gnupg-home`        | `DEBKIT_GNUPG_HOME`       | `.gnupg`          | GnuPG home directory → [CRYPTO.md](CRYPTO.md#gpg)                                           |
 | `--gnupg-keyring`     | `DEBKIT_GNUPG_KEYRING`    | `trustedkeys.gpg` | Trusted keyring filename                                                                    |
-| `--gnupg-passphrase`  | `DEBKIT_GNUPG_PASSPHRASE` | empty string      | Secret                                                                                      |
 | `--history-keep`      | `DEBKIT_HISTORY_KEEP`     | `20`              | Newest transactions never pruned; values → [VALIDATION.md](VALIDATION.md#history-retention) |
 | `--history-max-age`   | `DEBKIT_HISTORY_MAX_AGE`  | `90`              | Days after which a transaction outside `--history-keep` is pruned; `0` disables pruning     |
 
@@ -42,10 +42,18 @@ How they reach txstore → [STORAGE.md](STORAGE.md#construction).
 
 | Flag                | Variable                | Default       | Interpretation                                                                                          |
 | ------------------- | ----------------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `-u`, `--s3-access` | `DEBKIT_S3_ACCESS`      | none          | Secret; required for `s3://`, from this flag, its variable, or `TXSTORE_S3_ACCESS`                      |
-| `-t`, `--s3-secret` | `DEBKIT_S3_SECRET`      | none          | Secret; required for `s3://`, from this flag, its variable, or `TXSTORE_S3_SECRET`                      |
+| `-u`, `--s3-access` | `DEBKIT_S3_ACCESS` | none | Access key ID, an identifier rather than a secret; required for `s3://`, from this flag, its variable, or `TXSTORE_S3_ACCESS` |
 | `--s3-default-acl`  | `DEBKIT_S3_DEFAULT_ACL` | `public-read` | Object ACL for writes, or `none` to send no ACL; values → [VALIDATION.md](VALIDATION.md#s3-canned-acls) |
 | `--s3-bucket-acl`   | `DEBKIT_S3_BUCKET_ACL`  | none          | Bucket ACL when a run creates the bucket; unset sends none                                              |
+
+## Variable-only settings
+
+Secrets have no flag → [Secrets](#secrets). `--help` lists their variables.
+
+| Variable | Default | Interpretation |
+| -- | -- | -- |
+| `DEBKIT_GNUPG_PASSPHRASE` | empty string | Passphrase of the signing key → [CRYPTO.md](CRYPTO.md#gpg) |
+| `DEBKIT_S3_SECRET` | none | S3 secret key; required for `s3://`, from this variable or `TXSTORE_S3_SECRET` |
 
 ## Output flag
 
@@ -124,14 +132,17 @@ Root-scoped, and accepts `--dry-run` and `-o`.
 
 ## Secrets
 
-- `--gnupg-passphrase`, `--s3-access`, and `--s3-secret`, their variables, and the
-  `TXSTORE_S3_*` fallbacks are secrets.
+- `DEBKIT_GNUPG_PASSPHRASE`, `DEBKIT_S3_SECRET`, and `TXSTORE_S3_SECRET` are secrets.
+- Secrets are variables only, never flags: a command-line value is visible to other local users.
 - `--help` names their variables but never shows a value.
-- Pass them through variables in automation; never print, log, or fixture them.
+- Never print, log, or fixture a secret.
+- The S3 access key ID (`-u`, `DEBKIT_S3_ACCESS`, `TXSTORE_S3_ACCESS`) is an identifier, not a
+  secret, but is never logged next to the secret.
 
 ## Maintenance
 
 Register a new flag at the owning layer with `add_env_argument` (or `add_argument` when no variable
-is intentional), a safe default, and its row here in the same change; `scripts/check_docs.py`
+is intentional), a safe default, and its row here in the same change; register a secret with
+`add_env_variable` and a [variable-only](#variable-only-settings) row. `scripts/check_docs.py`
 verifies flag and variable parity with the code. Values that need validation get a section in
 [VALIDATION.md](VALIDATION.md).
