@@ -61,7 +61,7 @@ Built by `RepoParams.indices_path()` from the layout prefix, component, and inne
 | No dist                   | None, as in `<component>/binary-<arch>/Packages[.<compression>]`                                                                                                                                   |
 | Architecture directory    | `binary-<arch>/` for a binary architecture, `source/` for the source one; built by `RepoParams.arch_dir()`                                                                                         |
 | Package index inner path  | `Packages` and `Sources` compose `arch_dir()` and `index_name()` into one inner path, read and write alike                                                                                         |
-| Compression preference | `Packages` and `Sources` discovery follows the decompression map order in `repo/compress.py`, then the uncompressed index; a save rewrites every form discovery found |
+| Compression preference | `Packages` and `Sources` discovery follows the codec order in `repo/compress.py`, the uncompressed index last; a save rewrites every form discovery found |
 | Release files             | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
 | Release key               | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends                                                                                             |
 

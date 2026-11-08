@@ -13,7 +13,7 @@ from typing import (
 
 from txstore import calc_digests, compare_digests, is_unsafe_path
 
-from debkit.repo.compress import COMPRESS_MAP, DECOMPRESS_MAP
+from debkit.repo.compress import CODECS, codec_for
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package, PackageException
 from debkit.repo.release import Release
@@ -43,17 +43,6 @@ def _is_unbounded_brace(pattern: str, i: int) -> bool:
     return j < length and pattern[j] == "}"  # True only for {n,}
 
 
-def _identity(data: bytes) -> bytes:
-    """Decode an uncompressed index: its bytes are the content."""
-    return data
-
-
-# Discovery order: every compression in decompression-map order, then the uncompressed index
-_INDEX_FORMS: tuple[tuple[str, Callable[[bytes], bytes]], ...] = (
-    *DECOMPRESS_MAP.items(),
-    ("", _identity),
-)
-
 # Soft cap on decompressed Packages-indices size (bytes). Guards against
 # zip-bomb-style payloads served over http(s). Documented in VALIDATION.md.
 MAX_INDICES_BYTES = 256 * 1024 * 1024
@@ -81,8 +70,6 @@ class Packages:
         packages (Dict[str, Package]): The packages objects from Packages indices file.
         used_indices_path (str): The Packages file used for self.packages.
         found_indices_files (List[str]): The list of all Package* files from Release.
-        compress (Callable): The function used for compress.
-        decompress (Callable): The function used for decompress.
         size (int): The number of packages.
         modified (bool): Whether the Packages object has been modified.
     """
@@ -100,7 +87,6 @@ class Packages:
         self.packages: dict[str, Package] = {}
         self.used_indices_path = ""
         self.found_indices_paths: list[str] = []
-        self.compress_fun: Callable[[bytes], bytes] | None = None
         self.size = 0
         self.modified = False
 
@@ -115,7 +101,6 @@ class Packages:
         ret.packages = copy(self.packages)
         ret.used_indices_path = self.used_indices_path
         ret.found_indices_paths = self.found_indices_paths.copy()
-        ret.compress_fun = self.compress_fun
         ret.size = self.size
         ret.modified = self.modified
         return ret
@@ -145,11 +130,9 @@ class Packages:
             comp (str): The component name.
             arch (str): The architecture name.
         """
-        suffix = ".gz"
-        self.used_indices_path = self.params.indices_path(self._index_inner(arch, suffix), comp)
+        self.used_indices_path = self.params.indices_path(self._index_inner(arch, ".gz"), comp)
         plain_path = self.params.indices_path(self._index_inner(arch), comp)
         self.found_indices_paths = [plain_path, self.used_indices_path]
-        self.compress_fun = COMPRESS_MAP[suffix]
         self.release.setup(comp=comp, arch=arch)
 
     def _parse_indices(
@@ -215,7 +198,7 @@ class Packages:
 
     def _find_packages_file(
         self, root_release: Release, comp: str, arch: str
-    ) -> tuple[str, str, Callable[[bytes], bytes]]:
+    ) -> tuple[str, Callable[[bytes], bytes]]:
         """Find usable existing Package indices files from repo.
 
         There may be more than one indices file in the repo with different compression.
@@ -230,16 +213,14 @@ class Packages:
             PackagesException: There is no Packages* file.
 
         Returns:
-            Tuple[str, str, Callable]: A tuple containing the
-                path of the found file, the file suffix, and the decompression function.
-                If no file is found, raise PackagesException.
+            Tuple[str, Callable]: The path of the file to read and its decompression function.
         """
-        ret: None | tuple[str, str, Callable[[bytes], bytes]] = None
+        ret: None | tuple[str, Callable[[bytes], bytes]] = None
 
-        for suffix, decompress_fun in _INDEX_FORMS:
+        for codec in CODECS:
             # search for all Packages indices files, the uncompressed one included, so a
             # save rewrites every form the Release lists; .xz is preferred for reading
-            indices_path = self.params.indices_path(self._index_inner(arch, suffix), comp)
+            indices_path = self.params.indices_path(self._index_inner(arch, codec.suffix), comp)
             indices_path_short = self.params.release_key(indices_path)
 
             if indices_path_short in root_release.digests:
@@ -253,7 +234,7 @@ class Packages:
                 # get packages from first found Packages* file (.xz)
                 if not self.used_indices_path:
                     logging.debug("%s found... (use this)", indices_path)
-                    ret = indices_path, suffix, decompress_fun
+                    ret = indices_path, codec.decompress
                     self.used_indices_path = indices_path
                     continue
 
@@ -319,7 +300,7 @@ class Packages:
         Returns:
             bool: True if the packages indices file is successfully loaded, False otherwise.
         """
-        (indices_path, suffix, decompress_fun) = self._find_packages_file(root_release, comp, arch)
+        indices_path, decompress_fun = self._find_packages_file(root_release, comp, arch)
 
         enc_data = self.storage.get(indices_path)
 
@@ -338,10 +319,7 @@ class Packages:
             logging.info("No packages indices.")
             return False
 
-        if decompress_fun is None:
-            raw = enc_data
-        else:
-            raw = decompress_fun(enc_data)
+        raw = decompress_fun(enc_data)
 
         if len(raw) > MAX_INDICES_BYTES:
             raise PackagesException(
@@ -352,7 +330,6 @@ class Packages:
         data = raw.decode("utf-8")
 
         pkgs_total = self._parse_indices(data, modify_rules=modify_rules)
-        self.compress_fun = COMPRESS_MAP.get(suffix)
 
         if comp and arch:
             logging.info("Found %s packages in %s arch %s.", pkgs_total, comp, arch)
@@ -361,9 +338,7 @@ class Packages:
         return True
 
     def save(self) -> dict[str, dict[str, str]] | None:
-        """Write serialized content to the Packages indices file.
-
-        Optional compress data.
+        """Write serialized content to every Packages indices file, each in its own codec.
 
         Returns:
             Dict[Dict[str, str]]: The filename and digests of the encoded data.
@@ -377,12 +352,7 @@ class Packages:
         ret: dict[str, dict[str, str]] = {}
 
         for filename in self.found_indices_paths:
-            compress_fun = None
-            for suffix, fun in COMPRESS_MAP.items():
-                if filename.endswith(suffix):
-                    compress_fun = fun
-
-            enc_data = compress_fun(raw) if compress_fun is not None else raw
+            enc_data = codec_for(filename).compress(raw)
 
             logging.info("Save %s...", filename)
             self.storage.put(filename, enc_data)

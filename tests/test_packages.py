@@ -143,9 +143,8 @@ def test_packages_find_packages_file_prefers_xz() -> None:
         "main/binary-amd64/Packages.gz": {},
     }
     _storage(pkgs).exists.return_value = True
-    path, suffix, _fun = pkgs._find_packages_file(root, "main", "amd64")
+    path, _fun = pkgs._find_packages_file(root, "main", "amd64")
     assert path == "dists/bookworm/main/binary-amd64/Packages.xz"
-    assert suffix == ".xz"
     assert "dists/bookworm/main/binary-amd64/Packages.gz" in pkgs.found_indices_paths
 
 
@@ -155,14 +154,14 @@ def test_packages_find_packages_file_reads_the_uncompressed_index_last() -> None
     root = MagicMock(spec=Release)
     root.digests = {"main/binary-amd64/Packages": {}}
     _storage(pkgs).exists.return_value = True
-    path, suffix, fun = pkgs._find_packages_file(root, "main", "amd64")
-    assert (path, suffix, fun(b"raw")) == ("dists/bookworm/main/binary-amd64/Packages", "", b"raw")
+    path, fun = pkgs._find_packages_file(root, "main", "amd64")
+    assert (path, fun(b"raw")) == ("dists/bookworm/main/binary-amd64/Packages", b"raw")
 
     pkgs = _new_packages()
     root.digests["main/binary-amd64/Packages.gz"] = {}
     _storage(pkgs).exists.return_value = True
-    path, suffix, _fun = pkgs._find_packages_file(root, "main", "amd64")
-    assert suffix == ".gz"
+    path, _fun = pkgs._find_packages_file(root, "main", "amd64")
+    assert path == "dists/bookworm/main/binary-amd64/Packages.gz"
     assert pkgs.found_indices_paths == [path, "dists/bookworm/main/binary-amd64/Packages"]
 
 
@@ -180,7 +179,7 @@ def test_packages_find_packages_file_flat_real_dist_uses_dist_prefix() -> None:
     root = MagicMock(spec=Release)
     root.digests = {"Packages.xz": {}}
     _storage(pkgs).exists.return_value = True
-    path, _, _ = pkgs._find_packages_file(root, comp="", arch="amd64")
+    path, _ = pkgs._find_packages_file(root, comp="", arch="amd64")
     assert path == "stable/Packages.xz"
 
 
@@ -190,7 +189,7 @@ def test_packages_find_packages_file_source_arch_looks_under_source_dir() -> Non
     root = MagicMock(spec=Release)
     root.digests = {"main/source/Sources.xz": {}}
     _storage(pkgs).exists.return_value = True
-    path, _, _ = pkgs._find_packages_file(root, comp="main", arch="source")
+    path, _ = pkgs._find_packages_file(root, comp="main", arch="source")
     assert path == "dists/bookworm/main/source/Sources.xz"
 
 
@@ -200,7 +199,7 @@ def test_packages_find_packages_file_flat_source_arch_sits_at_the_dist_root() ->
     root = MagicMock(spec=Release)
     root.digests = {"Sources.xz": {}}
     _storage(pkgs).exists.return_value = True
-    path, _, _ = pkgs._find_packages_file(root, comp="", arch="source")
+    path, _ = pkgs._find_packages_file(root, comp="", arch="source")
     assert path == "stable/Sources.xz"
 
 
@@ -313,7 +312,7 @@ def test_packages_load_empty_payload_with_matching_digest_returns_false() -> Non
         patch.object(
             Packages,
             "_find_packages_file",
-            return_value=("dists/bookworm/main/binary-amd64/Packages.xz", ".xz", lambda b: b),
+            return_value=("dists/bookworm/main/binary-amd64/Packages.xz", lambda b: b),
         ),
         patch("debkit.repo.packages.calc_digests") as cd,
         patch.object(Packages, "_verify_indices_checksum", return_value=True),
@@ -332,7 +331,7 @@ def test_packages_load_empty_payload_with_mismatched_digest_raises() -> None:
         patch.object(
             Packages,
             "_find_packages_file",
-            return_value=("dists/bookworm/main/binary-amd64/Packages.xz", ".xz", lambda b: b),
+            return_value=("dists/bookworm/main/binary-amd64/Packages.xz", lambda b: b),
         ),
         patch.object(Packages, "_verify_indices_checksum", return_value=False),
     ):
@@ -349,7 +348,7 @@ def test_packages_load_digest_mismatch_raises() -> None:
         patch.object(
             Packages,
             "_find_packages_file",
-            return_value=("dists/bookworm/main/binary-amd64/Packages", "", None),
+            return_value=("dists/bookworm/main/binary-amd64/Packages", lambda b: b),
         ),
         patch.object(pkgs, "_verify_indices_checksum", return_value=False),
     ):
@@ -365,7 +364,7 @@ def test_packages_load_exceeds_size_cap_raises() -> None:
     with patch.object(
         Packages,
         "_find_packages_file",
-        return_value=("p", ".xz", lambda _b: huge),
+        return_value=("p", lambda _b: huge),
     ):
         root = MagicMock(spec=Release)
         with pytest.raises(PackagesException, match="soft cap"):
