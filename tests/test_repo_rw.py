@@ -161,6 +161,46 @@ def test_remove_pkg_of_an_arch_all_payload_on_a_real_storage(tmp_path: Path) -> 
     }
 
 
+def _removed_foo(tmp_path: Path) -> RepoRW:
+    """Load bookworm from the tree under `tmp_path` and remove its `foo`."""
+    repo = RepoRW(
+        StorageFS(str(tmp_path)), RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False)
+    )
+    repo.update()
+    assert repo.remove_pkg({"Package": re.compile("^foo$")}) is True
+    assert repo.components["main"].packages["amd64"].packages == {}
+    return repo
+
+
+@pytest.mark.parametrize(
+    ("bullseye", "kept"),
+    [({"foo": "2", "bar": "1"}, True), ({"bar": "1"}, False)],
+    ids=["shared", "own"],
+)
+def test_remove_pkg_keeps_a_payload_another_dist_lists(
+    tmp_path: Path, bullseye: dict[str, str], kept: bool
+) -> None:
+    write_dist(tmp_path, "bookworm", {"foo": "2"})
+    write_dist(tmp_path, "bullseye", bullseye)
+
+    _removed_foo(tmp_path)
+
+    assert (tmp_path / payload_path("foo", "2")).exists() is kept
+
+
+def test_remove_pkg_keeps_every_payload_while_another_dist_does_not_load(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    write_dist(tmp_path, "bookworm", {"foo": "2"})
+    write_dist(tmp_path, "bullseye", {"bar": "1"})
+    (tmp_path / "dists/bullseye/main/binary-amd64/Packages.gz").unlink()
+
+    _removed_foo(tmp_path)
+
+    assert (tmp_path / payload_path("foo", "2")).exists()
+    assert "Dist bullseye shares the target root but did not load" in caplog.text
+
+
 _FLAT_INDEX = b"Package: upstream\nFilename: pool/u/upstream/upstream_1_amd64.deb\nSize: 1\n\n"
 
 

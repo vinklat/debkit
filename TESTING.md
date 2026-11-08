@@ -66,6 +66,7 @@ not copied here.
 | Sync index Release skip | The Release-block skip with its metadata fallback → [VALIDATION.md](VALIDATION.md#index-selection) is asserted from both sides. |
 | Sync index recovery | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync. |
 | Sync shared root | On a real target root holding another dist, a sync and `check --fix` keep its tree and the payloads it lists, and only the own tree is purged while its index is corrupt or missing, its only Release form is malformed, or its name is not safe → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Remove shared root | On a real root holding another dist, `remove` keeps a payload it lists, deletes one only the own dist lists, and keeps every payload while its index is missing → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Validation | Every documented boundary rule, success and failure. |
 | Crypto GPG | GPG verify and sign paths and the skip-verify branches. |
 | Crypto real gpg | `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring, right and wrong passphrase. |

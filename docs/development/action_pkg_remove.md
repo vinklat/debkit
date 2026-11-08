@@ -31,6 +31,10 @@ in [examples.md](../guides/examples.md#remove-packages).
   filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
   listed by every binary arch index. The rewritten indices reach storage only through
   `target.save()`, and only when the diff is non-empty.
+- Every dist of a componented root shares `pool/`, so `remove_pkg` asks `Repo.shared_root()`
+  which payloads another dist claims and deletes only what `SharedRoot.deletable()` allows; that
+  lists the whole root and loads every other dist, as a sync does →
+  [VALIDATION.md](../../VALIDATION.md#index-selection).
 - No match is an orchestration failure, not a write failure →
   [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - A non-transactional target skips begin, commit, and discard →
@@ -42,7 +46,8 @@ in [examples.md](../guides/examples.md#remove-packages).
 `tests/test_argtypes.py` covers pattern parsing, length, and compilation; `tests/test_action_pkg.py`
 covers the no-match `ActionException` and the transaction wiring; `tests/test_packages.py` covers
 `Packages.remove()` and its filename-safety check; `tests/test_repo_rw.py` removes an `all` payload
-from a real `StorageFS` → [TESTING.md](../../TESTING.md#required-coverage).
+from a real `StorageFS` and keeps a payload another dist lists →
+[TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 

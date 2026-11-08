@@ -625,6 +625,24 @@ class Repo:
         missing |= (parsed & indices.keys()) - root_files - existing_files
         return sorted(missing), sorted(orphans)
 
+    def shared_root(self) -> SharedRoot:
+        """Collect what the other dists sharing this repository's root claim.
+
+        A flat layout is never listed, since it has no `dists/` tree to share
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Returns:
+            The claims; unknown when the storage cannot list, so only the own index tree is
+            deletable.
+        """
+        if self.params.is_flat or not self.params.indices_prefix:
+            return _FLAT_ROOT
+        try:
+            existing_files = set(self.storage.list())
+        except NotImplementedError:
+            return _unlisted_shared_root(self.params)
+        return shared_root_claims(self.storage, self.params, existing_files)
+
 
 class SharedRoot(NamedTuple):
     """What the other dists of a shared target root claim.
@@ -643,7 +661,7 @@ class SharedRoot(NamedTuple):
     complete: bool
 
     def deletable(self, path: str) -> bool:
-        """Report whether a sync or `check --fix` may delete `path` from the shared root.
+        """Report whether a sync, `check --fix`, or `remove` may delete `path` from the root.
 
         Args:
             path: Storage path in the target root.
@@ -655,6 +673,25 @@ class SharedRoot(NamedTuple):
         if path in self.claimed:
             return False
         return self.complete or path.startswith(self.prefix)
+
+
+# a flat layout has no `dists/` tree, so no other dist shares its root
+_FLAT_ROOT = SharedRoot("", frozenset(), complete=True)
+
+
+def _unlisted_shared_root(params: RepoParams) -> SharedRoot:
+    """The claims of a root whose storage cannot list.
+
+    Args:
+        params: The repository's parameters.
+
+    Returns:
+        No claims; for a componented layout incomplete, so nothing outside the own index tree
+        is deletable.
+    """
+    if params.is_flat or not params.indices_prefix:
+        return _FLAT_ROOT
+    return SharedRoot(f"{params.indices_prefix}/", frozenset(), complete=False)
 
 
 # what a neighbour dist's load may raise; every one leaves that dist's payloads unknown, so
@@ -739,7 +776,7 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
         The claims; none for a flat layout, which has no `dists/` tree.
     """
     if params.is_flat or not params.indices_prefix:
-        return SharedRoot("", frozenset(), complete=True)
+        return _FLAT_ROOT
 
     prefix = f"{params.indices_prefix}/"
     foreign = {

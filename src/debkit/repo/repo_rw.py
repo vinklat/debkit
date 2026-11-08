@@ -106,7 +106,9 @@ class RepoRW(Repo):
     def remove_pkg(self, fields_patterns: dict[str, re.Pattern[str]]) -> bool:
         """Drop packages matching ``fields_patterns`` from the indices and delete their payloads.
 
-        Several arch indices list one `all` payload, so each payload is deleted once.
+        Several arch indices list one `all` payload, so each payload is deleted once. A payload
+        another dist sharing the root lists is kept, and so is every payload while another
+        dist's claims are unknown -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
             fields_patterns: Compiled pattern per package field.
@@ -125,12 +127,20 @@ class RepoRW(Repo):
         removed: set[str] = set()
         for component in self.components.values():
             removed |= component.remove_pkg(fields_patterns)
+        if not removed:
+            return False
+
+        shared = self.shared_root()
         for filename in sorted(removed):
+            if not shared.deletable(filename):
+                logger.info(
+                    "Keep package: %s (another dist sharing the root may list it)", filename
+                )
+                continue
             logger.info("Remove package: %s", filename)
             self.storage.delete(filename)
-        if removed:
-            self.modified = True
-        return bool(removed)
+        self.modified = True
+        return True
 
     def insert_pkg(self, component_name: str, arch: str, package: Package) -> None:
         """Add deb package object to the repo.
