@@ -191,3 +191,19 @@ def test_insert_pkg_into_flat_repo_joins_its_single_component(tmp_path: Path) ->
     reloaded = _flat_repo(tmp_path)
     assert list(reloaded.components) == ["/"]
     assert reloaded.stats()["/"]["amd64"]["packages_total"] == 2
+
+
+def test_setup_of_a_flat_repo_drops_the_components_field(tmp_path: Path) -> None:
+    """Regression: a new flat repo kept `Components: main` from the insert defaults."""
+    params = RepoParams(verify_gpg=False, verify_digests=False)
+    params.from_deb_source(f"fs://{tmp_path} /")
+    repo = RepoRW(StorageFS(str(tmp_path)), params)
+    repo.setup(fields={"Architectures": "amd64", "Components": "main"})
+
+    repo.insert_pkg("main", "amd64", make_package("pool/n/new/new_1_amd64.deb", Package="new"))
+    repo.save()
+
+    release = (tmp_path / "Release").read_text()
+    assert "Architectures: amd64" in release
+    assert "Components" not in release
+    assert list(_flat_repo(tmp_path).components) == ["/"]

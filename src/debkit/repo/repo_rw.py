@@ -46,10 +46,15 @@ class RepoRW(Repo):
     def setup(self, fields: dict[str, str] | None = None) -> None:
         """Setup the repository.
 
+        A flat layout has one component slot and its Release lists no components, so a
+        `Components` field is dropped -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+
         Args:
             fields (Optional[Dict[str, str]]): The fields to set. Defaults to None.
         """
         logger.info("Setting up a new repository.")
+        if fields is not None and self.params.is_flat:
+            fields = {key: value for key, value in fields.items() if key != "Components"}
         self.release.setup(fields=fields)
         self.modified = True
 
