@@ -6,12 +6,11 @@ import hashlib
 import logging
 import re
 from datetime import UTC, datetime
-from email import policy
-from email.message import EmailMessage
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from debian.deb822 import Deb822
 from txstore import StorageNotFoundException, calc_digests, compare_digests
 
 from debkit.repo.compress import SizeLimitError, read_capped
@@ -567,14 +566,14 @@ class Release(HexDigests):
     def serialize(self) -> str:
         """Serialize Release file data to headers format.
 
+        Values are written verbatim, as `Package.serialize` writes a stanza: multi-line values
+        keep their continuation lines, non-ASCII text stays UTF-8, and nothing is rewrapped
+        -> [VALIDATION.md](VALIDATION.md#release-fields).
+
         Returns:
             The serialized Release file fields.
         """
-        msg = EmailMessage(policy=policy.default.clone(max_line_length=160))
-        for field, data in self.fields.items():
-            msg.add_header(field, data)
-
-        ret: str = msg.as_string().rstrip()
+        ret = Deb822({field: str(data) for field, data in self.fields.items()}).dump().rstrip()
 
         if self.hashfuns:
             for hashfun in self.hashfuns:

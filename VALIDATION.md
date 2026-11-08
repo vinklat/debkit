@@ -172,6 +172,16 @@ Parsed and written by `Package.parse()` and `Package.serialize()` through `debia
 | Encoding | Values are written verbatim as UTF-8; no MIME encoding or rewrapping. | — |
 | Single-line field | `Package`, `Filename`, `Size`, and every digest field hold no line break. | → `PackageException` (Read) |
 
+## Release fields
+
+Parsed by `Release.parse()` through the email parser and written by `Release.serialize()` through
+`debian.deb822`; the hash blocks → [CRYPTO.md](CRYPTO.md#checksums).
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Multi-line value | Continuation lines are kept, so a folded `Description` or a wrapped `Architectures` survives a rewrite. | — |
+| Encoding | Values are written verbatim as UTF-8; no MIME encoding, date reformatting, or rewrapping. | — |
+
 ## Sources stanzas
 
 Parsed by `Sources._expand_stanza()`. Each stanza names several payload files under one `Directory`;

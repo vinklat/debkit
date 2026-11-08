@@ -65,6 +65,38 @@ def test_parse_serialize_round_trip() -> None:
     assert "main/binary-amd64/Packages" in out
 
 
+def test_serialize_writes_folded_and_non_ascii_values_verbatim() -> None:
+    """Regression: the email header writer refused a line break and MIME-encoded `Café`."""
+    blob = (
+        "Origin: Café\nDate: Sat, 07 Sep 2024 10:00:00 UTC\nDescription: line one\n line two\n"
+        "Architectures: amd64\n arm64\nSHA256:\n aa 1 main/binary-amd64/Packages\n"
+    ).encode()
+    r = Release(MagicMock(), _params())
+    r.parse(blob)
+
+    out = r.serialize()
+
+    assert "Origin: Café\n" in out
+    assert "Date: Sat, 07 Sep 2024 10:00:00 UTC\n" in out
+    assert "Description: line one\n line two\n" in out
+    again = Release(MagicMock(), _params())
+    again.parse(out.encode())
+    assert again.fields == r.fields
+    assert again.digests == r.digests
+
+
+def test_serialize_twice_keeps_a_long_value_on_one_line() -> None:
+    """A value past the old 160-column fold came back multi-line and broke the next save."""
+    components = " ".join(f"component{n}" for n in range(30))
+    r = Release(MagicMock(), _params())
+    r.parse(f"Components: {components}\n".encode())
+
+    again = Release(MagicMock(), _params())
+    again.parse(r.serialize().encode())
+
+    assert again.serialize() == f"Components: {components}"
+
+
 def test_parse_again_replaces_the_digest_block() -> None:
     """A reload is a new manifest: a key or algorithm the new file drops must not survive."""
     r = Release(MagicMock(), _params())
