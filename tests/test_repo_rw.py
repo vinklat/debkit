@@ -207,3 +207,43 @@ def test_setup_of_a_flat_repo_drops_the_components_field(tmp_path: Path) -> None
     assert "Architectures: amd64" in release
     assert "Components" not in release
     assert list(_flat_repo(tmp_path).components) == ["/"]
+
+
+def _flat_packages(root: Path) -> list[str]:
+    return re.findall(r"^Package: (\S+)$", (root / "Packages").read_text(), re.MULTILINE)
+
+
+def test_insert_into_a_new_multi_arch_flat_repo_keeps_every_package(tmp_path: Path) -> None:
+    """Regression: each arch slot saved the one flat `Packages` file and the last one won."""
+    params = RepoParams(verify_gpg=False, verify_digests=False)
+    params.from_deb_source(f"fs://{tmp_path} /")
+    repo = RepoRW(StorageFS(str(tmp_path)), params)
+    repo.setup(fields={"Architectures": "amd64 arm64 all"})
+
+    repo.insert_pkg("main", "amd64", make_package("pool/a/aa/aa_1_amd64.deb", Package="aa"))
+    for arch in repo.get_archs():
+        repo.insert_pkg("main", arch, make_package("pool/c/cc/cc_1_all.deb", Package="cc"))
+    repo.save()
+
+    assert sorted(_flat_packages(tmp_path)) == ["aa", "cc"]
+    reloaded = _flat_repo(tmp_path)
+    assert {arch: s["packages_total"] for arch, s in reloaded.stats()["/"].items()} == {
+        "amd64": 2,
+        "arm64": 2,
+    }
+
+
+def test_insert_into_a_loaded_multi_arch_flat_repo_keeps_every_package(tmp_path: Path) -> None:
+    digest = hashlib.sha256(_FLAT_INDEX).hexdigest()
+    (tmp_path / "Packages").write_bytes(_FLAT_INDEX)
+    (tmp_path / "Release").write_text(
+        f"Origin: x\nArchitectures: amd64 arm64\nSHA256:\n {digest} {len(_FLAT_INDEX)} Packages\n"
+    )
+    repo = _flat_repo(tmp_path)
+
+    repo.insert_pkg("main", "amd64", make_package("pool/a/aa/aa_1_amd64.deb", Package="aa"))
+    for arch in ("amd64", "arm64"):
+        repo.insert_pkg("main", arch, make_package("pool/c/cc/cc_1_all.deb", Package="cc"))
+    repo.save()
+
+    assert sorted(_flat_packages(tmp_path)) == ["aa", "cc", "upstream"]

@@ -68,6 +68,7 @@ Built by `RepoParams.indices_path()` from the layout prefix, component, and inne
 | Release files             | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
 | Component Release | Only a componented repo reads or writes a per-component `Release`; its component and architecture are non-empty, else → `ValueError` (Generic). |
 | Flat component | A flat layout has one component slot: insert joins the component it loaded, `/` when its Release names none, whatever `--component` says. A new flat repository is set up without `Components`, and a save never rewrites the field, so a loaded one is kept. `--component` still names the pool key → [Filename safety](#filename-safety). |
+| Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. |
 | Release key               | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends                                                                                             |
 
 Every other index, `Contents`, `Translation`, dep11, and `Commands` among them, is reached through

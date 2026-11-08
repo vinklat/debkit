@@ -104,8 +104,32 @@ class Component:
             Component: A copy whose package sets are copied too.
         """
         ret = Component(self.storage, self.params, root_release, self.name)
-        ret.packages = {arch: copy(packages) for arch, packages in self.packages.items()}
+        # slots sharing one container in a flat layout share its copy too
+        copies: dict[int, Packages] = {}
+        ret.packages = {
+            arch: copies.setdefault(id(packages), copy(packages))
+            for arch, packages in self.packages.items()
+        }
         return ret
+
+    def _flat_container(self, arch: str) -> Packages | None:
+        """Get the container a flat layout already holds for the index file of `arch`.
+
+        A flat layout names one `Packages` (and one `Sources`) file whatever the arch, so
+        every arch slot shares one container; separate ones would each save the whole file
+        and the last save would win -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+
+        Args:
+            arch (str): The architecture of the slot.
+
+        Returns:
+            Packages | None: The shared container, or None when the layout is componented
+                or no slot holds that index file yet.
+        """
+        if not self.is_flat:
+            return None
+        kind = container_for(arch)
+        return next((pkgs for pkgs in self.packages.values() if type(pkgs) is kind), None)
 
     def load(self, archs: list[str], strict_arch: bool = False) -> int:
         """Load package sets (Packages objects) for all architectures.
@@ -123,6 +147,10 @@ class Component:
         """
         npkgs = 0
         for arch in archs:
+            shared = self._flat_container(arch)
+            if shared is not None:
+                self.packages[arch] = shared
+                continue
             packages = container_for(arch)(self.storage, self.params)
 
             if not self.is_flat:
@@ -173,7 +201,8 @@ class Component:
         """
         ret: bool = False
         digests: dict[str, dict[str, str]] | None = {}
-        for packages in self.packages.values():
+        # a container shared by several flat slots is saved once
+        for packages in {id(pkgs): pkgs for pkgs in self.packages.values()}.values():
             digests = packages.save()
 
             if digests is None:
@@ -203,9 +232,11 @@ class Component:
         Returns:
             List[str]: A list of indices paths for each package in the component.
         """
-        return [
+        paths = (
             path for packages in self.packages.values() for path in packages.get_indices_paths()
-        ]
+        )
+        # flat slots sharing one container list its paths once
+        return list(dict.fromkeys(paths))
 
     def setup(self, archs: list[str]) -> None:
         """Setup the component.
@@ -214,9 +245,23 @@ class Component:
             archs (List[str]): The list of architectures.
         """
         for arch in archs:
-            packages = container_for(arch)(self.storage, self.params)
-            packages.setup(self.name, arch)
-            self.packages[arch] = packages
+            self.packages[arch] = self._new_slot(arch)
+
+    def _new_slot(self, arch: str) -> Packages:
+        """Get a fresh container for `arch`, or the one a flat layout already holds.
+
+        Args:
+            arch (str): The architecture of the slot.
+
+        Returns:
+            Packages: The container the slot holds.
+        """
+        shared = self._flat_container(arch)
+        if shared is not None:
+            return shared
+        packages = container_for(arch)(self.storage, self.params)
+        packages.setup(self.name, arch)
+        return packages
 
     def insert_pkg(self, arch: str, package: Package) -> None:
         """Add deb package object to the component.
@@ -233,9 +278,7 @@ class Component:
         if arch and not is_valid_arch(arch):
             raise ComponentException(f"invalid architecture: {arch!r}")
         if arch not in self.packages:
-            packages = container_for(arch)(self.storage, self.params)
-            packages.setup(self.name, arch)
-            self.packages[arch] = packages
+            self.packages[arch] = self._new_slot(arch)
 
         logger.info("Insert package: %s %s", package, arch)
 
