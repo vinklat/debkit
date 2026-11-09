@@ -39,7 +39,7 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
     note over ActionSync: nothing to sync
   end
 
-  ActionSync -> Src: sync(target, plan.copy, plan.delete, plan.unproven)
+  ActionSync -> Src: sync(target, plan)
   Src --> ActionSync: returns, or raises RepoSyncException
   break the last pass ran
     note over ActionSync: log warning "Source repo still changing";\nthe last pass is committed, the source is not read again

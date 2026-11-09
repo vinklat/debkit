@@ -46,7 +46,7 @@ end
 Src --> ActionSync: SyncPlan(copy, delete, unproven)
 note right: unproven: copied indices the target lacks\nthat no load or parse proved published
 
-ActionSync -> Src: sync(target, plan.copy, plan.delete, plan.unproven)
+ActionSync -> Src: sync(target, plan)
 loop each path in plan.copy
   Src -> SStor: transfer(path, target storage)
   alt transferred

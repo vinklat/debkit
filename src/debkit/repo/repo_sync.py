@@ -387,14 +387,7 @@ class RepoSync(Repo):
 
         return True
 
-    def sync(
-        self,
-        target_repo: RepoRW,
-        copy_list: list[str],
-        delete_list: list[str],
-        *,
-        unproven: Collection[str] = frozenset(),
-    ) -> None:
+    def sync(self, target_repo: RepoRW, plan: SyncPlan) -> None:
         """Sync this repo with another repo.
 
         Either every object transfers or the sync raises: a target that holds a new
@@ -407,10 +400,7 @@ class RepoSync(Repo):
 
         Args:
             target_repo: The target repo to sync with.
-            copy_list: The list of files to copy.
-            delete_list: The list of files to delete.
-            unproven: Paths in `copy_list` skipped when the source lacks them, from
-                `build_sync_lists`.
+            plan: What to copy and delete, as `build_sync_lists` planned it.
 
         Raises:
             RepoSyncException: If any object still fails after the retries.
@@ -419,14 +409,14 @@ class RepoSync(Repo):
         """
         # each pass retries only what the previous one failed; a transient error should not
         # fail the whole run
-        pending = copy_list
+        pending = plan.copy
         for _ in range(TRANSFER_MAX_ERR_RETRIES):
             total = len(pending)
             pending = [
                 name
                 for cnt, name in enumerate(pending, start=1)
                 if not self._transfer_file(
-                    name, target_repo, progress=(cnt, total), missing_ok=name in unproven
+                    name, target_repo, progress=(cnt, total), missing_ok=name in plan.unproven
                 )
             ]
             if not pending:
@@ -436,5 +426,5 @@ class RepoSync(Repo):
             raise RepoSyncException("Max retries reached.")
 
         # delete objects
-        for name in delete_list:
+        for name in plan.delete:
             target_repo.delete(name)

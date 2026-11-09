@@ -242,7 +242,7 @@ class ActionSync(Action):
             logger.info("Nothing to sync.")
             return False
         # a ChecksumException propagates to discard the transaction; cli.py logs it
-        self.source_repo.sync(self.target_repo, plan.copy, plan.delete, unproven=plan.unproven)
+        self.source_repo.sync(self.target_repo, plan)
         return True
 
     def _check_fresh(self, *floors: str | None) -> None:

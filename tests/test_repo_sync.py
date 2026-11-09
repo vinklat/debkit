@@ -729,7 +729,7 @@ def test_sync_single_surviving_failure_raises() -> None:
     _patch_transfer(src, results)
 
     with pytest.raises(RepoSyncException, match="^Repo sync: Max retries reached"):
-        src.sync(tgt, copy_list=list(results.keys()), delete_list=[])
+        src.sync(tgt, SyncPlan(list(results.keys()), [], set()))
 
 
 def _empty_repos() -> tuple[RepoSync, RepoRW]:
@@ -746,7 +746,7 @@ def test_sync_transient_storage_error_is_retried_and_deletes_run() -> None:
     digests = {"SHA256": "x", "Size": "1"}
     storage.transfer.side_effect = [digests, StorageException("blip"), digests]
 
-    src.sync(tgt, copy_list=["a.deb", "b.deb"], delete_list=["old.deb"])
+    src.sync(tgt, SyncPlan(["a.deb", "b.deb"], ["old.deb"], set()))
 
     assert [call.args[0] for call in storage.transfer.call_args_list] == ["a.deb", "b.deb", "b.deb"]
     _mock_storage(tgt).delete.assert_called_once_with("old.deb")
@@ -758,7 +758,7 @@ def test_sync_checksum_mismatch_is_not_retried_and_skips_the_deletes() -> None:
     src.verify_checksum = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     with pytest.raises(ChecksumException):
-        src.sync(tgt, copy_list=["a.deb"], delete_list=["old.deb"])
+        src.sync(tgt, SyncPlan(["a.deb"], ["old.deb"], set()))
 
     assert _mock_storage(src).transfer.call_count == 1
     assert [call.args[0] for call in _mock_storage(tgt).delete.call_args_list] == ["a.deb"]
@@ -770,7 +770,7 @@ def test_sync_empty_copy_list_with_deletes_only() -> None:
     )
     transfer = _patch_transfer(src, True)
 
-    src.sync(tgt, copy_list=[], delete_list=["a", "b"])
+    src.sync(tgt, SyncPlan([], ["a", "b"], set()))
     transfer.assert_not_called()
     assert _mock_storage(tgt).delete.call_count == 2
 
@@ -1096,7 +1096,7 @@ def test_sync_skips_an_unproven_index_the_source_does_not_publish() -> None:
     copy_list, delete_list, unproven = src.build_sync_lists(tgt)
     src_storage = _serve_all_but(src, absent.path)
 
-    src.sync(tgt, copy_list, delete_list, unproven=unproven)
+    src.sync(tgt, SyncPlan(copy_list, delete_list, unproven))
 
     transferred = [call.args[0] for call in src_storage.transfer.call_args_list]
     assert transferred.count(absent.path) == 1
@@ -1124,7 +1124,7 @@ def test_sync_fails_on_a_proven_index_the_source_stops_serving(held: bool) -> No
 
     assert index.path in copy_list
     with pytest.raises(RepoSyncException, match="^Repo sync: Max retries reached"):
-        src.sync(tgt, copy_list, delete_list, unproven=unproven)
+        src.sync(tgt, SyncPlan(copy_list, delete_list, unproven))
 
 
 def test_build_sync_lists_unpublished_listed_index_in_target_is_not_purged() -> None:
