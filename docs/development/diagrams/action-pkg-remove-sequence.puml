@@ -20,7 +20,7 @@ CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 ActionPkg -> Tgt: update()\n[under the lock: a peer may have committed]
 Tgt --> ActionPkg: ok
 ActionPkg -> Tgt: snapshot()
-Tgt --> ActionPkg: prev_repo
+Tgt --> ActionPkg: target_before
 
 ActionPkg -> Tgt: remove_pkg(fields)
 Tgt -> Tgt: drop matches from every arch index
@@ -28,7 +28,7 @@ Tgt -> TStor: list()
 Tgt -> TStor: shared_root_claims(): load every other dists/<dist>/
 Tgt -> TStor: delete each matched payload once (staged),\nunless another dist claims it
 Tgt --> ActionPkg: True / False
-ActionPkg -> Tgt: diff(prev_repo)
+ActionPkg -> Tgt: diff(target_before)
 Tgt --> ActionPkg: ret_diff
 opt ret_diff non-empty
   ActionPkg -> Tgt: save()

@@ -29,7 +29,7 @@ else (no)
   :filenames = [deb_filename];
 endif
 partition "with maybe_transaction(target.storage)" {
-  :prev_repo = _load_target_or_setup()
+  :target_before = _load_target_or_setup()
    [target.update(); target.snapshot()];
   note right
     read under history_lock: a peer may have committed;
@@ -94,8 +94,8 @@ partition "with maybe_transaction(target.storage)" {
       :target.insert_pkg(component, arch, package);
     endwhile (no)
   endwhile (no)
-  :ret_diff = _save_if_changed(prev_repo)
-   [target.diff(prev_repo); target.save() if non-empty];
+  :ret_diff = _save_if_changed(target_before)
+   [target.diff(target_before); target.save() if non-empty];
 }
 
 if (any exception escaped the partition?) then (yes)

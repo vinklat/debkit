@@ -28,7 +28,7 @@ opt ReleaseNotFoundException
   ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)
 end
 ActionPkg -> Tgt: snapshot()
-Tgt --> ActionPkg: prev_repo
+Tgt --> ActionPkg: target_before
 ActionPkg -> Tgt: get_archs()
 Tgt --> ActionPkg: archs
 ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]
@@ -63,7 +63,7 @@ loop for filename in filenames
   end
 end
 
-ActionPkg -> Tgt: diff(prev_repo)
+ActionPkg -> Tgt: diff(target_before)
 Tgt --> ActionPkg: ret_diff
 opt ret_diff non-empty
   ActionPkg -> Tgt: save()

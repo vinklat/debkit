@@ -256,7 +256,7 @@ class ActionPkg(Action):
             filenames = [self.deb_filename]
 
         with maybe_transaction(self.target_repo.storage, self.history_retention):
-            prev_repo = self._load_target_or_setup()
+            target_before = self._load_target_or_setup()
             binary_archs = self._binary_archs()
             for filename in filenames:
                 debfile_obj = DebFile(self.incoming_storage, filename, comp=self.component)
@@ -293,7 +293,7 @@ class ActionPkg(Action):
                 for arch in archs:
                     self.target_repo.insert_pkg(self.component, arch, package)
 
-            ret_diff = self._save_if_changed(prev_repo)
+            ret_diff = self._save_if_changed(target_before)
 
         self._print_pkg(ret_diff)
 
@@ -334,18 +334,18 @@ class ActionPkg(Action):
             )
         return archs
 
-    def _save_if_changed(self, prev_repo: RepoSnapshot) -> RepoDiff:
+    def _save_if_changed(self, target_before: RepoSnapshot) -> RepoDiff:
         """Diff the target against its state before the command and save it if it changed.
 
         Called inside the command's transaction, so the save is staged with the payloads.
 
         Args:
-            prev_repo: The target as loaded before the command, as `snapshot` took it.
+            target_before: The target as loaded before the command, as `snapshot` took it.
 
         Returns:
             The diff, for the command's output.
         """
-        ret_diff = self.target_repo.diff(prev_repo)
+        ret_diff = self.target_repo.diff(target_before)
         if not ret_diff.is_empty():
             self.target_repo.save()
         return ret_diff
@@ -374,10 +374,10 @@ class ActionPkg(Action):
             # a peer may commit before `history_lock` is granted, so the target is read
             # under it -> [STORAGE.md](STORAGE.md#transactions)
             self.target_repo.update()
-            prev_repo = self.target_repo.snapshot()
+            target_before = self.target_repo.snapshot()
             if not self.target_repo.remove_pkg(self.pkg_pattern):
                 raise ActionException("No packages matched the pattern.")
-            ret_diff = self._save_if_changed(prev_repo)
+            ret_diff = self._save_if_changed(target_before)
 
         self._print_pkg(ret_diff)
 
