@@ -149,18 +149,10 @@ class Changes(HexDigests):
         """
         return SOURCE_ARCH in self.get_archs()
 
-    def get_files(self) -> list[str]:
-        """Get the files in the Changes file.
-
-        Returns:
-            The files in the Changes file.
-        """
-        return list(self.digests.keys())
-
     def get_deb_files(self) -> list[str]:
         """Get the .deb files in the Changes file.
 
         Returns:
             The deb files in the Changes file.
         """
-        return [f for f in self.get_files() if f.endswith(".deb")]
+        return [f for f in self.digests if f.endswith(".deb")]

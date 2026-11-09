@@ -181,7 +181,6 @@ class Component:
             True if any package was saved, False otherwise.
         """
         ret: bool = False
-        digests: dict[str, dict[str, str]] | None = {}
         # a container shared by several flat slots is saved once
         for packages in {id(pkgs): pkgs for pkgs in self.packages.values()}.values():
             digests = packages.save()

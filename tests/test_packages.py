@@ -675,10 +675,8 @@ def test_packages_get_indices_paths_concatenates() -> None:
     assert pkgs.get_indices_paths() == ["A", "B"]
 
 
-def test_packages_is_empty_and_len() -> None:
+def test_packages_len_counts_the_packages() -> None:
     pkgs = _new_packages()
-    assert pkgs.is_empty() is True
     assert len(pkgs) == 0
     pkgs.packages = {"x.deb": make_package("x.deb")}
-    assert pkgs.is_empty() is False
     assert len(pkgs) == 1

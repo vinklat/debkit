@@ -511,14 +511,6 @@ class Packages:
 
         return PackagesDiff(added_packages, removed_packages, updated_packages, old_versions)
 
-    def is_empty(self) -> bool:
-        """Check if the Packages object is empty.
-
-        Returns:
-            True if the Packages object is empty, False otherwise.
-        """
-        return not bool(self.packages)
-
     def __len__(self) -> int:
         """Return the number of packages.
 
