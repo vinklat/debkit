@@ -68,6 +68,18 @@ class RepoReadException(Exception):
         super().__init__(f"Repo read: {message}")
 
 
+def _package_size(filename: str, package: Package) -> int:
+    """Read a package's `Size` as a byte count.
+
+    Raises:
+        PackageException: The `Size` is not a decimal byte count.
+    """
+    size = str(package.fields["Size"])
+    if not (size.isascii() and size.isdigit()):
+        raise PackageException(f"{filename} has a malformed Size: {size!r}")
+    return int(size)
+
+
 class Repo:
     """Object containing Debian repository indices and data.
 
@@ -298,23 +310,19 @@ class Repo:
         Returns:
             A dict representation of the repository statistics.
         """
-        ret: dict[str, dict[str, dict[str, int]]] = {}
-
-        for comp_name, component in self.components.items():
-            if comp_name not in ret:
-                ret[comp_name] = {}
-            for arch, packages in component.packages.items():
-                if arch not in ret[comp_name]:
-                    ret[comp_name][arch] = {
-                        "packages_total": len(packages.packages),
-                        "packages_bytes": 0,
-                    }
-                    for filename, package in packages.packages.items():
-                        size = str(package.fields["Size"])
-                        if not (size.isascii() and size.isdigit()):
-                            raise PackageException(f"{filename} has a malformed Size: {size!r}")
-                        ret[comp_name][arch]["packages_bytes"] += int(size)
-        return ret
+        return {
+            comp_name: {
+                arch: {
+                    "packages_total": len(packages.packages),
+                    "packages_bytes": sum(
+                        _package_size(filename, package)
+                        for filename, package in packages.packages.items()
+                    ),
+                }
+                for arch, packages in component.packages.items()
+            }
+            for comp_name, component in self.components.items()
+        }
 
     def get_packages(self) -> Generator[Package]:
         """Get every package of the repository, each payload once.
