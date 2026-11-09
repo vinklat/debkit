@@ -605,6 +605,25 @@ def test_dump_brief_prints_the_release_and_the_package_count_per_arch(
     assert "    arm64: Component: main, Architecture: arm64\n      1 packages\n" in out
 
 
+def test_dump_brief_escapes_control_characters_in_release_fields(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A mirrored Release field could rewrite the terminal, so brief output escapes it."""
+    storage = StorageFS(str(tmp_path))
+    built = RepoRW(storage, make_params())
+    built.setup({"Architectures": "amd64", "Components": "main", "X-Note": "ok\x1b]0;pwned\x07"})
+    built.insert_pkg("main", "amd64", make_package(_HELLO, Version="1.0"))
+    built.save()
+    action = _make_pkg_action()
+    action.target_repo = RepoRW(storage, make_params())
+
+    action.dump()
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "  X-Note: ok\\x1b]0;pwned\\x07\n" in out
+
+
 def test_dump_brief_marks_an_arch_without_its_own_release(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -15,6 +15,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/_options.py` | `EnvArgumentParser`: options that fall back to a `DEBKIT_*` variable, then a default → [CONFIG.md](CONFIG.md#resolution). |
 | `src/debkit/_env.py` | Environment access → [CONFIG.md](CONFIG.md#resolution); value rules → [VALIDATION.md](VALIDATION.md#environment-values). |
 | `src/debkit/_logging.py` | `configure_logging()`: root handler, plain or JSON lines → [CONFIG.md](CONFIG.md#global-flags). |
+| `src/debkit/_escape.py` | `escape_control()`: control characters in untrusted text bound for a terminal, as `\xNN` → [CONFIG.md](CONFIG.md#output-flag). |
 | `src/debkit/action/__init__.py` | `ActionException`, `open_storage()`, `storage_url()`, `history_retention()`, `verify_policy()`, the `attach_storage_*` helpers, `Action` base → [STORAGE.md](STORAGE.md#construction). |
 | `src/debkit/action/action_pkg.py` | `ActionPkg`: list (`list_packages()`), dump, stats, insert, remove. |
 | `src/debkit/action/action_sync.py` | `ActionSync`: sync; `ActionCheck`: check; the selection both read → [CONFIG.md](CONFIG.md#check). |
@@ -55,7 +56,7 @@ cli → argparser → action → repo → txstore
 | Boundary | Direction |
 | -- | -- |
 | `cli` | May import any layer for dispatch and exception grouping. |
-| Leaves | `_env` and `_logging` import no `debkit` module; `_options` imports only `_env`; `argtypes` imports only the standard library and txstore. |
+| Leaves | `_env` and `_escape` import no `debkit` module; `_logging` imports only `_escape`; `_options` imports only `_env`; `argtypes` imports only the standard library and txstore. |
 | `action` | Uses `repo`, `_options` for flag registration types, `argtypes` for flag converters, and txstore; never imports `cli`, `argparser`, or `_logging`. |
 | `repo` | Depends on txstore and crypto helpers; never on `action`, `cli`, `argparser`, `argtypes`, `_options`, or `_logging`. |
 | `debkit` → `txstore` | Every import is `from txstore import ...` of a name in its `__all__`; a `txstore.<module>` import is a boundary violation. |

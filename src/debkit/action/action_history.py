@@ -15,6 +15,7 @@ from txstore import (
     is_transactional,
 )
 
+from debkit._escape import escape_control
 from debkit.action import (
     OUTPUT_DEFAULT,
     ActionException,
@@ -148,9 +149,9 @@ class ActionHistory:
         for rec in result.records:
             print(f"  {verb} transaction {rec.id}  {rec.timestamp.to_json()}")
         for path in result.footmark_paths:
-            print(f"  {verb} footmark {path}")
+            print(f"  {verb} footmark {escape_control(path)}")
         for path in result.orphans:
-            print(f"  {verb} orphaned footmark {path}")
+            print(f"  {verb} orphaned footmark {escape_control(path)}")
         if not result.records and not result.orphans:
             print("Nothing to prune.")
 

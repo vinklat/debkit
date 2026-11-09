@@ -1,7 +1,7 @@
 """Root logger configuration for the CLI.
 
 Only `cli.main` calls `configure_logging`; every other module logs through its own logger and
-never configures handlers → [STYLE.md](STYLE.md#logging). A leaf: it imports no `debkit` module.
+never configures handlers → [STYLE.md](STYLE.md#logging). It imports only the `_escape` leaf.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ import json
 import logging
 from enum import StrEnum
 
+from debkit._escape import escape_control
+
 LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 
 # Chatty third-party loggers held at INFO when the root runs at DEBUG.
@@ -17,11 +19,6 @@ QUIET_LOGGERS = ("urllib3", "botocore", "boto3", "s3transfer")
 
 _PLAIN_FORMAT = "%(levelname)s %(message)s"
 _DEBUG_FORMAT = "%(levelname)s %(module)s %(funcName)s %(message)s"
-
-# C0 and C1 control characters and DEL, except tab, each become a visible ``\xNN``.
-_CONTROL_ESCAPES = {
-    code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0)) if code != ord("\t")
-}
 
 
 class LogFormat(StrEnum):
@@ -45,7 +42,7 @@ class _PlainFormatter(logging.Formatter):
         Returns:
             The formatted line with each C0/C1 control except tab replaced by ``\xNN``.
         """
-        return super().formatMessage(record).translate(_CONTROL_ESCAPES)
+        return escape_control(super().formatMessage(record))
 
 
 class _JsonFormatter(logging.Formatter):

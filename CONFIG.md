@@ -62,7 +62,7 @@ Accepted by `dump`, `list`, `stats`, `insert`, `remove`, `sync`, `check`, `log`,
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |
-| `-o`, `--output` | `DEBKIT_OUTPUT` | `brief` | `brief` or `json` |
+| `-o`, `--output` | `DEBKIT_OUTPUT` | `brief` | `brief` lines, with control characters in Release fields and storage keys escaped as `\xNN` like plain logs, or `json` |
 
 ## Insert
 

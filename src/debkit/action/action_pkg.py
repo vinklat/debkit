@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from humanize import naturalsize
 from txstore import compare_digests, maybe_transaction
 
+from debkit._escape import escape_control
 from debkit.action import (
     Action,
     ActionException,
@@ -81,9 +82,11 @@ class ActionPkg(Action):
         Args:
             dump: A dictionary containing the dump data.
         """
+        # Release fields are remote text, so a control character is escaped as a log line
+        # escapes it -> [CONFIG.md](CONFIG.md#output-flag)
         print("Release:")
         for key, value in dump["release"]["data"].items():
-            print(f"  {key}: {value}")
+            print(escape_control(f"  {key}: {value}"))
 
         print("Components:")
         for component_name, component in dump["components"].items():
@@ -91,7 +94,9 @@ class ActionPkg(Action):
             for arch_name, arch in component.items():
                 # a per-arch Release is optional, so its dump key may be absent
                 if "release" in arch:
-                    release = ", ".join(f"{k}: {v}" for k, v in arch["release"]["data"].items())
+                    release = escape_control(
+                        ", ".join(f"{k}: {v}" for k, v in arch["release"]["data"].items())
+                    )
                 else:
                     release = "<No release data>"
                 print(f"    {arch_name}: {release}")

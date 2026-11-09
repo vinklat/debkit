@@ -28,7 +28,8 @@ _DECLARED = {"txstore", "python-debian", "python-gnupg", "humanize", "urllib3"}
 # Modules and the debkit modules each may import at run time → STRUCTURE.md#dependencies.
 _ALLOWED_INTERNAL = {
     "_env": set(),
-    "_logging": set(),
+    "_escape": set(),
+    "_logging": {"_escape"},
     "_options": {"_env"},
     "argtypes": set(),
 }
