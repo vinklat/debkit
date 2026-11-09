@@ -392,26 +392,19 @@ class Packages:
 
         return ret
 
-    def dump(self, brief: bool = False) -> dict[str, dict[str, Any]]:
+    def dump(self) -> dict[str, dict[str, Any]]:
         """Dump packages object to a dict.
-
-        Args:
-            brief: If False, also includes packages list.
 
         Returns:
             The dictionary representation of the packages object.
         """
-        ret: dict[str, dict[str, Any]] = {"packages": {"files": self.found_indices_paths}}
-
-        # add packages
-        if brief:
-            ret["packages"]["data"] = len(self.packages)
-        else:
-            ret["packages"]["data"] = list(self.packages.values())
+        ret: dict[str, dict[str, Any]] = {
+            "packages": {"files": self.found_indices_paths, "data": list(self.packages.values())}
+        }
 
         # add release
         if not self.release.is_empty():
-            ret["release"] = self.release.dump(brief=brief)
+            ret["release"] = self.release.dump()
 
         return ret
 

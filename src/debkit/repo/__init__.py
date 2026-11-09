@@ -273,11 +273,8 @@ class Repo:
         if pkgs_total == 0:
             logger.warning("Empty repo.")
 
-    def dump(self, brief: bool = False) -> dict[str, dict[str, Any]]:
+    def dump(self) -> dict[str, dict[str, Any]]:
         """Dump the repository data to a dict.
-
-        Args:
-            brief: Whether to dump a brief version of output. Defaults to False.
 
         Returns:
             A dict representation of the repository. The dictionary includes the release, components
@@ -285,13 +282,13 @@ class Repo:
         """
         # add Release (mandatory)
         ret: dict[str, dict[str, Any]] = {
-            "release": self.release.dump(brief=brief),
+            "release": self.release.dump(),
             "components": {},
         }
 
         # add components (mandatory)
         ret["components"] = {
-            component_name: component.dump(brief=brief)
+            component_name: component.dump()
             for component_name, component in self.components.items()
         }
 

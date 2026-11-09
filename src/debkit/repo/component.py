@@ -210,16 +210,13 @@ class Component:
 
         return ret
 
-    def dump(self, brief: bool = False) -> dict[str, dict[str, Any]]:
+    def dump(self) -> dict[str, dict[str, Any]]:
         """Dump architectures containing Packages objects to a dict.
-
-        Args:
-            brief: If True, dump brief output. Defaults to False.
 
         Returns:
             A dictionary where the keys are architectures and the values are the dumped packages.
         """
-        return {arch: packages.dump(brief=brief) for arch, packages in self.packages.items()}
+        return {arch: packages.dump() for arch, packages in self.packages.items()}
 
     def get_indices_paths(self) -> list[str]:
         """Get list of indices files paths.

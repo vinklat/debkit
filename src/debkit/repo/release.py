@@ -445,20 +445,17 @@ class Release(HexDigests):
         self.storage.put(self.filename, enc_data)
         return enc_data
 
-    def dump(self, brief: bool = False) -> dict[str, Any]:
+    def dump(self) -> dict[str, Any]:
         """Dump Release object to a dict.
 
-        Args:
-            brief: Whether to dump a brief version output. Defaults to False.
-
         Returns:
-            A dict representation of the Release object. The dictionary includes the indices
-            filenames, attributes, and digests (if not brief).
+            A dict representation of the Release object: the indices filenames, the fields, and
+            the digests.
         """
         return {
             "files": self.found_indices_files,
             "data": self.fields,
-            "digests": self.digests if not brief else {},
+            "digests": self.digests,
         }
 
     def get_indices_paths(self) -> list[str]:

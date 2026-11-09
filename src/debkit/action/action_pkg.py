@@ -70,38 +70,32 @@ class ActionPkg(Action):
         """Dump repository to stdout."""
         self.target_repo.update(IndexLoad.READ_ONLY)
         logger.debug("%s", str(self._target_metrics))
-        dump_dict = self.target_repo.dump(brief=self.output == OutputType.brief)
-
         if self.output == OutputType.brief:
-            self._print_brief_dump(dump_dict)
+            self._print_brief_dump()
         else:
-            print(dump_json(dump_dict))
+            print(dump_json(self.target_repo.dump()))
 
-    def _print_brief_dump(self, dump: dict[str, Any]) -> None:
-        """Print a brief summary of the dump to stdout.
-
-        Args:
-            dump: A dictionary containing the dump data.
-        """
+    def _print_brief_dump(self) -> None:
+        """Print the target's Release fields and each arch's Release and package count."""
         # Release fields are remote text, so a control character is escaped as a log line
         # escapes it -> [CONFIG.md](CONFIG.md#output-flag)
         print("Release:")
-        for key, value in dump["release"]["data"].items():
+        for key, value in self.target_repo.release.fields.items():
             print(escape_control(f"  {key}: {value}"))
 
         print("Components:")
-        for component_name, component in dump["components"].items():
+        for component_name, component in self.target_repo.components.items():
             print(f"  {component_name}:")
-            for arch_name, arch in component.items():
-                # a per-arch Release is optional, so its dump key may be absent
-                if "release" in arch:
-                    release = escape_control(
-                        ", ".join(f"{k}: {v}" for k, v in arch["release"]["data"].items())
-                    )
-                else:
+            for arch_name, packages in component.packages.items():
+                # a per-arch Release is optional, so an empty one is reported as absent
+                if packages.release.is_empty():
                     release = "<No release data>"
+                else:
+                    release = escape_control(
+                        ", ".join(f"{k}: {v}" for k, v in packages.release.fields.items())
+                    )
                 print(f"    {arch_name}: {release}")
-                print(f"      {arch['packages']['data']} packages")
+                print(f"      {len(packages.packages)} packages")
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
