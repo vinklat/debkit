@@ -108,8 +108,6 @@ def make_params(
         dist=dist, components=["main"], verify_gpg=verify_gpg, verify_digests=verify_digests
     )
     p.is_flat = flat
-    if flat:
-        p.indices_prefix = ""
     return p
 
 

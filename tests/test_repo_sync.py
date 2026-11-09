@@ -39,7 +39,6 @@ FLAT_INDICES = ["bookworm/Release"]
 def _make_flat(params: RepoParams, rootless: bool = False) -> None:
     """Switch params to the flat layout a two-field deb source produces."""
     params.is_flat = True
-    params.indices_prefix = ""
     if rootless:
         params.dist = "/"
 

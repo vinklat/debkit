@@ -144,7 +144,6 @@ class RepoParams:
         self.verify_gpg = verify_gpg
         self.verify_digests = verify_digests
         self.url: str | None = None
-        self.indices_prefix = f"dists/{dist}" if dist else ""
         self.is_flat = False
 
     def from_deb_source(self, deb_source: str | None) -> None:
@@ -180,13 +179,11 @@ class RepoParams:
             if not is_safe_name(name):
                 raise RepoParamsException(f"unsafe dist or component name: {name!r}")
         if components:
-            self.indices_prefix = f"dists/{self.dist}"
             self.components = components
         else:
             # flat repo without components
             self.components = None
             self.is_flat = True
-            self.indices_prefix = ""
 
         logger.debug(
             "Parse deb source: url=%s, dist=%s, components=%s",
@@ -285,6 +282,16 @@ class RepoParams:
         if self.indices_prefix:
             return remove_prefix_from_path(path, self.indices_prefix)
         return path
+
+    @property
+    def indices_prefix(self) -> str:
+        """The dist's index tree, derived so it never disagrees with `dist` and `is_flat`.
+
+        Returns:
+            `dists/<dist>` for a componented layout with a dist, else empty
+            -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+        """
+        return "" if self.is_flat or not self.dist else f"dists/{self.dist}"
 
     def is_index_tree_key(self, path: str) -> bool:
         """Report whether a payload key lands in the `dists/` tree of a componented layout.

@@ -170,7 +170,6 @@ def test_load_checksum_mismatch_raises() -> None:
     root_release.digests["x/Release"] = {"SHA256": "ffffff", "Size": "1"}
 
     sub = Release(storage, _params(verify_digests=True))
-    sub.params.indices_prefix = ""  # the seeded key cannot match, so load must raise
     with pytest.raises(ChecksumException):
         sub.load_component("main", "amd64", root_release=root_release)
 
@@ -527,7 +526,6 @@ def _flat_params(dist: str = "bookworm") -> RepoParams:
     """Params for a flat repo, as a two-field deb source produces."""
     p = RepoParams(dist=dist, verify_gpg=False, verify_digests=False)
     p.is_flat = True
-    p.indices_prefix = ""
     return p
 
 

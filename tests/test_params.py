@@ -149,6 +149,16 @@ _LAYOUTS = [
 ]
 
 
+def test_indices_prefix_follows_the_layout_it_is_derived_from() -> None:
+    """A flat layout has no index tree, whichever dist it names."""
+    p = RepoParams(dist="stable")
+    assert p.indices_prefix == "dists/stable"
+
+    p.is_flat = True
+
+    assert p.indices_prefix == ""
+
+
 @pytest.mark.parametrize(("dist", "is_flat", "comp", "inner", "expected"), _LAYOUTS)
 def test_indices_path_layouts(
     dist: str | None, is_flat: bool, comp: str | None, inner: str, expected: tuple[str, str]
