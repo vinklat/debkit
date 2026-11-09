@@ -636,7 +636,7 @@ class Repo:
             The claims; unknown when the storage cannot list, so only the own index tree is
             deletable.
         """
-        if self.params.is_flat or not self.params.indices_prefix:
+        if not _has_dists_tree(self.params):
             return _FLAT_ROOT
         try:
             existing_files = set(self.storage.list())
@@ -714,6 +714,18 @@ class ConsistencyLists(NamedTuple):
 _FLAT_ROOT = SharedRoot("", frozenset(), complete=True)
 
 
+def _has_dists_tree(params: RepoParams) -> bool:
+    """Report whether the repository's indices sit under a `dists/<dist>/` tree.
+
+    Args:
+        params: The repository's parameters.
+
+    Returns:
+        False for a flat layout, and for one with no dist to name the tree.
+    """
+    return not params.is_flat and bool(params.indices_prefix)
+
+
 def _unlisted_shared_root(params: RepoParams) -> SharedRoot:
     """The claims of a root whose storage cannot list.
 
@@ -724,7 +736,7 @@ def _unlisted_shared_root(params: RepoParams) -> SharedRoot:
         No claims; for a componented layout incomplete, so nothing outside the own index tree
         is deletable.
     """
-    if params.is_flat or not params.indices_prefix:
+    if not _has_dists_tree(params):
         return _FLAT_ROOT
     return SharedRoot(f"{params.indices_prefix}/", frozenset(), complete=False)
 
@@ -810,7 +822,7 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
     Returns:
         The claims; none for a flat layout, which has no `dists/` tree.
     """
-    if params.is_flat or not params.indices_prefix:
+    if not _has_dists_tree(params):
         return _FLAT_ROOT
 
     prefix = f"{params.indices_prefix}/"
