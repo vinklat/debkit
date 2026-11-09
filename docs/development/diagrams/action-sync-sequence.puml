@@ -1,0 +1,82 @@
+@startuml
+actor Caller
+participant ActionSync
+participant "RepoSync\n(source)" as Src
+participant "RepoRW\n(target)" as Tgt
+participant "Storage\n(target)" as TStor
+participant "maybe_transaction" as CM
+
+Caller -> ActionSync: sync()
+
+opt allow_release_rollback
+  note over ActionSync: log "Release freshness checks skipped" once
+end
+
+ActionSync -> CM: __enter__(TStor, history_retention)\n[non-transactional TStor: the body runs alone, nothing below]
+CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
+CM -> TStor: history.load() / next_id()
+CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
+
+ActionSync -> Tgt: load(READ_ONLY)
+Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
+note over ActionSync: run_floor = target.release.fields["Date"], before any reset\ntarget_before = target.snapshot()
+
+opt verify_existing
+  ActionSync -> Tgt: verify_payloads(fix=True)
+  Tgt -> TStor: list(); read, delete the failing payloads\n[staged in the transaction]
+end
+
+ActionSync -> Src: load(STRICT)
+opt verify_gpg and not allow_release_rollback
+  ActionSync -> Src: release.check_fresh_against(run_floor, now)
+  Src --> ActionSync: returns, or raises ReleaseFreshnessException
+end
+
+loop up to MAX_UPDATED_REPO_RETRIES passes
+  ActionSync -> Src: build_sync_lists(target, indices_only)
+  Src --> ActionSync: SyncPlan(copy, delete, unproven)
+  break plan.is_empty()
+    note over ActionSync: nothing to sync
+  end
+
+  ActionSync -> Src: sync(target, plan)
+  Src --> ActionSync: returns, or raises RepoSyncException
+  break the last pass ran
+    note over ActionSync: log warning "Source repo still changing";\nthe last pass is committed, the source is not read again
+  end
+
+  ActionSync -> Src: load(STRICT)
+  Src --> ActionSync: release.content_sha256
+  break release.content_sha256 unchanged by the pass
+    note over ActionSync: source settled
+  end
+
+  ActionSync -> Tgt: load(READ_ONLY)
+  note right: reads through the transaction\nthe bytes the previous pass staged
+  opt verify_gpg and not allow_release_rollback
+    ActionSync -> Src: release.check_fresh_against(target.release.fields["Date"], now)
+    ActionSync -> Src: release.check_fresh_against(run_floor, now)
+    Src --> ActionSync: returns, or raises ReleaseFreshnessException
+  end
+end
+
+ActionSync -> CM: __exit__(None)
+CM -> TStor: transaction_commit()
+CM -> TStor: history.append(model)\n[only if the commit had changes]
+CM -> TStor: prune expired history under the lock\n[retention set; a failure is logged, not raised]
+CM -> TStor: history_lock release
+
+ActionSync -> Src: diff(target_before)
+Src --> ActionSync: ret_diff
+ActionSync --> Caller: brief / json output
+
+alt ChecksumException from sync, or ReleaseFreshnessException from check_fresh_against
+  Src --> ActionSync: ChecksumException / ReleaseFreshnessException
+  ActionSync -> CM: __exit__(exc)
+  CM -> TStor: transaction_discard()
+  CM -> TStor: history_lock release\n[no history record written]
+  note right: failure during discard\nis logged but does not\nmask the original exc
+  CM --> ActionSync: re-raise the exception
+  ActionSync --> Caller: propagate (handled by cli.py)
+end
+@enduml

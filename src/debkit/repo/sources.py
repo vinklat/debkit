@@ -1,0 +1,165 @@
+"""Class expanding a Debian `Sources` index into one record per source payload file."""
+
+from __future__ import annotations
+
+import logging
+import posixpath
+import re
+from typing import Any, ClassVar
+
+from txstore import is_unsafe_path
+
+from debkit.repo.hashes import CHECKSUM_FIELDS, has_sha, parse_hash_block
+from debkit.repo.package import FILENAME_FIELD_KEY, Package
+from debkit.repo.packages import Packages, PackagesException
+from debkit.repo.params import is_safe_name
+from debkit.repo.stanza import parse_stanza
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
+# Stanza fields copied onto every payload record of that stanza.
+STANZA_FIELDS = ("Package", "Version")
+
+
+class Sources(Packages):
+    """Read-only package container fed by a `Sources` index.
+
+    A `Sources` stanza names several payload files under one `Directory`; each
+    becomes a `Package` keyed by its `Filename`, so the sync diff, the purge and
+    repair passes, and checksum verification consume source payloads exactly as they
+    consume binary ones. `len()` counts payload files, not stanzas.
+
+    The index itself is mirrored as an opaque object and is never regenerated, so
+    this container refuses every mutation -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
+    """
+
+    WRITABLE: ClassVar[bool] = False
+
+    def _parse_indices(self, data: str) -> int:
+        """Expand every stanza into one `Package` per payload file.
+
+        Args:
+            data: Decoded `Sources` index.
+
+        Raises:
+            PackagesException: If a stanza holds an unreadable line, names no usable
+                `Directory`, an unsafe file name, disagreeing sizes, or a payload without a SHA
+                digest.
+
+        Returns:
+            The number of payload files known after parsing.
+        """
+        for block in self._stanzas(data):
+            for package in self._expand_stanza(block):
+                name = str(package)
+                previous = self.packages.get(name)
+                if previous is not None and previous.get_digests() != package.get_digests():
+                    logger.debug("%s is listed with differing digests across stanzas.", name)
+                self.packages[name] = package
+
+        return len(self)
+
+    def _expand_stanza(self, block: str) -> list[Package]:
+        """Build one `Package` per file named by a single `Sources` stanza.
+
+        `Package.parse` is not reused: it folds multi-line values onto one line, which
+        destroys the hash blocks, and it demands a `Filename` no stanza carries.
+
+        Args:
+            block: One stanza, without its trailing blank line.
+
+        Raises:
+            PackagesException: On an unreadable line, a missing or unsafe `Directory`, one in
+                the `dists/` tree of a componented layout, a file name with a path segment, a
+                size that differs between hash blocks, or a payload carrying no SHA digest.
+
+        Returns:
+            One record per payload file, in first-seen order.
+        """
+        parsed, _, unreadable = parse_stanza(block)
+        # the fields after an unreadable line would be missing, and with them payload files
+        # the sync would neither copy nor keep -> [VALIDATION.md](VALIDATION.md#blank-lines)
+        if unreadable:
+            raise PackagesException("unreadable line in Sources stanza: a field line needs a colon")
+        fields = dict(parsed.items())
+
+        directory = posixpath.normpath(fields.get("Directory", "").strip())
+        if not is_safe_name(directory):
+            raise PackagesException(
+                f"no usable Directory in Sources stanza: {fields.get('Package')}"
+            )
+        # a payload under `dists/` would overwrite the metadata of any dist sharing the root
+        # -> [VALIDATION.md](VALIDATION.md#filename-safety)
+        if self.params.is_index_tree_key(directory):
+            raise PackagesException(
+                f"Sources stanza Directory lies in the dists/ tree: {directory}"
+            )
+
+        stanza = {key: fields[key].strip() for key in STANZA_FIELDS if key in fields}
+        records: dict[str, dict[str, Any]] = {}
+
+        for field, algorithm in CHECKSUM_FIELDS.items():
+            if field not in fields:
+                continue
+
+            for hashstr, size, name in parse_hash_block(fields[field]):
+                filename = f"{directory}/{name}"
+                if "/" in name or is_unsafe_path(filename):
+                    raise PackagesException(f"unsafe file name in Sources stanza: {filename}")
+
+                record = records.setdefault(
+                    name, {**stanza, FILENAME_FIELD_KEY: filename, "Size": size}
+                )
+                if record["Size"] != size:
+                    raise PackagesException(f"{filename} has a different size in each hash block")
+                record[algorithm] = hashstr
+
+        for record in records.values():
+            # a payload needs an algorithm comparison keeps: an MD5-only record would
+            # compare unequal forever and be recopied on every sync
+            # -> [CRYPTO.md](CRYPTO.md#checksums)
+            if not has_sha(record):
+                raise PackagesException(f"{record[FILENAME_FIELD_KEY]} carries no SHA digest")
+
+        return [Package(fields=record) for record in records.values()]
+
+    def save(self) -> dict[str, dict[str, str]] | None:
+        """Write nothing: the mirrored `Sources` object is the only source of truth.
+
+        Returns:
+            Always `None`, the value `Component.save` reads as "nothing was written".
+        """
+        return None
+
+    def insert(self, package: Package) -> None:
+        """Refuse: a `Sources` index is mirrored, never composed.
+
+        Args:
+            package: Ignored.
+
+        Raises:
+            PackagesException: Always.
+        """
+        raise PackagesException("Sources index is read-only")
+
+    def remove(self, fields: dict[str, re.Pattern[str]]) -> set[str]:
+        """Remove nothing: a `Sources` index is mirrored, never composed.
+
+        Returning the base contract's "nothing removed" lets a caller iterate every
+        container without knowing which one is read-only; a match is logged as kept, so
+        the caller's "nothing matched" is not the only word on it
+        -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
+
+        Args:
+            fields: Compiled pattern per package field.
+
+        Returns:
+            Always empty.
+        """
+        if kept := self.matching(fields):
+            logger.warning(
+                "%d source payloads match but the mirrored Sources index is read-only; kept.",
+                len(kept),
+            )
+        return set()

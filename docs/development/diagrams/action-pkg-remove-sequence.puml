@@ -1,0 +1,64 @@
+@startuml
+actor Caller
+participant ActionPkg
+participant "RepoRW\n(target)" as Tgt
+participant "Storage\n(target)" as TStor
+participant "maybe_transaction" as CM
+
+Caller -> ActionPkg: remove()
+note right
+  fields = pkg_pattern, compiled by
+  pkg_pattern_type at parse time;
+  a bad pattern exited 2 before this
+end note
+
+ActionPkg -> CM: __enter__(TStor, history_retention)\n[non-transactional TStor: the body runs alone, nothing below]
+CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
+CM -> TStor: history.load() / next_id()
+CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
+
+ActionPkg -> Tgt: load()\n[under the lock: a peer may have committed]
+Tgt --> ActionPkg: ok
+ActionPkg -> Tgt: snapshot()
+Tgt --> ActionPkg: target_before
+
+ActionPkg -> Tgt: remove_pkg(fields)
+Tgt -> Tgt: drop matches from every arch index
+Tgt -> TStor: list()
+Tgt -> TStor: shared_root_claims(): load every other dists/<dist>/
+Tgt -> TStor: delete each matched payload once (staged),\nunless another dist claims it
+Tgt --> ActionPkg: True / False
+ActionPkg -> Tgt: diff(target_before)
+Tgt --> ActionPkg: ret_diff
+opt ret_diff non-empty
+  ActionPkg -> Tgt: save()
+  Tgt -> TStor: put Packages / Release (staged)
+  alt GPG verification on
+    Tgt -> TStor: put InRelease / Release.gpg (staged)
+  else --skip-verify-gpg
+    Tgt -> TStor: delete stale InRelease / Release.gpg (staged)
+  end
+end
+
+ActionPkg -> CM: __exit__(None)
+CM -> TStor: transaction_commit()
+CM -> TStor: history.append(model)\n[only if the commit had changes]
+CM -> TStor: prune expired history under the lock\n[retention set; a failure is logged, not raised]
+CM -> TStor: history_lock release
+
+ActionPkg --> Caller: brief / json output
+
+alt no match, or exception from remove_pkg or save
+  alt remove_pkg returned False
+    ActionPkg -> ActionPkg: raise ActionException\n("No removable packages matched the pattern.")
+  else exception from remove_pkg or save
+    Tgt --> ActionPkg: exception
+  end
+  ActionPkg -> CM: __exit__(exc)
+  CM -> TStor: transaction_discard()
+  CM -> TStor: history_lock release\n[no history record written]
+  note right: failure during discard\nis logged but does not\nmask the original exc
+  CM --> ActionPkg: re-raise
+  ActionPkg --> Caller: propagate (handled by cli.py)
+end
+@enduml

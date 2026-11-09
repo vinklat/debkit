@@ -1,0 +1,85 @@
+@startuml
+start
+if (allow_release_rollback?) then (yes)
+  :log warning "Release freshness checks skipped";
+endif
+
+partition "with maybe_transaction(target.storage)" {
+  :target.load(READ_ONLY);
+  note right
+    under history_lock, so a peer commit
+    that landed while waiting is seen;
+    ReleaseNotFoundException -> log warn, continue
+    ChecksumException    -> log warn, target.reset()
+  end note
+  :run_floor = target.release.fields["Date"]
+  (taken before any reset);
+  :target_before = target.snapshot();
+  if (verify_existing?) then (yes)
+    :report = target.verify_payloads(fix=True)
+    (missing payloads skipped, orphans left to the purge);
+    note right
+      deletions are staged in the transaction;
+      the first pass copies them again
+    end note
+    if (report.failed > report.fixed?) then (yes)
+      :log warning;
+    endif
+  endif
+  :source.load(STRICT);
+  :check_fresh(run_floor);
+  note right
+    only with verify_gpg and not allow_release_rollback;
+    ReleaseFreshnessException -> raise; propagates out
+    of the maybe_transaction CM
+  end note
+  repeat
+    :plan = source.build_sync_lists(target, indices_only);
+    if (plan.is_empty()?) then (yes)
+      :log "Nothing to sync";
+      break
+    endif
+    :source.sync(target, plan);
+    note right
+      ChecksumException propagates (cli.py logs it)
+      out of the loop and
+      out of the maybe_transaction CM.
+      An object still failing after the
+      retries raises RepoSyncException,
+      so no partial target is committed;
+      an unproven index the source lacks
+      is skipped instead
+    end note
+    if (MAX_UPDATED_REPO_RETRIES passes run?) then (yes)
+      :log warning "Source repo still changing";
+      note right: commits the last pass;\nthe source is not read again
+      break
+    endif
+    :synced_sha256 = source.release.content_sha256;
+    :source.load(STRICT);
+    if (source.release.content_sha256 == synced_sha256?) then (yes)
+      break
+    endif
+    :load target again;
+    note right: reads the bytes the previous\npass staged
+    :check_fresh(target.release.fields["Date"], run_floor);
+  repeat while (source changed during the pass)
+}
+
+if (any exception escaped the partition?) then (yes)
+  :transaction_discard()
+  (errors during discard are logged,
+   original exception is re-raised);
+  stop
+else (no)
+  :transaction_commit();
+endif
+
+:ret_diff = source.diff(target_before);
+if (output == json?) then (yes)
+  :_print_sync_json(ret_diff);
+else (no)
+  :_print_sync_brief(ret_diff);
+endif
+stop
+@enduml

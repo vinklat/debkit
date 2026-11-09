@@ -1,0 +1,64 @@
+@startuml
+participant ActionSync
+participant "RepoSync\n(source)" as Src
+participant "Release\n(source root)" as Rel
+participant "RepoRW\n(target)" as Tgt
+participant "Storage\n(source)" as SStor
+participant "Storage\n(target)" as TStor
+
+ActionSync -> Src: build_sync_lists(target, indices_only)
+Src -> Tgt: held_paths()
+Tgt -> TStor: list()
+Tgt --> Src: existing objects, or None\n[NotImplementedError on http]
+
+Src -> Src: _get_indices()
+Src -> Rel: get_indices_paths()
+Rel --> Src: the Release, Release.gpg, InRelease found\n(an unpaired Release.gpg skipped)
+note right: known_published=True, digests None
+Src -> Src: component.get_indices_paths()
+note right: Packages files a parse proved,\nkept if selected, known_published=True
+Src -> Rel: listed_indices()
+Rel --> Src: IndexEntry(key, path, digests) per record
+
+note over Src: every other entry select_index_entry keeps\nand _index_path_is_safe accepts is kept, not known published
+
+Src -> Src: _plan_payloads: purge and repair passes use the index set\n(skipped with --indices-only)
+Src -> Tgt: shared_root(listing): load every other dists/<dist>/ unverified
+note right: purge and payload removal keep what another dist claims;\none that does not load limits deletion to the own dists/<dist>/;\na payload another dist pins is overwritten only with the bytes it holds
+
+Src -> Src: _indices_to_copy(forced, can_list)
+alt a package or Release change, --indices-only, or a known published index the target lacks, forces the pass
+  Src -> Src: _reduce_indices(every index)
+else nothing forces it
+  note right of Src: no index is copied and the source\nis never probed; an absent entry\nwaits for the next forced pass
+end
+
+group _reduce_indices
+  loop each index it is given
+    alt the target holds it, its Release loaded, digests are verified,\nand both root Releases record the same digests
+      note right: skipped with no round trip
+    else the target holds it, its Release loaded, and agreement does not settle it
+      Src -> Tgt: metadata_agrees(path, digests)
+      Tgt -> TStor: get_metadata(path)
+      Tgt --> Src: whether the stored digests match
+      note right: a match means the index is skipped
+    end
+  end
+end
+
+Src --> ActionSync: SyncPlan(copy, delete, unproven)
+note right: unproven: copied indices the target lacks\nthat no load or parse proved published
+
+ActionSync -> Src: sync(target, plan)
+loop each path in plan.copy
+  Src -> Tgt: transfer_from(SStor, path)
+  Tgt -> SStor: transfer(path, TStor)
+  alt transferred
+    Tgt --> Src: digests
+  else StorageNotFoundException, path in plan.unproven
+    note right of Src: skipped, logged at debug,\nnever retried
+  else any other StorageException
+    note right of Src: retried; still failing after the\nretries raises RepoSyncException
+  end
+end
+@enduml

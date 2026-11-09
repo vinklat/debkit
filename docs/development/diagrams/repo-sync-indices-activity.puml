@@ -1,0 +1,60 @@
+@startuml
+title Repo._get_indices
+start
+:indices = {};
+:add release.get_indices_paths() with digests = None
+(Release, Release.gpg, InRelease are not self-listed);
+:add component.get_indices_paths() that pass
+the selection rules (Packages files, already
+parsed, so known published);
+
+partition "release.listed_indices()" {
+  repeat :entry = next digest block record;
+    if (already in indices?) then (yes)
+      :skip;
+    else (no)
+      if (exclude glob matches key?) then (yes)
+        :skip;
+      elseif (component not selected?) then (yes)
+        :skip;
+      elseif (source index and source not selected?) then (yes)
+        :skip;
+        note right
+          this rule, the unparsed rule, and
+          the token rule read the key below
+          its component, so a component
+          named extra-armhf trips none
+        end note
+      elseif (index nothing parses?) then (yes)
+        :skip;
+        note right
+          debian-installer/, installer-<arch>/
+          for a known arch, Contents-udeb*
+        end note
+      elseif (architecture token not selected?) then (yes)
+        :skip;
+        note right
+          token matched against the
+          architecture universe only,
+          so icons-64x64 is not one
+        end note
+      elseif (unsafe key or path?) then (yes)
+        :skip, log warning;
+        note right
+          a hostile Release cannot
+          name a key outside the repo
+        end note
+      else (kept)
+        :indices[path] = entry.digests, not known published;
+        note right
+          nothing is probed here: the
+          orphan pass must see every
+          path the Release lists
+        end note
+      endif
+    endif
+  repeat while (more records?) is (yes)
+}
+
+stop
+@enduml

@@ -1,0 +1,326 @@
+"""`GnuPG` and the root Release against the real gpg binary (TESTING.md crypto row).
+
+`tests/test_gnupg.py` mocks python-gnupg; these cases prove what only gpg decides: a signature
+covers every line of the data, a changed byte or an unknown signer fails, the passphrase reaches
+the key, a home's `gpg.conf` cannot make gpg trust a signer outside the keyring, and the framing
+gpg accepts but debkit refuses is refused.
+"""
+
+from __future__ import annotations
+
+import http.server
+import tempfile
+import threading
+from collections.abc import Iterator
+from pathlib import Path
+
+import gnupg
+import pytest
+from helpers.gpg import (
+    KEYRING,
+    add_signing_key,
+    export_public_key,
+    import_keys,
+    make_gpg_home,
+    requires_gpg,
+    sign_with_key_block,
+    stop_gpg_agent,
+)
+from txstore import StorageFS
+
+from debkit.repo.gnupg import GnuPG, GPGVerifyException, cleartext_body
+from debkit.repo.params import RepoParams
+from debkit.repo.release import ReleaseWriteException, RootRelease
+
+pytestmark = requires_gpg
+
+# Multi-line, like a Release: a passphrase read from the data would drop its first line.
+_DATA = b"Origin: debkit\nLabel: debkit\nSuite: bookworm\nDate: Sun, 08 Sep 2024 10:00:00 UTC\n"
+# the verify failure itself, not a keyring error or a gpg that cannot run
+_BAD_SIGNATURE = "GPG not valid signature"
+
+
+@pytest.fixture(scope="module")
+def homes() -> Iterator[dict[str, Path]]:
+    """Signer, unknown signer, and passphrase-locked homes under one short temporary root.
+
+    The root is short because gpg-agent's socket path has a length limit.
+    """
+    with tempfile.TemporaryDirectory(prefix="dkgpg") as root:
+        built = {
+            "signer": make_gpg_home(Path(root) / "s", "signer"),
+            "other": make_gpg_home(Path(root) / "o", "other"),
+            "locked": make_gpg_home(Path(root) / "l", "locked", passphrase="pw"),
+            "two": add_signing_key(make_gpg_home(Path(root) / "t", "first"), "second"),
+        }
+        try:
+            yield built
+        finally:
+            for home in built.values():
+                stop_gpg_agent(home)
+
+
+def _gnupg(home: Path, passphrase: str | None = None) -> GnuPG:
+    return GnuPG(str(home), KEYRING, passphrase)
+
+
+@pytest.mark.parametrize(
+    ("sign_key", "signer"),
+    [(None, "first"), ("second@example.invalid", "second")],
+    ids=["gpg-default", "named"],
+)
+def test_gnupg_signs_with_the_named_key(
+    homes: dict[str, Path], sign_key: str | None, signer: str
+) -> None:
+    """A home holding several secret keys signs with the one `--gnupg-sign-key` names."""
+    gpg = GnuPG(str(homes["two"]), KEYRING, None, sign_key)
+
+    signed = gpg.sign(_DATA).encode()
+
+    assert f"debkit {signer} " in gpg.gnupg.verify(signed).username
+
+
+def test_gnupg_signs_nothing_with_an_unknown_key(homes: dict[str, Path]) -> None:
+    gpg = GnuPG(str(homes["signer"]), KEYRING, None, "nobody@example.invalid")
+
+    assert gpg.sign(_DATA) == ""
+
+
+def test_gnupg_clearsigned_round_trip_returns_the_body(homes: dict[str, Path]) -> None:
+    gpg = _gnupg(homes["signer"], passphrase="")
+
+    signed = gpg.sign(_DATA).encode()
+
+    assert gpg.verify(signed) == cleartext_body(signed) == _DATA
+
+
+def test_gnupg_detached_round_trip_covers_every_line(homes: dict[str, Path]) -> None:
+    """Regression (SETUP.md): with an empty passphrase gpg read the first line as one."""
+    gpg = _gnupg(homes["signer"], passphrase="")
+
+    signature = gpg.sign(_DATA, detach=True).encode()
+
+    assert gpg.verify(_DATA, detach_sign=signature) == _DATA
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(_DATA.split(b"\n", 1)[1], detach_sign=signature)
+
+
+def test_gnupg_verify_refuses_a_tampered_clearsigned_body(homes: dict[str, Path]) -> None:
+    gpg = _gnupg(homes["signer"])
+    signed = gpg.sign(_DATA).encode()
+    assert gpg.verify(signed) == _DATA
+
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(signed.replace(b"Suite: bookworm", b"Suite: trixie"))
+
+
+def test_gnupg_verify_refuses_tampered_detached_data(homes: dict[str, Path]) -> None:
+    gpg = _gnupg(homes["signer"])
+    signature = gpg.sign(_DATA, detach=True).encode()
+    assert gpg.verify(_DATA, detach_sign=signature) == _DATA
+
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(_DATA + b"Extra: field\n", detach_sign=signature)
+
+
+def test_gnupg_verify_refuses_a_clearsigned_message_from_outside_the_keyring(
+    homes: dict[str, Path],
+) -> None:
+    signed = _gnupg(homes["other"]).sign(_DATA).encode()
+    # a failed sign returns nothing, which would fail the verify below for the wrong reason
+    assert signed.startswith(b"-----BEGIN PGP SIGNED MESSAGE-----")
+    gpg = _gnupg(homes["signer"])
+
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(signed)
+
+
+def test_gnupg_verify_refuses_a_detached_signature_from_outside_the_keyring(
+    homes: dict[str, Path],
+) -> None:
+    signature = _gnupg(homes["other"]).sign(_DATA, detach=True).encode()
+    assert signature.startswith(b"-----BEGIN PGP SIGNATURE-----")
+    gpg = _gnupg(homes["signer"])
+
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(_DATA, detach_sign=signature)
+
+
+def test_gnupg_sign_with_the_passphrase_unlocks_the_key(homes: dict[str, Path]) -> None:
+    gpg = _gnupg(homes["locked"], passphrase="pw")
+
+    signature = gpg.sign(_DATA, detach=True).encode()
+
+    assert gpg.verify(_DATA, detach_sign=signature) == _DATA
+
+
+def test_gnupg_sign_with_a_wrong_passphrase_returns_no_signature(homes: dict[str, Path]) -> None:
+    """`Release.save` refuses the empty result → CRYPTO.md#gpg."""
+    assert _gnupg(homes["locked"], passphrase="nope").sign(_DATA) == ""
+
+
+def test_release_signed_save_loads_back_verified(homes: dict[str, Path], tmp_path: Path) -> None:
+    """A root Release debkit signs passes its own verified load, inline and detached alike."""
+    params = RepoParams(dist="bookworm", components=["main"], verify_gpg=True)
+    storage = StorageFS(str(tmp_path))
+    written = RootRelease(storage, params, gpg=_gnupg(homes["signer"]))
+    written.setup(fields={"Date": "Sun, 08 Sep 2024 10:00:00 UTC"})
+    written.save()
+
+    loaded = RootRelease(storage, params, gpg=_gnupg(homes["signer"]))
+    loaded.load()
+
+    assert loaded.fields["Origin"] == "bookworm"
+    assert sorted(loaded.root_digests) == ["InRelease", "Release", "Release.gpg"]
+
+
+def test_release_save_with_a_wrong_passphrase_writes_no_inrelease(
+    homes: dict[str, Path], tmp_path: Path
+) -> None:
+    """Regression: a failed clearsign returned its unsigned armor, saved as `InRelease`."""
+    params = RepoParams(dist="bookworm", components=["main"], verify_gpg=True)
+    release = RootRelease(StorageFS(str(tmp_path)), params, gpg=_gnupg(homes["locked"], "nope"))
+    release.setup()
+
+    with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
+        release.save()
+
+    assert not (tmp_path / "dists" / "bookworm" / "InRelease").exists()
+
+
+def test_gnupg_verify_refuses_unsigned_text_before_the_armor(homes: dict[str, Path]) -> None:
+    """gpg accepts a preamble before the armor; only `cleartext_body` refuses it."""
+    gpg = _gnupg(homes["signer"])
+    signed = gpg.sign(_DATA).encode()
+
+    with pytest.raises(GPGVerifyException, match="not in correct format"):
+        gpg.verify(b"Unsigned: preamble\n" + signed)
+
+
+def test_gnupg_verify_refuses_two_concatenated_signed_messages(homes: dict[str, Path]) -> None:
+    """Refused whichever decides: gpg versions differ, `cleartext_body` refuses it regardless."""
+    gpg = _gnupg(homes["signer"])
+    signed = gpg.sign(_DATA).encode()
+
+    with pytest.raises(GPGVerifyException, match=f"{_BAD_SIGNATURE}|unsigned data after"):
+        gpg.verify(signed + signed)
+
+
+def test_gnupg_verify_undoes_dash_escaping_gpg_applied(homes: dict[str, Path]) -> None:
+    gpg = _gnupg(homes["signer"])
+    data = _DATA + b"-Dashed: line\n"
+    signed = gpg.sign(data).encode()
+    assert b"\n- -Dashed: line\n" in signed
+
+    assert gpg.verify(signed) == cleartext_body(signed) == data
+
+
+def test_gnupg_verify_crlf_signed_message_returns_the_canonical_body(
+    homes: dict[str, Path],
+) -> None:
+    """gpg hashes lines with CR stripped, so CRLF line ends keep the signature and the body."""
+    gpg = _gnupg(homes["signer"])
+    signed = gpg.sign(_DATA).encode().replace(b"\n", b"\r\n")
+
+    assert gpg.verify(signed) == _DATA
+
+
+def test_release_load_refuses_a_release_signed_outside_the_keyring(
+    homes: dict[str, Path], tmp_path: Path
+) -> None:
+    params = RepoParams(dist="bookworm", components=["main"], verify_gpg=True)
+    storage = StorageFS(str(tmp_path))
+    written = RootRelease(storage, params, gpg=_gnupg(homes["other"]))
+    written.setup(fields={"Date": "Sun, 08 Sep 2024 10:00:00 UTC"})
+    written.save()
+    assert (tmp_path / "dists" / "bookworm" / "Release.gpg").exists()
+
+    loaded = RootRelease(storage, params, gpg=_gnupg(homes["signer"]))
+
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        loaded.load()
+
+
+@pytest.fixture
+def key_server(homes: dict[str, Path]) -> Iterator[str]:
+    """A local HKP keyserver serving the outsider's public key; yields its `hkp://` URL."""
+    key = export_public_key(homes["other"])
+
+    class KeyServer(http.server.BaseHTTPRequestHandler):
+        """Answers every lookup with the one armored key."""
+
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pgp-keys")
+            self.send_header("Content-Length", str(len(key)))
+            self.end_headers()
+            self.wfile.write(key)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), KeyServer)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"hkp://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _assert_only_the_options_refuse(signed: bytes, gpg_conf: str, extra_keys: bytes = b"") -> None:
+    """`GnuPG` refuses `signed` in a fresh home with `gpg_conf`, where plain gpg verifies it.
+
+    The plain gpg run on the same keyring is the positive control: without debkit's options the
+    home does trust the signer, so the refusal is the options' doing, not an unreachable keyserver
+    or a bad message.
+    `extra_keys` go into the home's `extra.gpg`, a keyring only `gpg_conf` can name.
+    """
+    # a failed sign returns nothing, which would fail the verify below for the wrong reason
+    assert signed.startswith(b"-----BEGIN PGP SIGNED MESSAGE-----")
+    with tempfile.TemporaryDirectory(prefix="dkgpg") as root:
+        home = Path(root) / "h"
+        try:
+            make_gpg_home(home, "verifier")
+            if extra_keys:
+                import_keys(home, "extra.gpg", extra_keys)
+            (home / "gpg.conf").write_text(gpg_conf)
+            keyring = (home / KEYRING).read_bytes()
+
+            with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+                _gnupg(home).verify(signed)
+
+            assert (home / KEYRING).read_bytes() == keyring
+            probe = gnupg.GPG(gnupghome=str(home), keyring=KEYRING).verify(signed)
+            assert probe.valid, probe.stderr
+        finally:
+            stop_gpg_agent(home)
+
+
+def test_gnupg_verify_never_retrieves_a_missing_signer_key(
+    homes: dict[str, Path], key_server: str
+) -> None:
+    """Regression: a home's `auto-key-retrieve` imported the signer's key and verified it."""
+    signed = _gnupg(homes["other"]).sign(_DATA).encode()
+
+    _assert_only_the_options_refuse(signed, f"keyserver {key_server}\nauto-key-retrieve\n")
+
+
+def test_gnupg_verify_never_imports_a_key_the_signature_carries(homes: dict[str, Path]) -> None:
+    """Regression: a home's `auto-key-import` trusted a signer whose key the message embeds."""
+    signed = sign_with_key_block(homes["other"], _DATA)
+
+    _assert_only_the_options_refuse(signed, "auto-key-import\n")
+
+
+@pytest.mark.parametrize("option", ["keyring", "primary-keyring"])
+def test_gnupg_verify_ignores_a_keyring_the_home_gpg_conf_adds(
+    homes: dict[str, Path], option: str
+) -> None:
+    """Regression: a keyring a home's `gpg.conf` named authenticated its keys too."""
+    signed = _gnupg(homes["other"]).sign(_DATA).encode()
+
+    _assert_only_the_options_refuse(
+        signed, f"{option} extra.gpg\n", extra_keys=export_public_key(homes["other"])
+    )
