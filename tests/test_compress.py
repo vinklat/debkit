@@ -7,6 +7,7 @@ import io
 import lzma
 import random
 import struct
+import subprocess
 import tracemalloc
 import zlib
 from collections.abc import Buffer, Callable
@@ -14,6 +15,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from helpers.binaries import requires_binary
 from txstore import StorageException, StorageMetrics
 
 from debkit.repo.compress import (
@@ -37,7 +39,7 @@ def _ids(codec: Codec) -> str:
 
 
 @pytest.mark.parametrize("codec", CODECS, ids=_ids)
-def test_round_trip(codec: Codec) -> None:
+def test_codec_round_trips_data(codec: Codec) -> None:
     encoded = codec.compress(_DATA)
     assert (encoded != _DATA) is bool(codec.suffix)  # compressed unless uncompressed
     assert codec.decompress(encoded, len(_DATA)) == _DATA
@@ -353,3 +355,37 @@ def test_zstd_decompress_refuses_when_no_decoder_runs(
 
     with pytest.raises(CorruptStreamError, match="cannot run zstd"):
         zstd_decompress(_DATA, len(_DATA))
+
+
+# ---------------------------------------------------------------------------
+# zstd: the real decoder, for what a stand-in cannot show
+# ---------------------------------------------------------------------------
+
+
+def _zstd(data: bytes) -> bytes:
+    return subprocess.run(["zstd", "-c", "-q"], input=data, capture_output=True, check=True).stdout
+
+
+@requires_binary("zstd")
+def test_zstd_decompress_real_decoder_round_trips() -> None:
+    assert zstd_decompress(_zstd(_DATA), len(_DATA)) == _DATA
+
+
+@requires_binary("zstd")
+@pytest.mark.parametrize(
+    "encoded",
+    [lambda: _zstd(_DATA)[:-8], lambda: b"not a zstd frame" * 4],
+    ids=["truncated", "garbage"],
+)
+def test_zstd_decompress_real_decoder_refuses_a_bad_frame(encoded: Callable[[], bytes]) -> None:
+    with pytest.raises(CorruptStreamError, match="exited with status"):
+        zstd_decompress(encoded(), len(_DATA))
+
+
+@requires_binary("zstd")
+def test_zstd_decompress_real_decoder_stops_a_bomb_at_the_limit() -> None:
+    bomb = _zstd(bytes(_BOMB_SIZE))
+    assert len(bomb) < 1 << 16
+
+    with pytest.raises(SizeLimitError, match="past 1024 bytes"):
+        zstd_decompress(bomb, 1024)

@@ -19,6 +19,9 @@ CLEARSIGN_BEGIN = "-----BEGIN PGP SIGNED MESSAGE-----"
 SIGNATURE_BEGIN = "-----BEGIN PGP SIGNATURE-----"
 SIGNATURE_END = "-----END PGP SIGNATURE-----"
 ARMOR_HEADER_RE = re.compile(r"[A-Za-z]+: ")
+# Only the trusted keyring authenticates: a home's gpg.conf may neither fetch a missing signer's
+# key nor import one the signature carries, and so trust it -> [CRYPTO.md](CRYPTO.md#gpg).
+GPG_OPTIONS = ["--no-auto-key-retrieve", "--no-auto-key-locate", "--no-auto-key-import"]
 
 
 class GPGVerifyException(Exception):
@@ -124,7 +127,10 @@ class GnuPG:
         """
         try:
             self.gnupg = gnupg.GPG(
-                gnupghome=os.path.expanduser(home), keyring=keyring, env=child_env()
+                gnupghome=os.path.expanduser(home),
+                keyring=keyring,
+                options=list(GPG_OPTIONS),
+                env=child_env(),
             )
         except ValueError as exc:
             raise GPGVerifyException(f"Keyring error. {exc}") from exc

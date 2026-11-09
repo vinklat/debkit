@@ -157,13 +157,10 @@ def attach_storage_repo(
         verify_gpg=policy.verify_gpg,
         verify_digests=policy.verify_digests,
     )
-    repo_params.from_deb_source(url)
-
-    # `from_deb_source` sets the URL or raises
-    assert repo_params.url is not None
+    source_url = repo_params.from_deb_source(url)
 
     try:
-        storage = open_storage(pars, repo_params.url, create_path=create_path)
+        storage = open_storage(pars, source_url, create_path=create_path)
     except StorageException as exc:
         raise RepoReadException(str(exc)) from exc
     return storage, repo_params

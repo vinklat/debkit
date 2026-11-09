@@ -212,7 +212,7 @@ def _attach_state(
     """
     # `spec=Release` so the ownership gate's isinstance check sees a Release
     repo.release = MagicMock(spec=Release, name="Release")
-    repo.release.hash = release_hash
+    repo.release.content_sha256 = release_hash or None
     repo.release.is_loaded = bool(release_hash)
     paths = indices_paths if indices_paths is not None else ["dists/bookworm/Release"]
     repo.release.get_indices_paths.side_effect = lambda: list(paths)

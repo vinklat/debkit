@@ -15,12 +15,15 @@ from debkit.repo.params import (
     RepoParamsException,
     is_valid_arch,
     pool_path,
+    remove_prefix_from_path,
 )
 
 
 def test_componented_source_parses() -> None:
     p = RepoParams()
-    p.from_deb_source("https://example.com/debian bookworm main contrib")
+    assert p.from_deb_source("https://example.com/debian bookworm main contrib") == (
+        "https://example.com/debian"
+    )
     assert p.url == "https://example.com/debian"
     assert p.dist == "bookworm"
     assert p.components == ["main", "contrib"]
@@ -100,21 +103,6 @@ def test_indices_prefix_with_no_dist() -> None:
     """``dist=None`` must not produce ``dists/None`` (regression guard)."""
     p = RepoParams()
     assert p.indices_prefix == ""
-
-
-def test_equality() -> None:
-    a = RepoParams(dist="bookworm")
-    b = RepoParams(dist="bookworm")
-    assert a == b
-    a.url = "https://x"
-    assert a != b
-
-
-def test_equality_with_another_type_is_false() -> None:
-    """Regression: comparing with a non-RepoParams raised instead of answering False."""
-    p = RepoParams(dist="bookworm")
-    assert p != None  # noqa: E711
-    assert p not in [None, 1]
 
 
 _LAYOUTS = [
@@ -283,3 +271,16 @@ def test_pool_path_follows_the_debian_source_pool_layout(
     comp: str | None, source: str, filename: str, expected: str
 ) -> None:
     assert pool_path(comp, source, filename) == expected
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("dists/bookworm/main/binary-amd64/Packages", "main/binary-amd64/Packages"),
+        ("dists/bookwormish/Release", "dists/bookwormish/Release"),
+        ("pool/main/f/foo.deb", "pool/main/f/foo.deb"),
+    ],
+    ids=["under-prefix", "name-only-starts-alike", "elsewhere"],
+)
+def test_remove_prefix_from_path_strips_only_the_prefix_directory(path: str, expected: str) -> None:
+    assert remove_prefix_from_path(path, "dists/bookworm") == expected

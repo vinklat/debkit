@@ -17,7 +17,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from debkit.repo.gnupg import GnuPG, GPGVerifyException, cleartext_body
+from debkit.repo.gnupg import GPG_OPTIONS, GnuPG, GPGVerifyException, cleartext_body
 
 
 def _gnupg(passphrase: str | None = "pw") -> GnuPG:
@@ -46,7 +46,9 @@ def test_init_keyring_failure_raises() -> None:
 def test_init_opens_the_given_home_and_keyring() -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
         _gnupg()
-    gpg_cls.assert_called_once_with(gnupghome=".gnupg", keyring="trustedkeys.gpg", env=ANY)
+    gpg_cls.assert_called_once_with(
+        gnupghome=".gnupg", keyring="trustedkeys.gpg", options=GPG_OPTIONS, env=ANY
+    )
 
 
 def test_init_runs_gpg_without_debkit_variables(
@@ -78,7 +80,7 @@ def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.Monkey
     with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
         GnuPG("~/.gnupg", "trustedkeys.gpg", None)
     gpg_cls.assert_called_once_with(
-        gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg", env=ANY
+        gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg", options=GPG_OPTIONS, env=ANY
     )
 
 

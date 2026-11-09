@@ -68,7 +68,7 @@ def _make_action(*, storage: object = None) -> ActionSync:
     source.params.url = "fs:///src"
     source.params.verify_gpg = True
     source.release = MagicMock(spec=RootRelease(MagicMock(), make_params()))
-    source.release.hash = "hash1"
+    source.release.content_sha256 = "hash1"
     source.storage = MagicMock()
     source.build_sync_lists.return_value = SyncPlan(["pkg.deb"], [], set())
     source.sync.return_value = []
@@ -164,7 +164,7 @@ def test_sync_reloads_the_target_before_a_later_pass() -> None:
     hashes = iter(["hash1", "hash2", "hash2"])
 
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
-        _source(action).release.hash = next(hashes)
+        _source(action).release.content_sha256 = next(hashes)
 
     _source(action).load.side_effect = update
 
@@ -183,7 +183,7 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
     hashes = iter(f"hash{n}" for n in range(1, 100))
 
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
-        _source(action).release.hash = next(hashes)
+        _source(action).release.content_sha256 = next(hashes)
 
     _source(action).load.side_effect = update
 
@@ -209,7 +209,7 @@ def test_sync_commits_quietly_when_the_last_pass_finds_nothing_to_copy(
     hashes = iter(f"hash{n}" for n in range(1, 100))
 
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
-        _source(action).release.hash = next(hashes)
+        _source(action).release.content_sha256 = next(hashes)
 
     _source(action).load.side_effect = update
     work = SyncPlan(["pkg.deb"], [], set())
@@ -241,7 +241,7 @@ def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
     hashes = iter(["hash1", "hash2", "hash2"])
 
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
-        _source(action).release.hash = next(hashes)
+        _source(action).release.content_sha256 = next(hashes)
 
     _source(action).load.side_effect = update
     _dated_target_loads(action)
@@ -290,7 +290,7 @@ def test_sync_allow_release_rollback_warns_once_across_passes(
     hashes = iter(["hash1", "hash2", "hash2"])
 
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
-        _source(action).release.hash = next(hashes)
+        _source(action).release.content_sha256 = next(hashes)
 
     _source(action).load.side_effect = update
 

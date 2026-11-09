@@ -58,8 +58,13 @@ def add_signing_key(home: Path, name: str, passphrase: str = "") -> Path:
     return home
 
 
+def export_public_key(home: Path) -> bytes:
+    """The armored public keys `home` holds, as a keyserver would serve them."""
+    return _gpg(home, "--armor", "--export")
+
+
 def stop_gpg_agent(home: Path) -> None:
-    """Stop the agent `home` started, so no process outlives the test session."""
+    """Stop the agent and dirmngr `home` started, so no process outlives the test session."""
     subprocess.run(
-        ["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], check=False, capture_output=True
+        ["gpgconf", "--homedir", str(home), "--kill", "all"], check=False, capture_output=True
     )

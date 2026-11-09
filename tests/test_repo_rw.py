@@ -716,7 +716,7 @@ def _exception(name: str) -> type[BaseException]:
     )
 
 
-def test_a_neighbour_dist_that_does_not_load_degrades_on_every_documented_raise() -> None:
+def test_shared_root_neighbour_dist_load_failure_degrades_on_every_documented_raise() -> None:
     """`_NOT_LOADED` is kept by hand: an exception the load path documents but the tuple
     lacks would abort the sync of every other dist instead of keeping that dist's payloads."""
     documented = (

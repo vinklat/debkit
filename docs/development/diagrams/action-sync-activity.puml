@@ -55,9 +55,9 @@ partition "with maybe_transaction(target.storage)" {
       note right: commits the last pass;\nthe source is not read again
       break
     endif
-    :synced = source.release.hash;
+    :synced = source.release.content_sha256;
     :source.load(STRICT);
-    if (source.release.hash == synced?) then (yes)
+    if (source.release.content_sha256 == synced?) then (yes)
       break
     endif
     :load target again;

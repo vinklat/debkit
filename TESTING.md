@@ -74,7 +74,7 @@ not copied here.
 | Remove shared root | On a real root holding another dist, `remove` keeps a payload it lists, deletes one only the own dist lists, and keeps every payload while its index is missing → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Validation | Every documented boundary rule, success and failure. |
 | Crypto GPG | GPG verify and sign paths and the skip-verify branches. |
-| Crypto real gpg | `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring, right and wrong passphrase. |
+| Crypto real gpg | `tests/test_gnupg_real.py` on throwaway homes from `tests/helpers/gpg.py`: clearsigned and detached, tampered data, a signer outside the keyring and a home whose `gpg.conf` would retrieve or import its key, right and wrong passphrase, and the armor framing `cleartext_body` refuses. |
 | Crypto checksums | The checksum source order `Repo.verify_checksum` walks; hash-block parsing and `HexDigests` in `repo/hashes.py`. |
 | Crypto freshness | Each Release freshness rule. |
 

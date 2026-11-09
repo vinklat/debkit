@@ -40,6 +40,7 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 | Root Release save in `READ_SIGNED_UNVERIFIED` | Nothing signs it, and an unsigned save would drop the signatures it was read with → `ReleaseWriteException` (Write), before anything is written. |
 | Signing key | `--gnupg-sign-key` names it; unset, gpg picks `default-key` from the home's `gpg.conf`, else the first key in the trusted keyring whose secret the home holds. A key gpg cannot use creates no signature, refused as below. |
 | `sign(data, detach=False)` | Returns the signature (inline or detached) used when writing Release metadata; empty when gpg reports none created, as on a wrong passphrase, even though a failed clearsign prints its armor, and `Release.save` refuses an empty one → `ReleaseWriteException` (Write). |
+| Key retrieval | gpg runs with `--no-auto-key-retrieve`, `--no-auto-key-locate`, and `--no-auto-key-import`, so a home's `gpg.conf` can neither fetch a missing signer's key nor import one the signature carries; only the trusted keyring authenticates. |
 | Keyring cannot be loaded | → `GPGVerifyException` (Read). |
 | The `gpg` binary cannot be run | python-gnupg raises `OSError` → `GPGVerifyException` (Read). |
 | Invalid signature or malformed signed message | → `GPGVerifyException` (Read). |
@@ -54,6 +55,7 @@ hash-block layer over them is `repo/hashes.py`.
 | Item | Rule |
 | -- | -- |
 | Algorithms | `MD5Sum`, `SHA1`, `SHA256`, `SHA512`; `MD5Sum` exists for Debian compatibility and new behavior never relies on it alone. |
+| `SHA1` | A `SHA1`-only record verifies: debkit filters nothing from txstore's comparison list; how algorithms combine → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#digests); requiring `SHA256` or `SHA512` → [ROADMAP.md](ROADMAP.md#ideas). |
 | `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#digests). |
 | Non-overlapping, unknown, or mismatched digests | `verify_checksum` returns `False`; what each path raises or logs → [Verification failures](#verification-failures). |
 | Hash blocks | `parse_hash_block()` in `repo/hashes.py` splits a `Release` hash field, a `Checksums-<algorithm>` field, or a `Sources` `Files` field into `(digest, size, filename)` triples; a trailing partial run is dropped. |

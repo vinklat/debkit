@@ -46,8 +46,8 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
   end
 
   ActionSync -> Src: load(STRICT)
-  Src --> ActionSync: release.hash
-  break release.hash unchanged by the pass
+  Src --> ActionSync: release.content_sha256
+  break release.content_sha256 unchanged by the pass
     note over ActionSync: source settled
   end
 

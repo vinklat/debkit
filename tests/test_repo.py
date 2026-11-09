@@ -454,7 +454,7 @@ def test_snapshot_keeps_a_package_map_a_later_remove_changes_in_place() -> None:
 def test_diff_compares_packages_even_when_the_release_hashes_match() -> None:
     """A target load that skipped an unreadable index keeps the source's Release bytes."""
     source, target = _repo(), _repo()
-    source.release.hash = target.release.hash = "same"
+    source.release.content_sha256 = target.release.content_sha256 = "same"
     _with_component_package(source, _DEB, _DIGEST)
 
     diff = source.diff(target.snapshot())

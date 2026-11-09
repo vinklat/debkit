@@ -148,11 +148,14 @@ class RepoParams:
         self.url: str | None = None
         self.is_flat = False
 
-    def from_deb_source(self, deb_source: str | None) -> None:
+    def from_deb_source(self, deb_source: str | None) -> str:
         """Extract debian repo attributes from a deb source string.
 
         Args:
             deb_source: The deb source string to extract attributes from; None is refused.
+
+        Returns:
+            The source URL, also kept as `url`.
 
         Raises:
             RepoParamsException: If the deb source string is invalid.
@@ -188,19 +191,7 @@ class RepoParams:
             self.dist,
             self.components,
         )
-
-    def __eq__(self, other: object) -> bool:
-        """Check if this RepoParams is equal to another RepoParams.
-
-        Args:
-            other: The object to compare with.
-
-        Returns:
-            True if equal, False otherwise; NotImplemented for an object that is not a RepoParams.
-        """
-        if not isinstance(other, RepoParams):
-            return NotImplemented
-        return vars(self) == vars(other)
+        return url
 
     @staticmethod
     def arch_dir(arch: str) -> str:

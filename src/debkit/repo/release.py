@@ -32,10 +32,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# Fields for which bare unindented continuation tokens are folded onto the
-# previous line.  Hash-block fields (MD5Sum, SHA1, SHA256, SHA512, …) are
-# intentionally excluded: folding a stray token into a hash block shifts the
-# (digest, size, filename) triple alignment and silently maps wrong digests.
+# Fields whose bare unindented continuation tokens are folded onto the previous line; why hash
+# blocks are excluded -> `Release._fix_unindented_continuations`
 _CONTINUATION_FIELDS = frozenset({"Architectures", "Components"})
 
 # Largest Release file read when no signed Release records its size; it is read before its
@@ -156,7 +154,8 @@ class Release(HexDigests):
         filename: The filename of the release.
         found_indices_files: List of all found Release files.
         hashfuns: Available hexdigest algorithms in data.
-        hash: Hexdigest of a file content (for changes detection).
+        content_sha256: SHA-256 of the loaded file content, for change detection; None
+            until a load reads bytes.
         modified: Whether `save` has anything to write: set by a setup, or by whoever changes
             a loaded Release.
     """
@@ -193,7 +192,7 @@ class Release(HexDigests):
         self.fields: dict[str, str] = {}
         self.digests = {}
         self.hashfuns: list[str] = []
-        self.hash = ""
+        self.content_sha256: str | None = None
 
     def __repr__(self) -> str:
         """Return string representation of the Release object."""
@@ -262,12 +261,6 @@ class Release(HexDigests):
         Args:
             enc_data: The encoded data to parse.
 
-        Note:
-            Some repositories produce non-RFC-2822-compliant Release files where multi-value
-            fields span several lines without the required leading whitespace on continuation
-            lines.  ``_fix_unindented_continuations`` normalises such lines before the email
-            parser runs; see that method's docstring for the full failure chain this prevents.
-
         Raises:
             ReleaseReadException: A line is neither a field, a continuation, nor empty.
         """
@@ -295,7 +288,7 @@ class Release(HexDigests):
         # not survive from the previous parse
         self.digests = {}
         self.hashfuns = []
-        for hashfun in list(SUPPORT_HASH_LIST):
+        for hashfun in SUPPORT_HASH_LIST:
             if hashfun in self.fields:
                 self.hashfuns.append(hashfun)
                 for hashstr, size, filename in parse_hash_block(self.fields[hashfun]):
@@ -340,7 +333,7 @@ class Release(HexDigests):
         Returns:
             True after a successful `load`, `load_component`, or parse of loaded bytes.
         """
-        return bool(self.hash)
+        return self.content_sha256 is not None
 
     def _parse_loaded(self, data: bytes) -> None:
         """Parse loaded Release bytes and record their hash for change detection.
@@ -351,18 +344,18 @@ class Release(HexDigests):
         self._reset_parsed()
         if data:
             self.parse(data)
-            self.hash = hashlib.sha256(data).hexdigest()
+            self.content_sha256 = hashlib.sha256(data).hexdigest()
         if self.hashfuns:
             logger.debug("Available hexdigests: %s", self.hashfuns)
 
-    def load_component(self, comp: str, arch: str, root_release: RootRelease) -> bool:
+    def load_component(self, comp: str, arch: str, root_release: HexDigests) -> bool:
         """Load the per-component Release of one architecture.
 
         Args:
             comp: The component to load.
             arch: The architecture to load.
             root_release: The root Release listing its digests, checked when digest verification
-                is on.
+                is on; only its digest table is read.
 
         Raises:
             ValueError: `comp` or `arch` is empty.

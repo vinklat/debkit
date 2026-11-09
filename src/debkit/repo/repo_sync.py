@@ -135,7 +135,10 @@ class RepoSync(Repo):
             diff = self.diff(target_repo.snapshot())
             # an index-only source change (i18n, dep11) leaves the package diff empty, and a
             # target index skipped as unreadable leaves the Release hashes equal
-            forced = self.release.hash != target_repo.release.hash or not diff.is_empty()
+            forced = (
+                self.release.content_sha256 != target_repo.release.content_sha256
+                or not diff.is_empty()
+            )
             copy_list, delete_list = self._plan_payloads(
                 diff, indices, target_repo, existing_files, can_list=can_list
             )

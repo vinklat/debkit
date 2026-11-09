@@ -197,10 +197,10 @@ class ActionSync(Action):
         for _ in range(MAX_UPDATED_REPO_RETRIES - 1):
             if not self._sync_pass():
                 return
-            synced_hash = self.source_repo.release.hash
+            synced_hash = self.source_repo.release.content_sha256
             logger.info("---------- Retrieve load to verify source repo changes...")
             self.source_repo.load(IndexLoad.STRICT)
-            if self.source_repo.release.hash == synced_hash:
+            if self.source_repo.release.content_sha256 == synced_hash:
                 return
             logger.info("Source repo modified during synchronisation! Repeat sync...")
             # reads go through the transaction, so the target now describes the bytes the

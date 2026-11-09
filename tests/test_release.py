@@ -888,7 +888,7 @@ def test_load_root_without_a_keyring_hashes_the_body_the_source_hashes() -> None
     )
     r.load()
 
-    assert r.hash == hashlib.sha256(_INRELEASE_BODY).hexdigest()
+    assert r.content_sha256 == hashlib.sha256(_INRELEASE_BODY).hexdigest()
 
 
 def test_load_root_without_a_keyring_refuses_a_malformed_inrelease() -> None:
@@ -1090,11 +1090,11 @@ def test_load_component_caps_a_release_whose_recorded_size_is_past_the_cap(
         Release(storage, params).load_component("main", "amd64", root_release=root_release)
 
 
-def test_a_reload_of_an_empty_release_drops_the_previous_parse() -> None:
+def test_release_reload_of_an_empty_file_drops_the_previous_parse() -> None:
     """Regression: an empty reload kept the old hash, so a sync read it as unchanged."""
     r = Release(make_storage_mock(), _params())
     r._parse_loaded(b"Origin: x\nSHA256:\n cccc 16 main/binary-amd64/Packages\n")
-    assert r.hash
+    assert r.content_sha256
 
     r.filename = "dists/bookworm/main/binary-amd64/Release"
     r._parse_loaded(b"")

@@ -1027,6 +1027,18 @@ def test_insert_of_identical_bytes_into_another_dist_shares_the_pool_object(
     assert b"foo" in (tmp_path / "repo/dists/trixie/main/binary-amd64/Packages").read_bytes()
 
 
+def test_insert_real_deb_indexes_its_control_fields_and_payload_digest(tmp_path: Path) -> None:
+    """No stub between the upload and the index: the stanza is what the real `DebFile` read."""
+    deb = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: amd64\nDepends: libc6\n")
+    _insert_deb(tmp_path, "bookworm", "foo_1.0_amd64.deb", deb)
+
+    index = (tmp_path / "repo/dists/bookworm/main/binary-amd64/Packages").read_text()
+    assert "Depends: libc6\n" in index
+    assert f"Filename: {pool_path('main', 'foo', 'foo_1.0_amd64.deb')}\n" in index
+    assert f"Size: {len(deb)}\n" in index
+    assert f"SHA256: {hashlib.sha256(deb).hexdigest()}\n" in index
+
+
 # ---------------------------------------------------------------------------
 # Concurrent writers: the target is read under the transaction lock
 # ---------------------------------------------------------------------------
