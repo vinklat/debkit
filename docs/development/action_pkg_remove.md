@@ -34,7 +34,7 @@ in [examples.md](../guides/examples.md#remove-packages).
   filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
   listed by every binary arch index. The rewritten indices reach storage only through
   `target.save()`, and only when the diff is non-empty.
-- Every dist of a componented root shares `pool/`, so `remove_pkg` asks `Repo.shared_root()` which
+- Every dist of a componented root shares `pool/`, so `remove_pkg` asks `RepoRW.shared_root()` which
   payloads another dist claims and deletes only what `SharedRoot.deletable()` allows; that lists the
   whole root and loads every other dist, as a sync does →
   [VALIDATION.md](../../VALIDATION.md#index-selection).

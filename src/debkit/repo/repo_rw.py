@@ -15,6 +15,13 @@ from txstore import StorageException, StorageNull, compare_digests, normalize_di
 from debkit.repo import Repo
 from debkit.repo.component import Component
 from debkit.repo.params import FLAT_COMPONENT, SOURCE_ARCH
+from debkit.repo.shared_root import (
+    ConsistencyLists,
+    SharedRoot,
+    missing_and_unclaimed,
+    shared_root_claims,
+    unlisted_shared_root,
+)
 
 if TYPE_CHECKING:
     from txstore import Storage
@@ -61,7 +68,6 @@ class RepoRW(Repo):
         if fields is not None and self.params.is_flat:
             fields = {key: value for key, value in fields.items() if key != "Components"}
         self.release.setup(fields=fields)
-        self._selection = None
 
     def save(self) -> bool:
         """Save the repository.
@@ -140,7 +146,7 @@ class RepoRW(Repo):
         """
         return [
             arch
-            for arch in self.selection.archs
+            for arch in self.get_archs()
             if arch != SOURCE_ARCH and (arch or self.params.is_flat)
         ]
 
@@ -187,7 +193,7 @@ class RepoRW(Repo):
         """
         return source_storage.transfer(path_src, self.storage, path_dst=path_dst)
 
-    def holds(self, path: str, digests: dict[str, str]) -> bool:
+    def metadata_agrees(self, path: str, digests: dict[str, str]) -> bool:
         """Report whether the stored metadata of `path` records `digests`.
 
         The digest-skip decision shared by payloads and indices: one metadata round trip,
@@ -208,7 +214,7 @@ class RepoRW(Repo):
         """Report whether this repository's loaded root Release records `digests` for an index.
 
         The Release is already loaded, so its digest block costs nothing, while
-        `holds` is a round trip per key and a full Debian Release lists hundreds of
+        `metadata_agrees` is a round trip per key and a full Debian Release lists hundreds of
         indices -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
@@ -235,6 +241,59 @@ class RepoRW(Repo):
         if not self.storage.exists(path):
             return None
         return self._read_digests(path)
+
+    def shared_root(
+        self, existing: set[str] | None = None, *, with_digests: bool = False
+    ) -> SharedRoot:
+        """Collect what the other dists sharing this repository's root claim.
+
+        A flat layout is never listed, since it has no `dists/` tree to share
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Args:
+            existing: Paths this repository's storage listing returned; None lists it, so a
+                caller that already listed it judges claims against the same listing.
+            with_digests: Also collect the digests the other dists record, for a caller that
+                judges a payload's bytes. Defaults to False.
+
+        Returns:
+            The claims; unknown when the storage cannot list, so only the own index tree is
+            deletable.
+        """
+        return shared_root_claims(self.storage, self.params, existing, with_digests=with_digests)
+
+    def consistency_lists(self, *, with_digests: bool = False) -> ConsistencyLists:
+        """List what this repository's own storage lacks and what it holds unclaimed.
+
+        Missing are the payloads and the parsed component indices the listing lacks:
+        the root Release files were just read and nothing is probed, so a listing that
+        disagrees with a read cannot make them missing. Orphans are listed paths that
+        neither the package set nor the index set holds, and no other dist sharing the root
+        claims -> [CONFIG.md](CONFIG.md#check).
+
+        Args:
+            with_digests: Also collect the digests the other dists record, for a caller that
+                judges a corrupt payload. Defaults to False.
+
+        Returns:
+            Missing and orphan paths, sorted, and the shared root claims from the same
+            listing; both lists empty and the claims unknown when the storage cannot list.
+        """
+        try:
+            existing_files = set(self.storage.list())
+        except NotImplementedError:
+            return ConsistencyLists([], [], unlisted_shared_root(self.params))
+
+        indices = self._get_indices()
+        missing, orphans = missing_and_unclaimed(self._payload_files(), indices, existing_files)
+        shared = self.shared_root(existing_files, with_digests=with_digests)
+        orphans = {file for file in orphans if shared.deletable(file)}
+        parsed = {
+            path for component in self.components.values() for path in component.get_indices_paths()
+        }
+        root_files = set(self.release.get_indices_paths())
+        missing |= (parsed & indices.keys()) - root_files - existing_files
+        return ConsistencyLists(sorted(missing), sorted(orphans), shared)
 
     def check(self, *, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
         """Check the repository against its own indices.
@@ -267,18 +326,21 @@ class RepoRW(Repo):
 
             try:
                 valid, digests = self._verify_file(file, progress=(cnt, len(payloads)))
-                if valid and fix:
-                    self.record_digests(file, digests)
-                elif not valid:
-                    logger.warning("Checksum verify failed: %s", file)
-                    failed += 1
-                    if fix and shared.corrupt_deletable(file, digests):
-                        self.delete(file)
-                        fixed += 1
-                    elif fix:
-                        logger.warning(
-                            "Keep: %s (another dist sharing the root may record its bytes)", file
-                        )
+                if valid:
+                    if fix:
+                        self.record_digests(file, digests)
+                    continue
+                logger.warning("Checksum verify failed: %s", file)
+                failed += 1
+                if not fix:
+                    continue
+                if shared.corrupt_deletable(file, digests):
+                    self.delete(file)
+                    fixed += 1
+                else:
+                    logger.warning(
+                        "Keep: %s (another dist sharing the root may record its bytes)", file
+                    )
             except StorageException as exc:
                 logger.error("Error checking file: %s: %s", file, exc)
                 failed += 1

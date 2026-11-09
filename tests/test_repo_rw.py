@@ -2,29 +2,42 @@
 
 from __future__ import annotations
 
+import builtins
+import gzip
 import hashlib
+import importlib
 import inspect
+import logging
+import pkgutil
 import re
+from collections.abc import Callable
 from datetime import UTC
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import cast
+from typing import IO, cast
 from unittest.mock import MagicMock, call
 
 import pytest
+import txstore
 from helpers import trees
 from helpers.factories import make_package, make_params, make_storage_mock
 from helpers.trees import payload_path, write_dist
 from txstore import Storage, StorageException, StorageFS
 
 import debkit.repo as repo_package
-import debkit.repo.release as release_module
-from debkit.repo import _NOT_LOADED, Repo, SharedRoot, _claims_of, _listed_slots, shared_root_claims
+from debkit.repo import Repo
 from debkit.repo.component import Component, IndexLoad
 from debkit.repo.params import RepoParams
 from debkit.repo.release import RootRelease
 from debkit.repo.repo_rw import CheckReport, RepoRW
 from debkit.repo.repo_sync import RepoSync
+from debkit.repo.shared_root import (
+    _NOT_LOADED,
+    SharedRoot,
+    _claims_of,
+    _listed_slots,
+    shared_root_claims,
+)
 
 
 def _repo() -> tuple[RepoRW, MagicMock]:
@@ -428,12 +441,21 @@ def test_insert_into_a_loaded_multi_arch_flat_repo_keeps_every_package(tmp_path:
 
 
 class _FaultyFS(StorageFS):
-    """`StorageFS` whose reads or deletes of chosen paths fail, recording metadata writes."""
+    """`StorageFS` whose reads, deletes, or metadata writes of chosen paths fail, recording
+    metadata writes."""
 
-    def __init__(self, base_dir: str, *, unreadable: str = "", undeletable: str = "") -> None:
+    def __init__(
+        self,
+        base_dir: str,
+        *,
+        unreadable: str = "",
+        undeletable: str = "",
+        unwritable: str = "",
+    ) -> None:
         super().__init__(base_dir)
         self.unreadable = unreadable
         self.undeletable = undeletable
+        self.unwritable = unwritable
         self.metadata_writes: list[tuple[str, dict[str, str], str | None]] = []
 
     def transfer(
@@ -453,6 +475,8 @@ class _FaultyFS(StorageFS):
         super().delete(path)
 
     def add_metadata(self, path: str, metadata: dict[str, str], acl: str | None = None) -> None:
+        if path == self.unwritable:
+            raise StorageException(f"denied writing metadata of {path}")
         self.metadata_writes.append((path, metadata, acl))
 
 
@@ -653,6 +677,21 @@ def _documented_raises(function: object) -> set[str]:
     return set(re.findall(r"^\s{4}(\w+):", section, flags=re.MULTILINE))
 
 
+def _exception(name: str) -> type[BaseException]:
+    """Resolve an exception a docstring names, wherever in `debkit.repo` or txstore it lives."""
+    modules = [
+        importlib.import_module(f"debkit.repo.{info.name}")
+        for info in pkgutil.iter_modules(repo_package.__path__)
+    ]
+    for module in (repo_package, *modules, txstore, builtins):
+        found = getattr(module, name, None)
+        if isinstance(found, type) and issubclass(found, BaseException):
+            return found
+    pytest.fail(
+        f"{name} in a Raises: section is no exception debkit.repo, txstore, or Python defines"
+    )
+
+
 def test_a_neighbour_dist_that_does_not_load_degrades_on_every_documented_raise() -> None:
     """`_NOT_LOADED` is kept by hand: an exception the load path documents but the tuple
     lacks would abort the sync of every other dist instead of keeping that dist's payloads."""
@@ -662,8 +701,7 @@ def test_a_neighbour_dist_that_does_not_load_degrades_on_every_documented_raise(
         | _documented_raises(RootRelease.load)
     )
 
-    namespace = vars(repo_package) | vars(release_module)
-    undegraded = {name for name in documented if not issubclass(namespace[name], _NOT_LOADED)}
+    undegraded = {name for name in documented if not issubclass(_exception(name), _NOT_LOADED)}
 
     assert documented
     assert undegraded == set()
@@ -777,6 +815,53 @@ def test_check_fix_records_each_verified_digest_as_metadata(tmp_path: Path) -> N
     assert all(digests["SHA256"] and acl is None for _, digests, acl in storage.metadata_writes)
 
 
+def test_check_fix_counts_a_failed_digest_record_and_goes_on(tmp_path: Path) -> None:
+    """A metadata write that fails is a storage error like a failed read: counted, not raised."""
+    storage = _FaultyFS(str(tmp_path), unwritable=_FOO)
+    repo = _checked(tmp_path, storage)
+
+    report = repo.check(fix=True)
+
+    assert (report.failed, report.fixed) == (1, 0)
+    assert [path for path, _, _ in storage.metadata_writes] == [_BAR]
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [({"SHA256": "aa"}, True), ({"SHA256": "bb"}, False), ({}, False)],
+    ids=["match", "mismatch", "no-metadata"],
+)
+def test_metadata_agrees_reads_only_the_stored_metadata(
+    stored: dict[str, str], expected: bool
+) -> None:
+    storage = make_storage_mock()
+    storage.get_metadata.return_value = stored
+    repo = RepoRW(storage, make_params())
+
+    assert repo.metadata_agrees(_FOO, {"SHA256": "aa"}) is expected
+    storage.get_metadata.assert_called_once_with(_FOO)
+    storage.get.assert_not_called()
+    storage.get_stream.assert_not_called()
+
+
+def test_record_digests_writes_them_as_object_metadata() -> None:
+    storage = make_storage_mock()
+    repo = RepoRW(storage, make_params())
+
+    repo.record_digests(_FOO, {"SHA256": "aa"})
+
+    storage.add_metadata.assert_called_once_with(_FOO, {"SHA256": "aa"})
+
+
+def test_record_digests_propagates_a_storage_failure() -> None:
+    storage = make_storage_mock()
+    storage.add_metadata.side_effect = StorageException("denied")
+    repo = RepoRW(storage, make_params())
+
+    with pytest.raises(StorageException, match="denied"):
+        repo.record_digests(_FOO, {"SHA256": "aa"})
+
+
 def test_check_without_fix_writes_no_metadata(tmp_path: Path) -> None:
     """Verification is read-only: only `--fix` records digests."""
     storage = _FaultyFS(str(tmp_path))
@@ -785,6 +870,56 @@ def test_check_without_fix_writes_no_metadata(tmp_path: Path) -> None:
     repo.check()
 
     assert storage.metadata_writes == []
+
+
+class _UnreadableIndexFS(StorageFS):
+    """`StorageFS` whose bullseye binary index exists but fails to read."""
+
+    def get_stream(self, path: str) -> IO[bytes]:
+        if path.startswith("dists/bullseye/main/binary-amd64/Packages"):
+            raise StorageException(f"backend down reading {path}")
+        return super().get_stream(path)
+
+
+def _unreadable_release_line(base: Path) -> None:
+    release = base / "dists/bullseye/Release"
+    release.write_bytes(b"no colon line\n" + release.read_bytes())
+
+
+def _stanza_without_filename(base: Path) -> None:
+    index = base / "dists/bullseye/main/binary-amd64/Packages.gz"
+    stanzas = gzip.decompress(index.read_bytes()).replace(b"Filename:", b"Xilename:")
+    index.write_bytes(gzip.compress(stanzas, mtime=0))
+
+
+@pytest.mark.parametrize(
+    ("damage", "storage_class", "reason"),
+    [
+        (lambda base: None, _UnreadableIndexFS, "backend down"),
+        (_unreadable_release_line, StorageFS, "unreadable line"),
+        (_stanza_without_filename, StorageFS, "Filename"),
+    ],
+    ids=["index-read-fails", "release-unreadable-line", "stanza-without-filename"],
+)
+def test_shared_root_is_unknown_while_another_dist_does_not_load(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    damage: Callable[[Path], None],
+    storage_class: type[StorageFS],
+    reason: str,
+) -> None:
+    """Each way a neighbour fails to load leaves its payloads unknown instead of aborting."""
+    write_dist(tmp_path, "bookworm", {"foo": "2"})
+    write_dist(tmp_path, "bullseye", {"bar": "1"})
+    damage(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        shared = RepoRW(storage_class(str(tmp_path)), make_params()).shared_root()
+
+    assert not shared.complete
+    assert not shared.deletable(payload_path("baz", "1"))
+    assert "Dist bullseye shares the target root but did not load" in caplog.text
+    assert reason in caplog.text
 
 
 def test_shared_root_is_unknown_while_another_dist_lists_an_unsafe_component(
@@ -811,8 +946,8 @@ def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root
 
 
 def test_binary_archs_reads_the_release_setup_just_wrote() -> None:
-    """Insert into a new repo sets up its Release without loading one, so `setup` drops a
-    selection resolved against the empty Release before it."""
+    """Insert into a new repo sets up its Release without loading one, so the arches come
+    from the Release `setup` just wrote, not from the empty one before it."""
     repo = RepoRW(make_storage_mock(), make_params())
     assert repo.binary_archs() == []
 

@@ -7,27 +7,25 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Collection, Generator, Iterable, Mapping
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
-from txstore import StorageException, compare_digests, is_unsafe_path
+from txstore import StorageException, is_unsafe_path
 
-from debkit.repo.component import Component, ComponentException, IndexLoad
-from debkit.repo.gnupg import GPGVerifyException
-from debkit.repo.hashes import ChecksumException, has_sha, parse_size
+from debkit.repo.component import Component, IndexLoad
+from debkit.repo.hashes import parse_size
 from debkit.repo.index_selection import select_index_entry
 from debkit.repo.package import PackageException
-from debkit.repo.packages import PackagesException, diff_packages
+from debkit.repo.packages import diff_packages
 from debkit.repo.params import (
     ARCH_ANY,
     FLAT_COMPONENT,
-    SOURCE_ARCH,
     RepoParams,
     is_safe_name,
     is_valid_arch,
 )
-from debkit.repo.release import ROOT_RELEASE_KEYS, Release, ReleaseReadException, RootRelease
+from debkit.repo.release import ROOT_RELEASE_KEYS, Release, RootRelease
 from debkit.repo.repo_diff import RepoDiff
 
 if TYPE_CHECKING:
@@ -45,7 +43,7 @@ type RepoSnapshot = dict[tuple[str, str], dict[str, Package]]
 
 # a binary or source index key below its component, `binary-<arch>/Packages[.<ext>]` or
 # `source/Sources[.<ext>]`; a component may hold `/`, so the key is matched below a known one
-_INDEX_TAIL = re.compile(r"(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?")
+INDEX_TAIL = re.compile(r"(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?")
 
 
 @dataclass(frozen=True)
@@ -105,9 +103,9 @@ class Repo:
         self.gpg = gpg
         self.release = RootRelease(storage, params, gpg=gpg)
         self.components: dict[str, Component] = {}
-        # resolved from the params and the root Release on first use, and again after the
-        # Release is loaded or set up, so a warning about a Release token is logged once
-        self._selection: _Selection | None = None
+        # Release-token lines already logged. A sync reloads its source after each pass and
+        # builds the index set again, so each is logged once per repository
+        self._release_lines_logged: set[str] = set()
         # payloads reported as Release-owned. Building the package set again in one run, as a
         # sync and its check do, reports each once
         self._owned_payloads_warned: set[str] = set()
@@ -136,6 +134,19 @@ class Repo:
             for arch, packages in component.packages.items()
         }
 
+    def _log_once(self, level: int, msg: str, *args: object) -> None:
+        """Log a line about the root Release unless this repository already logged it.
+
+        Args:
+            level: The logging level.
+            msg: The message format.
+            *args: The format arguments.
+        """
+        line = msg % args
+        if line not in self._release_lines_logged:
+            self._release_lines_logged.add(line)
+            logger.log(level, line)
+
     def get_components(self) -> Generator[str]:
         """Get the components of the repo.
 
@@ -155,13 +166,20 @@ class Repo:
                 if is_safe_name(name):
                     names.append(name)
                 else:
-                    logger.warning("Release component %r is not a safe name. Skipped.", name)
+                    self._log_once(
+                        logging.WARNING, "Release component %r is not a safe name. Skipped.", name
+                    )
             # a flat layout names one index file whatever the component, so a second slot
             # over it would save last and drop what the first one changed
             # -> [VALIDATION.md](VALIDATION.md#repository-index-paths)
             if self.params.is_flat:
                 if len(names) > 1:
-                    logger.warning("Flat Release lists components %s; using %r.", names, names[0])
+                    self._log_once(
+                        logging.WARNING,
+                        "Flat Release lists components %s; using %r.",
+                        names,
+                        names[0],
+                    )
                 names = names[:1] or [FLAT_COMPONENT]
             yield from names
 
@@ -183,40 +201,13 @@ class Repo:
             yield from self.params.archs
             return
 
-        yield from self._select_archs(list(self.release_archs()), self.get_components())
-
-    @property
-    def selection(self) -> _Selection:
-        """The selected components and architectures, resolved once per loaded Release.
-
-        Returns:
-            What `get_components`, `get_archs`, and `release_archs` yield, each read once.
-        """
-        if self._selection is None:
-            components = tuple(self.get_components())
-            declared = list(self.release_archs())
-            archs = tuple(self._select_archs(declared, components))
-            self._selection = _Selection(components, archs, frozenset(archs) | set(declared))
-        return self._selection
-
-    def _select_archs(self, declared: list[str], components: Iterable[str]) -> list[str]:
-        """Pick the architectures from the selection, the Release tokens, or its indices.
-
-        Args:
-            declared: What `release_archs` yields.
-            components: The selected components, read only for a componented Release that
-                declares no architecture.
-
-        Returns:
-            The architecture names, in selection or Release order.
-        """
-        if isinstance(self.params.archs, list) and len(self.params.archs) > 0:
-            return list(self.params.archs)
-        if declared or "Architectures" in self.release.fields:
-            return declared
-        if self.params.is_flat:
-            return [""]
-        return self._listed_binary_archs(components)
+        archs = list(self.release_archs())
+        if archs or "Architectures" in self.release.fields:
+            yield from archs
+        elif self.params.is_flat:
+            yield ""
+        else:
+            yield from self._listed_binary_archs(self.get_components())
 
     def _listed_binary_archs(self, components: Iterable[str]) -> list[str]:
         """Get the binary architectures the root Release lists a `Packages` index for.
@@ -236,18 +227,24 @@ class Repo:
             for key in self.release.digests:
                 if not key.startswith(prefix):
                     continue
-                match = _INDEX_TAIL.fullmatch(key[len(prefix) :])
+                match = INDEX_TAIL.fullmatch(key[len(prefix) :])
                 if match is None or match["arch"] is None:
                     continue
                 arch = match["arch"]
                 if arch == ARCH_ANY:
                     continue
                 if not is_valid_arch(arch):
-                    logger.warning("%r in a Release index path is not an architecture.", arch)
+                    self._log_once(
+                        logging.WARNING, "%r in a Release index path is not an architecture.", arch
+                    )
                     continue
                 archs.add(arch)
         if archs:
-            logger.info("Release declares no Architectures; using its indices: %s", sorted(archs))
+            self._log_once(
+                logging.INFO,
+                "Release declares no Architectures; using its indices: %s",
+                sorted(archs),
+            )
         return sorted(archs)
 
     def release_archs(self) -> Generator[str]:
@@ -272,7 +269,12 @@ class Repo:
             if arch == ARCH_ANY:
                 continue
             if not is_valid_arch(arch):
-                logger.warning("%r in Release %s is not an architecture. Skipped.", arch, field)
+                self._log_once(
+                    logging.WARNING,
+                    "%r in Release %s is not an architecture. Skipped.",
+                    arch,
+                    field,
+                )
                 continue
             yield arch
 
@@ -302,13 +304,14 @@ class Repo:
             self.release.load()
         except StorageException as exc:
             raise RepoReadException(f"{exc}") from exc
-        self._selection = None
 
         if not self.params.is_flat and "Components" not in self.release.fields:
-            logger.warning("Components field not found in Release of non-flat repo.")
+            self._log_once(
+                logging.WARNING, "Components field not found in Release of non-flat repo."
+            )
 
         # the arch set reads only the selection and the root Release, so it is resolved once
-        archs = list(self.selection.archs)
+        archs = list(self.get_archs())
         # a strict load that selects no architecture loads nothing, and a sync would plan
         # every target index and payload away -> [VALIDATION.md](VALIDATION.md#architectures)
         if mode is IndexLoad.STRICT and not archs:
@@ -319,7 +322,7 @@ class Repo:
         # a reload replaces the components: one the new Release drops must not survive
         self.components = {}
         pkgs_total = 0
-        for component_name in self.selection.components:
+        for component_name in self.get_components():
             component = Component(self.storage, self.params, self.release, component_name)
 
             pkgs_total += component.load(archs, mode)
@@ -512,10 +515,9 @@ class Repo:
         """
         ret: dict[str, IndexTarget] = {}
 
-        selection = self.selection
-        components = None if self.params.is_flat else set(selection.components)
-        archs = set(selection.archs)
-        arch_universe = set(selection.arch_universe)
+        components = None if self.params.is_flat else set(self.get_components())
+        archs = set(self.get_archs())
+        arch_universe = archs | set(self.release_archs())
         excludes = self.params.indices_exclude or []
 
         def selected(key: str) -> bool:
@@ -615,376 +617,3 @@ class Repo:
             ret.add(path)
 
         return ret
-
-    @staticmethod
-    def _missing_and_unclaimed(
-        payloads: set[str],
-        indices: Collection[str],
-        existing_files: set[str],
-        planned: set[str] | None = None,
-    ) -> tuple[set[str], set[str]]:
-        """Compare a target listing with the package and index sets.
-
-        Args:
-            payloads: Every payload path the package set holds.
-            indices: Every index path the index set holds.
-            existing_files: Paths the target listing returned.
-            planned: Paths a package diff already copies or removes, left out of both results.
-                Defaults to None (nothing planned).
-
-        Returns:
-            The payloads the listing lacks, and the listed paths neither set holds.
-        """
-        planned = planned or set()
-        repair = payloads - planned - existing_files
-        purge = {file for file in existing_files - payloads - planned if file not in indices}
-        return repair, purge
-
-    def consistency_lists(self, *, with_digests: bool = False) -> ConsistencyLists:
-        """List what this repository's own storage lacks and what it holds unclaimed.
-
-        Missing are the payloads and the parsed component indices the listing lacks:
-        the root Release files were just read and nothing is probed, so a listing that
-        disagrees with a read cannot make them missing. Orphans are listed paths that
-        neither the package set nor the index set holds, and no other dist sharing the root
-        claims -> [CONFIG.md](CONFIG.md#check).
-
-        Args:
-            with_digests: Also collect the digests the other dists record, for a caller that
-                judges a corrupt payload. Defaults to False.
-
-        Returns:
-            Missing and orphan paths, sorted, and the shared root claims from the same
-            listing; both lists empty and the claims unknown when the storage cannot list.
-        """
-        try:
-            existing_files = set(self.storage.list())
-        except NotImplementedError:
-            return ConsistencyLists([], [], _unlisted_shared_root(self.params))
-
-        indices = self._get_indices()
-        missing, orphans = self._missing_and_unclaimed(
-            self._payload_files(), indices, existing_files
-        )
-        shared = shared_root_claims(
-            self.storage, self.params, existing_files, with_digests=with_digests
-        )
-        orphans = {file for file in orphans if shared.deletable(file)}
-        parsed = {
-            path for component in self.components.values() for path in component.get_indices_paths()
-        }
-        root_files = set(self.release.get_indices_paths())
-        missing |= (parsed & indices.keys()) - root_files - existing_files
-        return ConsistencyLists(sorted(missing), sorted(orphans), shared)
-
-    def shared_root(self) -> SharedRoot:
-        """Collect what the other dists sharing this repository's root claim.
-
-        A flat layout is never listed, since it has no `dists/` tree to share
-        -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-        Returns:
-            The claims; unknown when the storage cannot list, so only the own index tree is
-            deletable.
-        """
-        if not _has_dists_tree(self.params):
-            return _FLAT_ROOT
-        try:
-            existing_files = set(self.storage.list())
-        except NotImplementedError:
-            return _unlisted_shared_root(self.params)
-        return shared_root_claims(self.storage, self.params, existing_files)
-
-
-class _Selection(NamedTuple):
-    """The components and architectures a repository selects from its root Release.
-
-    Attributes:
-        components: The selected components.
-        archs: The selected architectures.
-        arch_universe: Every architecture the selection or the Release names.
-    """
-
-    components: tuple[str, ...]
-    archs: tuple[str, ...]
-    arch_universe: frozenset[str]
-
-
-class SharedRoot(NamedTuple):
-    """What the other dists of a shared target root claim.
-
-    The rules are in [VALIDATION.md](VALIDATION.md#index-selection).
-
-    Attributes:
-        prefix: The synced dist's own index tree, `dists/<dist>/`, or empty for a flat layout.
-        claimed: Paths another dist holds: its `dists/<dist>/` tree and the payloads its indices
-            list.
-        complete: Whether every other dist loaded, so `claimed` holds all of its payloads.
-        recorded: Payload path -> the digests every index of every other dist records for it;
-            None when the digests were not collected.
-    """
-
-    prefix: str
-    claimed: frozenset[str]
-    complete: bool
-    recorded: Mapping[str, tuple[dict[str, str], ...]] | None = None
-
-    def deletable(self, path: str) -> bool:
-        """Report whether deleting `path` from the root leaves every other dist's claims intact.
-
-        Args:
-            path: Storage path in the target root.
-
-        Returns:
-            False for a path another dist claims, and for any path outside the own index tree
-            while another dist's payloads are unknown.
-        """
-        if path in self.claimed:
-            return False
-        return self.complete or path.startswith(self.prefix)
-
-    def corrupt_deletable(self, path: str, digests: dict[str, str]) -> bool:
-        """Report whether a payload whose bytes fail the own indices may be deleted.
-
-        Another dist's index may record exactly these bytes, so they are kept for it; one that
-        records other bytes loses nothing, since the bytes are wrong for it too. A record with
-        no SHA digest cannot tell, so it keeps them
-        -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-        Args:
-            path: Storage path of the payload in the target root.
-            digests: The digests of the bytes the root holds at `path`.
-
-        Returns:
-            False while another dist's payloads are unknown, when a record of `path` carries no
-            SHA digest, and when one records `digests`; without collected digests, what
-            `deletable` says, which never deletes a claimed path.
-        """
-        if self.recorded is None:
-            return self.deletable(path)
-        if not self.complete:
-            return False
-        records = self.recorded.get(path, ())
-        if not all(has_sha(record) for record in records):
-            return False
-        return not any(compare_digests(record, digests) for record in records)
-
-    def replaceable(self, path: str, digests: dict[str, str]) -> bool:
-        """Report whether a held payload may be overwritten with the bytes the own source records.
-
-        Another dist's index pinning other bytes at the same key would serve its clients a hash
-        mismatch once they change; a record with no SHA digest cannot tell, so it refuses too
-        -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-        Args:
-            path: Storage path of the payload in the target root.
-            digests: The digests the own source records for `path`.
-
-        Returns:
-            True when no other dist records `path`, or every record of it carries a SHA digest
-            matching `digests`; False while another dist's payloads are unknown.
-        """
-        if not self.complete:
-            return False
-        if self.recorded is None:
-            return path not in self.claimed
-        records = self.recorded.get(path, ())
-        return all(has_sha(record) and compare_digests(record, digests) for record in records)
-
-
-class ConsistencyLists(NamedTuple):
-    """What `Repo.consistency_lists` found in the repository's own storage listing.
-
-    Attributes:
-        missing: Payloads and parsed component indices the listing lacks, sorted.
-        orphans: Listed paths that no index and no other dist claims, sorted.
-        shared: What the other dists sharing the root claim, from the same listing.
-    """
-
-    missing: list[str]
-    orphans: list[str]
-    shared: SharedRoot
-
-
-# a flat layout has no `dists/` tree, so no other dist shares its root
-_FLAT_ROOT = SharedRoot("", frozenset(), complete=True)
-
-
-def _has_dists_tree(params: RepoParams) -> bool:
-    """Report whether the repository's indices sit under a `dists/<dist>/` tree.
-
-    Args:
-        params: The repository's parameters.
-
-    Returns:
-        False for a flat layout, and for one with no dist to name the tree.
-    """
-    return not params.is_flat and bool(params.indices_prefix)
-
-
-def _unlisted_shared_root(params: RepoParams) -> SharedRoot:
-    """The claims of a root whose storage cannot list.
-
-    Args:
-        params: The repository's parameters.
-
-    Returns:
-        No claims; for a componented layout incomplete, so nothing outside the own index tree
-        is deletable.
-    """
-    if not _has_dists_tree(params):
-        return _FLAT_ROOT
-    return SharedRoot(f"{params.indices_prefix}/", frozenset(), complete=False)
-
-
-# what a neighbour dist's load may raise: `RootRelease.load`, the unsafe-component refusal in
-# `_claims_of`, and `Repo.load` and its Raises; every one leaves that dist's payloads unknown
-_NOT_LOADED = (
-    RepoReadException,
-    ReleaseReadException,
-    GPGVerifyException,
-    ComponentException,
-    PackagesException,
-    PackageException,
-    ChecksumException,
-    StorageException,
-)
-
-
-# a listed index key whose Release names no components: the component is everything before
-# the index tail, so `updates/main/binary-amd64/Packages` reads as component `updates/main`
-_LISTED_INDEX = re.compile(rf"(?P<comp>.+)/(?:{_INDEX_TAIL.pattern})")
-
-
-def _listed_slots(release: Release) -> dict[str, set[str]]:
-    """Map each component of a root Release to the archs whose indices it lists.
-
-    A component may hold `/`, so a key is matched below a component the `Components` field
-    declares, the longest first; a key no declared component explains still claims, with the
-    key's head as its component, since a missed index would leave its payloads deletable
-    -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-    Args:
-        release: A loaded root Release.
-
-    Returns:
-        Component -> its binary archs, plus `SOURCE_ARCH` for a listed `Sources`.
-    """
-    declared = sorted(release.fields.get("Components", "").split(), key=len, reverse=True)
-    slots: dict[str, set[str]] = {}
-    for key in release.digests:
-        for comp in declared:
-            if key.startswith(f"{comp}/") and (tail := _INDEX_TAIL.fullmatch(key[len(comp) + 1 :])):
-                slots.setdefault(comp, set()).add(tail["arch"] or SOURCE_ARCH)
-                break
-        else:
-            if listed := _LISTED_INDEX.fullmatch(key):
-                slots.setdefault(listed["comp"], set()).add(listed["arch"] or SOURCE_ARCH)
-    return slots
-
-
-def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
-    """Load another dist of the root and return the payloads its indices list.
-
-    Exactly the indices its root Release lists are loaded, and each must load: one skipped
-    would leave its payloads unclaimed, so they would read as orphans
-    -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-    Args:
-        storage: The target storage.
-        dist: The other dist.
-
-    Raises:
-        RepoReadException: A listed component is not a safe name.
-        ReleaseReadException: The dist has no root Release, or it does not parse.
-        ComponentException: A listed index is missing or does not load.
-
-    Returns:
-        Each payload path the dist's binary and source indices list -> the digests each index
-        records, so a path two indices record differently keeps both.
-    """
-    release = RootRelease(storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False))
-    release.load()
-
-    claims: dict[str, list[dict[str, str]]] = {}
-    for comp, archs in sorted(_listed_slots(release).items()):
-        if not is_safe_name(comp):
-            raise RepoReadException(f"dist {dist} lists an unsafe component {comp!r}")
-        params = RepoParams(
-            dist=dist,
-            components=[comp],
-            archs=sorted(archs),
-            verify_gpg=False,
-            verify_digests=False,
-        )
-        repo = Repo(storage, params)
-        repo.load(IndexLoad.STRICT)
-        # every slot, not `get_packages`, which yields a path shared by two arch indices once
-        for component in repo.components.values():
-            for packages in component.packages.values():
-                for package in packages.packages.values():
-                    claims.setdefault(str(package), []).append(package.get_digests())
-    return claims
-
-
-def shared_root_claims(
-    storage: Storage, params: RepoParams, existing: set[str], *, with_digests: bool = False
-) -> SharedRoot:
-    """Collect what the other dists of a componented target root claim.
-
-    A Debian root holds many dists under `dists/<dist>/` sharing one `pool/`. Each other dist
-    is loaded unverified, since its claims only ever keep a path, never copy one
-    -> [VALIDATION.md](VALIDATION.md#index-selection).
-
-    Args:
-        storage: The target storage.
-        params: The synced dist's parameters.
-        existing: Paths the target listing returned.
-        with_digests: Also keep the digests each index of each other dist records, which only
-            `SharedRoot.corrupt_deletable` reads. Defaults to False.
-
-    Returns:
-        The claims; none for a flat layout, which has no `dists/` tree.
-    """
-    if not _has_dists_tree(params):
-        return _FLAT_ROOT
-
-    prefix = f"{params.indices_prefix}/"
-    foreign = {
-        path for path in existing if path.startswith("dists/") and not path.startswith(prefix)
-    }
-    dists = sorted({path.split("/")[1] for path in foreign if path.count("/") >= 2})
-    claimed = set(foreign)
-    recorded: dict[str, list[dict[str, str]]] = {}
-    complete = True
-
-    for dist in dists:
-        if not is_safe_name(dist):
-            logger.warning("Shared root dist %r is not a safe name; its payloads are kept.", dist)
-            complete = False
-            continue
-        try:
-            claims = _claims_of(storage, dist)
-        except _NOT_LOADED as exc:
-            logger.warning(
-                "Dist %s shares the target root but did not load (%s); "
-                "nothing outside %s is deleted.",
-                dist,
-                exc,
-                prefix,
-            )
-            complete = False
-            continue
-        claimed.update(claims)
-        if with_digests:
-            for path, records in claims.items():
-                recorded.setdefault(path, []).extend(records)
-
-    if dists:
-        logger.info("Shared root: keeping what dists %s claim", ", ".join(dists))
-    return SharedRoot(
-        prefix,
-        frozenset(claimed),
-        complete,
-        {path: tuple(records) for path, records in recorded.items()} if with_digests else None,
-    )

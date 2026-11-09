@@ -22,8 +22,6 @@ from helpers.factories import (
 )
 from txstore import StorageException, StorageNotFoundException
 
-from debkit.repo import repo_sync as repo_sync_module
-from debkit.repo import shared_root_claims
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.packages import Packages
@@ -246,8 +244,8 @@ def test_build_sync_lists_reads_the_shared_root_claims_only_to_delete_or_overwri
         tgt_list=tgt_list,
         tgt_metadata={"SHA256": "held"},
     )
-    claims = MagicMock(wraps=shared_root_claims)
-    monkeypatch.setattr(repo_sync_module, "shared_root_claims", claims)
+    claims = MagicMock(wraps=tgt.shared_root)
+    monkeypatch.setattr(tgt, "shared_root", claims)
 
     src.build_sync_lists(tgt)
 
@@ -773,16 +771,18 @@ _PARSED_INDEX = "dists/bookworm/main/binary-amd64/Packages.gz"
 _LISTED_ONLY = "main/dep11/Components-amd64.yml.gz"
 
 
-def _self_check_repo(listing: list[str]) -> RepoSync:
+def _self_check_repo(listing: list[str]) -> RepoRW:
     """A repo whose own storage lists `listing`: one payload, one parsed and one listed index."""
-    src, _ = _two_repos(
-        src_components={"main": {"amd64": [make_package("p1.deb")]}},
-        tgt_components={},
-        listed=[_entry(_LISTED_ONLY)],
-        src_component_indices={"main": [_PARSED_INDEX]},
+    params = RepoParams(dist="bookworm", components=["main"], verify_gpg=False)
+    storage = make_storage_mock(list_result=listing)
+    return make_repo_rw(
+        storage=storage,
+        params=params,
+        components={"main": {"amd64": make_packages(storage, params, [make_package("p1.deb")])}},
+        indices_paths=list(INDICES),
+        listed_indices=[_entry(_LISTED_ONLY)],
+        component_indices={"main": [_PARSED_INDEX]},
     )
-    _mock_storage(src).list.return_value = listing
-    return src
 
 
 def test_consistency_lists_reports_only_what_a_parse_or_package_proves_missing() -> None:

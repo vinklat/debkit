@@ -49,16 +49,27 @@ def test_init_opens_the_given_home_and_keyring() -> None:
     gpg_cls.assert_called_once_with(gnupghome=".gnupg", keyring="trustedkeys.gpg", env=ANY)
 
 
-def test_init_runs_gpg_without_debkit_variables(monkeypatch: pytest.MonkeyPatch) -> None:
-    """gpg verifies a mirror's data, so it never holds the passphrase or a storage secret."""
+def test_init_runs_gpg_without_debkit_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gpg verifies a mirror's data, so it never holds the passphrase or a storage secret.
+
+    A stand-in `gpg` on `PATH` fails python-gnupg's version probe when it sees either, so the
+    environment the child really gets is observed, not only the one debkit passes on.
+    """
+    script = tmp_path / "bin" / "gpg"
+    script.parent.mkdir()
+    script.write_text(
+        '#!/bin/sh\n[ -n "$DEBKIT_GNUPG_PASSPHRASE$TXSTORE_S3_SECRET" ] && exit 1\n'
+        'echo "gpg (GnuPG) 2.4.4"\n'
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(script.parent))
     monkeypatch.setenv("DEBKIT_GNUPG_PASSPHRASE", "x")
     monkeypatch.setenv("TXSTORE_S3_SECRET", "x")
-    with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
-        _gnupg()
-    env = gpg_cls.call_args.kwargs["env"]
-    assert "DEBKIT_GNUPG_PASSPHRASE" not in env
-    assert "TXSTORE_S3_SECRET" not in env
-    assert "PATH" in env
+    (tmp_path / "home").mkdir()
+
+    GnuPG(str(tmp_path / "home"), "trustedkeys.gpg", None)
 
 
 def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.MonkeyPatch) -> None:

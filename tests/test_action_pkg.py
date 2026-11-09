@@ -62,7 +62,6 @@ def _make_pkg_action(*, storage: object = None) -> ActionPkg:
     target.storage = storage if storage is not None else MagicMock()
     target.params = MagicMock(spec=make_params())
     target.params.is_flat = False
-    target.get_archs.return_value = ["amd64"]
     # which arches take a binary package is `RepoRW.binary_archs`'s rule, tested there
     target.binary_archs.return_value = ["amd64"]
     target.transfer_from.return_value = {"SHA256": "abc", "Size": "100"}

@@ -329,6 +329,27 @@ def _fs_action(
     return action
 
 
+def test_sync_logs_each_release_token_warning_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Regression: the source is loaded again to verify each pass and its index set is built
+    again, so a token warning repeated once per resolution."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    release = tmp_path / "src" / _PREFIX / "Release"
+    release.write_bytes(
+        release.read_bytes().replace(b"Components: main\n", b"Components: main ../evil\n")
+    )
+    (tmp_path / "tgt").mkdir()
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.source_repo.params.components = None
+
+    with caplog.at_level(logging.INFO):
+        action.sync()
+
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
+    assert caplog.text.count("'../evil' is not a safe name") == 1
+
+
 class _SwapReleaseOnceFS(StorageFS):
     """Serve other bytes for the first stream of the root Release, as a hostile source may."""
 
@@ -456,28 +477,6 @@ def test_sync_keeps_another_dist_sharing_the_target_root(tmp_path: Path, fix: bo
     assert not orphan.exists()
 
 
-def test_sync_refuses_to_overwrite_a_payload_another_dist_pins(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Regression: a held pool key whose bytes another dist records was overwritten with the
-    source's bytes, so that dist's clients got a hash mismatch."""
-    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
-    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
-    with monkeypatch.context() as m:
-        m.setattr(trees, "payload_bytes", lambda version: f"local rebuild {version}".encode())
-        _write_other_dist(tmp_path / "tgt", "bullseye", {"foo": "3"})
-    pinned = tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb"
-    own_release = tmp_path / "tgt" / "dists/bookworm/Release"
-    release_before = own_release.read_bytes()
-
-    with pytest.raises(RepoSyncException, match="another dist of the shared root"):
-        _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
-
-    assert pinned.read_bytes() == b"local rebuild 3"
-    assert own_release.read_bytes() == release_before
-    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
-
-
 @pytest.mark.parametrize(
     "victim",
     [
@@ -589,6 +588,78 @@ def test_sync_purges_orphans_beside_a_dist_declaring_an_arch_it_has_no_index_for
 
     assert not orphan.exists()
     assert (tmp_path / "tgt" / "pool/main/b/bar/bar_1_amd64.deb").exists()
+
+
+@pytest.mark.parametrize(
+    ("damage", "cause"),
+    [(lambda base: None, "records other bytes"), (_corrupt_index, "did not load")],
+    ids=["pins-other-bytes", "does-not-load"],
+)
+def test_sync_refuses_to_overwrite_a_payload_another_dist_pins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    damage: Callable[[Path], None],
+    cause: str,
+) -> None:
+    """Regression: a held pool key whose bytes another dist records was overwritten with the
+    source's bytes, so that dist's clients got a hash mismatch. While that dist does not load,
+    the bytes it records are unknown, so the overwrite is refused too."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    with monkeypatch.context() as m:
+        m.setattr(trees, "payload_bytes", lambda version: f"local rebuild {version}".encode())
+        _write_other_dist(tmp_path / "tgt", "bullseye", {"foo": "3"})
+    damage(tmp_path / "tgt")
+    pinned = tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb"
+    own_release = tmp_path / "tgt" / "dists/bookworm/Release"
+    release_before = own_release.read_bytes()
+    source = _RecordingFS(str(tmp_path / "src"))
+
+    with pytest.raises(RepoSyncException, match=cause):
+        _fs_action(source, tmp_path / "tgt").sync()
+
+    assert source.transferred == []
+    assert pinned.read_bytes() == b"local rebuild 3"
+    assert own_release.read_bytes() == release_before
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
+
+
+def test_sync_overwrites_a_held_payload_another_dist_records_alike(tmp_path: Path) -> None:
+    """Another dist recording the source's own bytes loses nothing to the copy."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_other_dist(tmp_path / "tgt", "bullseye", {"foo": "3"})
+    other_release = (tmp_path / "tgt" / "dists/bullseye/Release").read_bytes()
+
+    _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").read_bytes() == b"deb 3"
+    assert (tmp_path / "tgt" / "dists/bookworm/Release").read_bytes() == (
+        tmp_path / "src" / "dists/bookworm/Release"
+    ).read_bytes()
+    assert (tmp_path / "tgt" / "dists/bullseye/Release").read_bytes() == other_release
+
+
+def test_sync_keeps_a_held_payload_already_holding_the_source_bytes(tmp_path: Path) -> None:
+    """Regression: a held payload with the source's bytes but no stored digests counted as an
+    overwrite, so one neighbour dist that did not load refused every sync. Its bytes are read
+    back instead, so it is kept without a copy."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_other_dist(tmp_path / "tgt", "bullseye", {"bar": "1"})
+    _corrupt_index(tmp_path / "tgt")
+    held = tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb"
+    held.parent.mkdir(parents=True, exist_ok=True)
+    held.write_bytes(trees.payload_bytes("3"))
+    source = _RecordingFS(str(tmp_path / "src"))
+
+    _fs_action(source, tmp_path / "tgt").sync()
+
+    assert "pool/main/f/foo/foo_3_amd64.deb" not in source.transferred
+    assert held.read_bytes() == b"deb 3"
+    assert (tmp_path / "tgt" / "dists/bookworm/Release").read_bytes() == (
+        tmp_path / "src" / "dists/bookworm/Release"
+    ).read_bytes()
 
 
 class _RecordingFS(StorageFS):

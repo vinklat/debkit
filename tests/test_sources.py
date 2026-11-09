@@ -108,11 +108,10 @@ def test_sources_parse_keeps_the_last_of_a_repeated_field() -> None:
 
 
 def test_sources_parse_keys_a_shared_payload_once_and_counts_files() -> None:
-    """Two versions sharing one orig tarball yield one record, and `size` counts files."""
+    """Two versions sharing one orig tarball yield one record, and `len()` counts files."""
     src = _new_sources()
     src._parse_indices(_SOURCES)
 
-    assert len(src) == 5
     assert len(src) == 5
 
 

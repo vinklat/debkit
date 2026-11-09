@@ -145,7 +145,8 @@ Uses `--target-url`, whose dist and component fields are optional and ignored; a
 - `--help` names their variables but never shows a value.
 - Never print, log, or fixture a secret.
 - A child process, `zstd` or `gpg`, runs without any `DEBKIT_*` or `TXSTORE_*` variable: it reads
-  untrusted data and needs none of them; the passphrase reaches gpg on its input.
+  untrusted data and needs none of them; the passphrase reaches gpg on its input. Other inherited
+  variables pass through: debkit reads no `AWS_*` credential, since txstore takes explicit S3 keys.
 - The S3 access key ID (`-u`, `DEBKIT_S3_ACCESS`, `TXSTORE_S3_ACCESS`) is an identifier, not a
   secret, but is never logged next to the secret.
 - Userinfo and query of a repository or storage URL are secrets: debkit logs and raises a URL only

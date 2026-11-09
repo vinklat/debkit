@@ -372,7 +372,7 @@ def test_load_then_index_set_logs_each_release_token_warning_once(
 def test_load_resolves_the_selection_again_for_a_reloaded_release(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A reload may change the Release, so the cached selection must not outlive it."""
+    """A reload may change the Release, so nothing resolved from the previous one survives."""
     repo = _repo(RepoParams("bookworm", None, None))
     monkeypatch.setattr(repo.release, "load", lambda: True)
     monkeypatch.setattr(Component, "load", lambda *_: 0)
@@ -382,7 +382,7 @@ def test_load_resolves_the_selection_again_for_a_reloaded_release(
 
     repo.load()
 
-    assert (repo.selection.components, repo.selection.archs) == (("main", "contrib"), ("arm64",))
+    assert (list(repo.components), list(repo.get_archs())) == (["main", "contrib"], ["arm64"])
 
 
 # --- release precedence over a colliding package stanza -----------------------------------------

@@ -10,13 +10,11 @@ import logging
 from collections.abc import Collection
 from typing import TYPE_CHECKING, NamedTuple
 
-from txstore import (
-    StorageException,
-    StorageNotFoundException,
-)
+from txstore import StorageException, StorageNotFoundException, compare_digests
 
-from debkit.repo import IndexTarget, Repo, SharedRoot, shared_root_claims
+from debkit.repo import IndexTarget, Repo
 from debkit.repo.hashes import ChecksumException
+from debkit.repo.shared_root import SharedRoot, missing_and_unclaimed
 
 if TYPE_CHECKING:
     from debkit.repo.package import Package
@@ -61,28 +59,50 @@ class RepoSyncException(Exception):
         super().__init__(f"Repo sync: {message}")
 
 
-def _refuse_shared_overwrites(shared: SharedRoot, replaced: dict[str, dict[str, str]]) -> None:
+def _settle_overwrites(
+    shared: SharedRoot, replaced: dict[str, dict[str, str]], target_repo: RepoRW
+) -> set[str]:
     """Refuse a plan that overwrites a payload another dist of the shared root pins.
 
-    Skipping the copy instead would leave the own Release naming bytes the target does not
-    hold -> [VALIDATION.md](VALIDATION.md#index-selection).
+    A refused payload whose held bytes are already the source's changes nothing, so its digests
+    are recorded and it needs no copy; skipping any other copy would leave the own Release
+    naming bytes the target does not hold -> [VALIDATION.md](VALIDATION.md#index-selection).
 
     Args:
         shared: The claims of the other dists, with the digests their indices record.
         replaced: Each held payload the plan overwrites -> the digests the source records.
+        target_repo: The target repo, read back for a refused payload.
 
     Raises:
-        RepoSyncException: If another dist records other bytes for a payload the plan
-            overwrites, records it without a SHA digest, or did not load.
+        RepoSyncException: If a held payload whose bytes differ from the source's would be
+            overwritten while another dist records other bytes for it, records it without a
+            SHA digest, or did not load.
+
+    Returns:
+        The refused payloads the target already holds unchanged.
     """
-    refused = sorted(
-        path for path, digests in replaced.items() if not shared.replaceable(path, digests)
-    )
-    if refused:
-        raise RepoSyncException(
-            f"{len(refused)} held payload(s) would be overwritten with bytes another dist of "
-            f"the shared root does not record, or whose dists did not load: {', '.join(refused)}"
+    unchanged: set[str] = set()
+    conflicting: list[str] = []
+    for path in sorted(replaced):
+        if shared.replaceable(path, replaced[path]):
+            continue
+        held = target_repo.held_digests(path)
+        if held is not None and compare_digests(held, replaced[path]):
+            target_repo.record_digests(path, held)
+            unchanged.add(path)
+        else:
+            conflicting.append(path)
+    if conflicting:
+        cause = (
+            "another dist of the shared root records other bytes, or no SHA digest, for them"
+            if shared.complete
+            else "another dist of the shared root did not load, so the bytes it records are unknown"
         )
+        raise RepoSyncException(
+            f"{len(conflicting)} held payload(s) would be overwritten, but {cause}: "
+            f"{', '.join(conflicting)}"
+        )
+    return unchanged
 
 
 class RepoSync(Repo):
@@ -170,25 +190,23 @@ class RepoSync(Repo):
         repair_files: set[str] = set()
         purge_files: set[str] = set()
         if can_list:
-            repair_files, purge_files = self._missing_and_unclaimed(
+            repair_files, purge_files = missing_and_unclaimed(
                 all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
             )
-        copy_pkg_files, replaced = self._reduce_copies(
-            diff.get_pkgs_to_copy(), copy_pkg_files, target_repo, existing_files
+        source_digests = self._source_digests(diff.get_pkgs_to_copy())
+        copy_pkg_files = self._reduce_copies(
+            source_digests, copy_pkg_files, target_repo, existing_files
         )
+        # what a copy overwrites: a held payload whose stored digests disagree
+        replaced = {path: source_digests[path] for path in copy_pkg_files & existing_files}
         # another dist sharing the root keeps its tree and the payloads it lists, and the bytes
         # its indices pin; reading those claims loads every other dist, so only a pass that
         # deletes or overwrites a held payload reads them
         if can_list and (purge_files or remove_pkg_files or replaced):
-            shared = shared_root_claims(
-                target_repo.storage,
-                target_repo.params,
-                existing_files,
-                with_digests=bool(replaced),
-            )
+            shared = target_repo.shared_root(existing_files, with_digests=bool(replaced))
             purge_files = {file for file in purge_files if shared.deletable(file)}
             remove_pkg_files = {file for file in remove_pkg_files if shared.deletable(file)}
-            _refuse_shared_overwrites(shared, replaced)
+            copy_pkg_files -= _settle_overwrites(shared, replaced, target_repo)
         # files a previous failed sync never got to delete
         remove_pkg_files &= existing_files
 
@@ -200,49 +218,57 @@ class RepoSync(Repo):
 
         return sorted(copy_pkg_files | repair_files), sorted(remove_pkg_files | purge_files)
 
-    def _reduce_copies(
-        self,
-        packages: list[Package],
-        copy_files: set[str],
-        target_repo: RepoRW,
-        existing_files: set[str],
-    ) -> tuple[set[str], dict[str, dict[str, str]]]:
-        """Drop the payloads the target already holds unchanged, as a terminated sync leaves them.
+    @staticmethod
+    def _source_digests(packages: list[Package]) -> dict[str, dict[str, str]]:
+        """Map each payload a diff copies to the digests the source records for it.
 
         Args:
             packages: Packages the diff copies, one per index naming them.
+
+        Returns:
+            Payload path -> the digests of its first-seen package; differing digests from
+            another index are logged.
+        """
+        seen: dict[str, dict[str, str]] = {}
+        for package in packages:
+            path = str(package)
+            digests = package.get_digests()
+            if path not in seen:
+                seen[path] = digests
+            elif digests != seen[path]:
+                logger.warning("%s has inconsistent digests across indices in source repo", path)
+        return seen
+
+    def _reduce_copies(
+        self,
+        source_digests: dict[str, dict[str, str]],
+        copy_files: set[str],
+        target_repo: RepoRW,
+        existing_files: set[str],
+    ) -> set[str]:
+        """Drop the payloads the target already holds unchanged, as a terminated sync leaves them.
+
+        Args:
+            source_digests: Each copied payload -> the digests the source records.
             copy_files: Payload paths to copy.
             target_repo: The target repo to sync with.
             existing_files: Paths the target listing returned.
 
         Returns:
-            `copy_files` without the payloads the target already holds, and each held payload
-            the copy overwrites -> the digests the source records for it.
+            `copy_files` without the payloads the target already holds.
         """
+        held = copy_files & existing_files
+        if not self.params.verify_digests:
+            return copy_files - held
         ret = set(copy_files)
-        replaced: dict[str, dict[str, str]] = {}
-        seen: dict[str, dict[str, str]] = {}
-        for package in packages:
-            pkg_name = str(package)
-            if pkg_name in seen:
-                if package.get_digests() != seen[pkg_name]:
-                    logger.warning(
-                        "%s has inconsistent digests across indices in source repo", package
-                    )
-                continue
-            seen[pkg_name] = package.get_digests()
-            if pkg_name not in existing_files:
-                continue
-            if not self.params.verify_digests or target_repo.holds(pkg_name, package.get_digests()):
-                ret.discard(pkg_name)
+        for path in sorted(held):
+            if target_repo.metadata_agrees(path, source_digests[path]):
+                ret.discard(path)
             else:
-                if pkg_name in ret:
-                    replaced[pkg_name] = package.get_digests()
                 logger.warning(
-                    "%s have not valid checksums in target repo. It will be copied again.",
-                    package,
+                    "%s have not valid checksums in target repo. It will be copied again.", path
                 )
-        return ret, replaced
+        return ret
 
     def _indices_to_copy(
         self,
@@ -304,7 +330,7 @@ class RepoSync(Repo):
             if held and target.digests and self.params.verify_digests and target_loaded:
                 if target_repo.release_agrees(file, target.digests):
                     continue
-                if target_repo.holds(file, target.digests):
+                if target_repo.metadata_agrees(file, target.digests):
                     continue
                 logger.debug(
                     "%s has different checksums in target repo. It will be copied again.", file

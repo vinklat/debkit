@@ -20,9 +20,10 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/action/action_pkg.py` | `ActionPkg`: list (`list_packages()`), dump, stats, insert, remove. |
 | `src/debkit/action/action_sync.py` | `ActionSync`: sync; `ActionCheck`: check; the selection both read → [CONFIG.md](CONFIG.md#check). |
 | `src/debkit/action/action_history.py` | `ActionHistory`: log, revert, prune → [STORAGE.md](STORAGE.md#history-commands). |
-| `src/debkit/repo/__init__.py` | `Repo` base: index loading and checksum verification → [CRYPTO.md](CRYPTO.md#verification-order); the mirror index set and the consistency lists → [VALIDATION.md](VALIDATION.md#index-selection). |
+| `src/debkit/repo/__init__.py` | `Repo` base: index loading and checksum verification → [CRYPTO.md](CRYPTO.md#verification-order); the mirror index set → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `src/debkit/repo/params.py` | `RepoParams` value object → [VALIDATION.md](VALIDATION.md#debian-source-strings); index-path layout → [VALIDATION.md](VALIDATION.md#repository-index-paths); pseudo-architectures and `is_valid_arch()` → [VALIDATION.md](VALIDATION.md#architectures). |
 | `src/debkit/repo/repo_rw.py` | `RepoRW`: read/write repository mutations, and `check()` of its own storage against its indices → [CONFIG.md](CONFIG.md#check). |
+| `src/debkit/repo/shared_root.py` | What the other dists of a shared root claim (`SharedRoot`, `shared_root_claims()`) and the reconciliation lists of a target listing → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `src/debkit/repo/repo_sync.py` | `RepoSync`: sync planning into a `SyncPlan` and transfer between repositories. |
 | `src/debkit/repo/index_selection.py` | `select_index_entry()`: the pure rules for which Release-listed indices a mirror carries → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `src/debkit/repo/repo_diff.py` | Index and file diffing. |
@@ -59,7 +60,7 @@ cli → argparser → action → repo → txstore
 | `cli` | May import any layer for dispatch and exception grouping. |
 | Leaves | `_env` and `_escape` import no `debkit` module; `_logging` imports only `_escape`; `_options` imports only `_env`; `argtypes` imports only the standard library and txstore. |
 | `action` | Uses `repo`, `_options` for flag registration types, `argtypes` for flag converters, `_escape` for brief output, and txstore; never imports `cli`, `argparser`, or `_logging`. |
-| `repo` | Depends on txstore and crypto helpers; never on `action`, `cli`, `argparser`, `argtypes`, `_options`, or `_logging`. |
+| `repo` | Uses txstore, `debian`, `gnupg`, and `_env` for the child-process environment (`child_env`); never imports `action`, `cli`, `argparser`, `argtypes`, `_options`, or `_logging`. |
 | `debkit` → `txstore` | Every import is `from txstore import ...` of a name in its `__all__`; a `txstore.<module>` import is a boundary violation. |
 | Load-time cycles | None: no import is deferred. |
 | Runtime dependencies | Standard library, plus `txstore`, `debian` (`python-debian`), `gnupg` (`python-gnupg`), `humanize`, and `urllib3` → [SETUP.md](SETUP.md#dependency-policy). |
