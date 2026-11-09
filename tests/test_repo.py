@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from helpers.factories import make_package, make_packages, make_params, make_storage_mock
 
@@ -347,16 +349,16 @@ def test_verify_checksum_still_uses_the_index_for_a_path_no_release_lists() -> N
     assert repo.verify_checksum(_DEB, _DIGEST) is True
 
 
-# --- copies -------------------------------------------------------------------------------------
+# --- snapshot -----------------------------------------------------------------------------------
 
 
-def test_snapshot_keeps_the_package_maps_a_later_insert_and_load_replace() -> None:
+def test_snapshot_keeps_a_package_map_a_later_remove_changes_in_place() -> None:
     """A diff against the snapshot sees the repo as it was taken."""
     repo = _repo()
     _with_component_package(repo, _DEB, _DIGEST)
 
     snapshot = repo.snapshot()
-    repo.components["main"].packages["amd64"].packages = {}
+    repo.components["main"].packages["amd64"].remove({"Filename": re.compile(re.escape(_DEB))})
 
     assert set(snapshot[("main", "amd64")]) == {_DEB}
     assert repo.diff(snapshot).get_filenames_to_remove() == {_DEB}
