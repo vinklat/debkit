@@ -11,9 +11,8 @@ only what debkit chooses.
 
 ## Construction
 
-`open_storage()` in `action/__init__.py` is debkit's only `make_storage` call; actions reach storage
-through it or the `attach_storage_*` helpers built on it →
-[STRUCTURE.md](STRUCTURE.md#dependencies).
+`open_storage()` in `action/__init__.py` is debkit's only `make_storage` call; how actions reach
+storage → [STYLE.md](STYLE.md#layers).
 
 | Input | Rule |
 | -- | -- |
@@ -27,7 +26,7 @@ through it or the `attach_storage_*` helpers built on it →
 | Rejected URL | → [VALIDATION.md](VALIDATION.md#storage-urls) |
 | Construction failure | `make_storage` raising `StorageException` (empty URL, no host, unresolved S3 key, uncreatable path): `--target-url` or `--source-url` → `RepoReadException` (Read). |
 | Construction failure, plain URL | The same on `--incoming-url` or a `log`, `revert`, or `prune` target → `StorageException` (Generic). |
-| Digest sink | `RepoRW.check` builds a `StorageNull` directly to digest a stored object without storing it again → [ROADMAP.md](ROADMAP.md#known-deviations). |
+| Digest sink | A storage built outside `open_storage()` → [ROADMAP.md](ROADMAP.md#known-deviations). |
 
 ## Storage errors
 

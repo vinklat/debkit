@@ -32,7 +32,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/component.py` | Component (suite/component) helpers. |
 | `src/debkit/repo/changes.py` | `.changes` parsing. |
 | `src/debkit/repo/debfile.py` | `.deb` introspection. |
-| `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix; discovery order → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` reads a stored object and `zstd_decompress()` decodes zstd, each up to a size limit → [VALIDATION.md](VALIDATION.md#object-sizes). |
+| `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` and `zstd_decompress()` read and decode up to a size limit → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | `src/debkit/repo/gnupg.py` | GPG sign/verify wrapper → [CRYPTO.md](CRYPTO.md#gpg). |
 | `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `HexDigests`, `ChecksumException`; re-exports txstore's algorithm-name lists → [CRYPTO.md](CRYPTO.md#checksums). |
 | `tests/` | Test suite → [TESTING.md](TESTING.md#file-layout). |
@@ -57,7 +57,7 @@ cli → argparser → action → repo → txstore
 | -- | -- |
 | `cli` | May import any layer for dispatch and exception grouping. |
 | Leaves | `_env` and `_escape` import no `debkit` module; `_logging` imports only `_escape`; `_options` imports only `_env`; `argtypes` imports only the standard library and txstore. |
-| `action` | Uses `repo`, `_options` for flag registration types, `argtypes` for flag converters, and txstore; never imports `cli`, `argparser`, or `_logging`. |
+| `action` | Uses `repo`, `_options` for flag registration types, `argtypes` for flag converters, `_escape` for brief output, and txstore; never imports `cli`, `argparser`, or `_logging`. |
 | `repo` | Depends on txstore and crypto helpers; never on `action`, `cli`, `argparser`, `argtypes`, `_options`, or `_logging`. |
 | `debkit` → `txstore` | Every import is `from txstore import ...` of a name in its `__all__`; a `txstore.<module>` import is a boundary violation. |
 | Load-time cycles | None: no import is deferred. |
@@ -67,7 +67,7 @@ cli → argparser → action → repo → txstore
 
 | Item | Convention |
 | -- | -- |
-| Modules | `snake_case`. |
+| Modules | → [STYLE.md](STYLE.md#python-baseline). |
 | Layer entry classes | `Action*` and `Repo*` prefixes. |
 | Exceptions | `<Owner>Exception`, defined in the module that owns the failure → [EXCEPTIONS.md](EXCEPTIONS.md#rules). |
 | Tests | `test_<module>.py` → [TESTING.md](TESTING.md#file-layout). |

@@ -23,8 +23,9 @@ Current version: **0.1.0**. Planned work → [ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 
-Released versions are published to [PyPI](https://pypi.org/project/debkit/). debkit needs Python
-3.13 or newer and a GnuPG binary on `PATH`.
+Released versions are published to [PyPI](https://pypi.org/project/debkit/). Prerequisites (the
+Python floor, the GnuPG and `zstd` binaries, `fs://` extended attributes) →
+[SETUP.md](SETUP.md#prerequisites-and-install).
 
 debkit verifies every Release it reads against `~/.gnupg/trustedkeys.gpg` by default, the keyring
 gpgv reads → [CONFIG.md](CONFIG.md#global-flags). The examples keep a dedicated home instead, named
@@ -56,8 +57,8 @@ debkit --target-url "/srv/repo bookworm main" list
 debkit --target-url /srv/repo log
 ```
 
-Prerequisites and details → [SETUP.md](SETUP.md); flags and variables → [CONFIG.md](CONFIG.md);
-worked examples → [docs/guides/examples.md](docs/guides/examples.md).
+Install, test, and release details → [SETUP.md](SETUP.md); flags and variables →
+[CONFIG.md](CONFIG.md); worked examples → [docs/guides/examples.md](docs/guides/examples.md).
 
 ## Documentation
 
@@ -71,7 +72,7 @@ Domain owners and agent navigation → [AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Technology
 
-Python 3.13+, [txstore](https://github.com/vinklat/txstore), python-debian, python-gnupg, humanize,
+Python, [txstore](https://github.com/vinklat/txstore), python-debian, python-gnupg, humanize,
 pytest, Ruff, and mypy.
 
 ## License

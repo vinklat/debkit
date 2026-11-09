@@ -145,7 +145,7 @@ either tool are read by the other.
 | Filesystem URLs | `fs://` takes an absolute path only: `fs://debian` → `debian` or `fs:///abs/debian`; the `sync --source-url` default is `.` → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | S3 bucket ACL | A created bucket no longer inherits `--s3-default-acl`; pass `--s3-bucket-acl` to set one. |
 | S3 credentials | Unset S3 credentials fall back to `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET`. |
-| `--history-max-age` | Capped at 36500 days. |
+| `--history-max-age` | Now has an upper bound → [VALIDATION.md](VALIDATION.md#history-retention). |
 | Help | `--help` no longer prints secret values taken from the environment. |
 | Secret flags | `-t`/`--s3-secret` and `--gnupg-passphrase` are gone: set `DEBKIT_S3_SECRET` and `DEBKIT_GNUPG_PASSPHRASE` instead → [CONFIG.md](CONFIG.md#secrets). |
 | Pool layout | An inserted `.deb` lands in Debian's source pool layout under its source package name, not its upload path's first letter and `Package` name → [VALIDATION.md](VALIDATION.md#filename-safety). Old pool keys stay valid; re-inserting an existing version adds a second stanza under its new key. |

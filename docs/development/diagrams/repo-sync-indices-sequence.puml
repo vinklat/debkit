@@ -2,6 +2,7 @@
 participant ActionSync
 participant "RepoSync\n(source)" as Src
 participant "Release\n(source root)" as Rel
+participant "RepoRW\n(target)" as Tgt
 participant "Storage\n(source)" as SStor
 participant "Storage\n(target)" as TStor
 
@@ -48,9 +49,10 @@ note right: unproven: copied indices the target lacks\nthat no load or parse pro
 
 ActionSync -> Src: sync(target, plan)
 loop each path in plan.copy
-  Src -> SStor: transfer(path, target storage)
+  Src -> Tgt: transfer_from(SStor, path)
+  Tgt -> SStor: transfer(path, TStor)
   alt transferred
-    SStor --> Src: digests
+    Tgt --> Src: digests
   else StorageNotFoundException, path in plan.unproven
     note right of Src: skipped, logged at debug,\nnever retried
   else any other StorageException

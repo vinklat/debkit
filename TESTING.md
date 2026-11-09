@@ -45,7 +45,7 @@ not copied here.
 | -- | -- |
 | CLI | Command dispatch and exit-message mapping for every group. |
 | Option precedence | Flag over variable over default; a switch's `--no-` form overrides its variable; an empty variable counts as unset. |
-| Option failures | An invalid variable or one outside the choices exits 2 naming it; a required option resolves from its variable or exits 2 naming both. |
+| Option failures | An invalid variable or one outside the choices → usage error naming it (Usage); a required option resolves from its variable or → usage error naming both (Usage). |
 | Secrets | A secret resolves from its variable and has no flag; no secret value appears in `--help`. |
 | Logging | Plain and JSON lines; the DEBUG format and the quiet third-party loggers. |
 | Actions | Orchestration, argument combinations, and error propagation. |
@@ -66,8 +66,11 @@ not copied here.
 | Sync index ownership | A stanza naming a Release-listed index is neither copied nor removed as a package, whichever side holds it, and the index set still purges one it drops → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Sync index Release skip | The Release-block skip with its metadata fallback → [VALIDATION.md](VALIDATION.md#index-selection) is asserted from both sides. |
 | Sync index recovery | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync. |
-| Sync shared root | On a real target root holding another dist, a sync and `check --fix` keep its tree and the payloads it lists, `check --fix` deletes a corrupt payload only when no index of any other dist records its bytes and none records it without a SHA digest, and only the own tree is purged while its index is corrupt or missing, its only Release form is malformed, or its name is not safe → [VALIDATION.md](VALIDATION.md#index-selection). |
-| Insert pool object | On a real root, an insert whose pool key another dist, or another arch's upload of the same file name, holds with different bytes is refused and leaves the held bytes; identical bytes into another dist pass, and so does a re-insert after `check --fix` deleted a corrupt object no index records → [VALIDATION.md](VALIDATION.md#filename-safety). |
+| Sync shared root keep | On a real target root holding another dist, a sync and `check --fix` keep its tree and the payloads it lists → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Sync shared root corrupt payload | `check --fix` deletes a corrupt payload only when no index of any other dist records its bytes and none records it without a SHA digest → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Sync shared root purge | Only the own tree is purged while another dist's index is corrupt or missing, its only Release form is malformed, or its name is not safe → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Insert pool object refusal | On a real root, an insert whose pool key another dist, or another arch's upload of the same file name, holds with different bytes is refused and leaves the held bytes → [VALIDATION.md](VALIDATION.md#filename-safety). |
+| Insert pool object pass | Identical bytes into another dist pass, and so does a re-insert after `check --fix` deleted a corrupt object no index records → [VALIDATION.md](VALIDATION.md#filename-safety). |
 | Remove shared root | On a real root holding another dist, `remove` keeps a payload it lists, deletes one only the own dist lists, and keeps every payload while its index is missing → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Validation | Every documented boundary rule, success and failure. |
 | Crypto GPG | GPG verify and sign paths and the skip-verify branches. |

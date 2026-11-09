@@ -13,8 +13,8 @@ in `argparser.py`, subcommand flags in the owning `Action*` module.
 | Order | The flag, then its `DEBKIT_*` variable, then the default. |
 | Empty | An empty variable counts as unset. |
 | Switches | A boolean flag is a bare switch with a `--no-` form, so `--no-skip-verify` overrides `DEBKIT_SKIP_VERIFY=1`; its variable takes the boolean vocabulary → [VALIDATION.md](VALIDATION.md#environment-values). |
-| Values | A variable passes through the flag's converter and choices; a rejected value exits 2 naming the variable → [VALIDATION.md](VALIDATION.md#environment-values). |
-| Required | A required flag with neither flag nor variable exits 2 naming both. |
+| Values | A variable passes through the flag's converter and choices; a rejected value → usage error naming the variable (Usage) → [VALIDATION.md](VALIDATION.md#environment-values). |
+| Required | A required flag with neither flag nor variable → usage error naming both (Usage) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | Variable only | A [variable-only setting](#variable-only-settings) has no flag: its variable, then the default. |
 | Lazy read | A variable is read only when its flag is absent, after argparse parses the command line. |
 | Reader | Only `src/debkit/_env.py` reads the environment. |
@@ -100,7 +100,7 @@ Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither o
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |
-| `--fix` | none | off | Delete corrupted files, except those whose bytes another dist sharing the root records |
+| `--fix` | none | off | Delete corrupted and orphan files; what another dist sharing the root may need is kept → [VALIDATION.md](VALIDATION.md#index-selection) |
 
 Also accepts `--architectures` and `--indices-exclude` with the same variables and defaults as
 [Sync](#sync): a check builds its index and package sets the same way a sync does, so other values

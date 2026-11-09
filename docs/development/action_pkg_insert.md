@@ -1,6 +1,6 @@
 # ActionPkg.insert behavior
 
-Explains how [`ActionPkg.insert`](../../src/debkit/action/action_pkg.py) moves one or more `.deb`
+Explains how [`ActionPkg.insert`](../../src/debkit/action/action_pkg.py) copies one or more `.deb`
 packages from the incoming storage into the target repository: either a `.changes` upload or a
 single `.deb`, never both, inside one transaction so pool objects and rewritten indices commit
 together. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
@@ -46,8 +46,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   [CRYPTO.md](../../CRYPTO.md#gpg).
 - Any in-loop failure (corrupt `.deb`, transport error, digest mismatch) discards every staged
   footmark and leaves the live repository untouched → [STORAGE.md](../../STORAGE.md#transactions).
-- A non-transactional target skips begin, commit, and discard entirely; the same link explains why
-  `FootmarkMixin` is the discriminator.
+- A non-transactional target skips begin, commit, and discard entirely →
+  [STORAGE.md](../../STORAGE.md#transactions).
 - A refused `.deb` or `.changes`, a digest mismatch, and an orchestration failure each exit through
   their group; a builtin `ValueError` is in no group and surfaces as a traceback →
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups).

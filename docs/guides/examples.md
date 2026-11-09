@@ -40,7 +40,7 @@ debkit --target-url="debian bookworm main contrib non-free" list
 From an S3 bucket; the secret key is read only from its variable, never from a flag:
 
 ```bash
-export DEBKIT_TARGET_URL="s3://s3.example.com/bucket/prefix"
+export DEBKIT_TARGET_URL="s3://s3.example.com/bucket/prefix bookworm main"
 export DEBKIT_S3_ACCESS="XXX"
 export DEBKIT_S3_SECRET="YYY"
 
@@ -111,8 +111,8 @@ debkit dump -o json > debian.json
 
 ### Add packages from a `.changes` upload
 
-Place the `.changes` file and its `.deb` files in the incoming storage; the tool moves them into the
-repository and rewrites the indices in one transaction.
+Place the `.changes` file and its `.deb` files in the incoming storage; the tool copies them into
+the repository and rewrites the indices in one transaction, leaving the uploads in place.
 
 ```bash
 export DEBKIT_TARGET_URL="s3://s3.example.com/repo bookworm main"
