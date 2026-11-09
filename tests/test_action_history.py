@@ -283,14 +283,18 @@ def test_prune_defaults_when_the_namespace_lacks_the_flags(
 
 
 def test_prune_rejects_a_non_transactional_backend(pars: Namespace) -> None:
-    with patch("debkit.action.action_history.is_transactional", return_value=False):
-        with pytest.raises(ActionException, match="does not support transactions"):
-            ActionHistory(pars).prune()
+    with (
+        patch("debkit.action.action_history.is_transactional", return_value=False),
+        pytest.raises(ActionException, match="does not support transactions"),
+    ):
+        ActionHistory(pars).prune()
 
 
 def test_prune_wraps_storage_failures(pars: Namespace) -> None:
-    with patch.object(
-        TransactionHistory, "prune", side_effect=StorageException("listing unavailable")
+    with (
+        patch.object(
+            TransactionHistory, "prune", side_effect=StorageException("listing unavailable")
+        ),
+        pytest.raises(ActionException, match="listing unavailable"),
     ):
-        with pytest.raises(ActionException, match="listing unavailable"):
-            ActionHistory(pars).prune()
+        ActionHistory(pars).prune()

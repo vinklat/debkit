@@ -6,70 +6,47 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from debkit.repo.package import Package
+    from debkit.repo.packages import PackagesDiff
 
 
 class RepoDiff:
-    """Class containing repository diff data.
+    """How a repository differs from an earlier state, one `PackagesDiff` per index slot.
 
     Attributes:
-        added_pkgs: added packages
-        removed_pkgs: removed packages
-        updated_pkgs: updated packages
-        old_versions_pkgs: old versions packages
-
-    Example:
-        >>> from debkit.repo.repo_diff import RepoDiff
-        >>> repo_diff = RepoDiff()
-        >>> repo_diff.added_pkgs["main"]["amd64"] = [pkg1, pkg2]
-        >>> repo_diff.removed_pkgs["main"]["amd64"] = [pkg3, pkg4]
-        >>> repo_diff.updated_pkgs["main"]["amd64"] = [pkg5, pkg6]
-        >>> repo_diff.old_versions_pkgs["main"]["amd64"] = [pkg7, pkg8]
+        slots: Each compared component and arch → how its packages changed.
     """
 
     def __init__(self) -> None:
         """Initialize RepoDiff."""
-        self.added_pkgs: dict[str, dict[str, list[Package]]] = {}
-        self.removed_pkgs: dict[str, dict[str, list[Package]]] = {}
-        self.updated_pkgs: dict[str, dict[str, list[Package]]] = {}
-        self.old_versions_pkgs: dict[str, dict[str, list[Package]]] = {}
+        self.slots: dict[tuple[str, str], PackagesDiff] = {}
 
     def dump(self) -> dict[str, dict[str, dict[str, list[Package]]]]:
         """Dump RepoDiff to dict.
 
         Returns:
-            RepoDiff output dict
+            Each bucket (`added`, `removed`, `updated`, `old_versions`) → component → arch →
+            its packages.
         """
-        return {
-            "added": self.added_pkgs,
-            "removed": self.removed_pkgs,
-            "updated": self.updated_pkgs,
-            "old_versions": self.old_versions_pkgs,
+        ret: dict[str, dict[str, dict[str, list[Package]]]] = {
+            "added": {},
+            "removed": {},
+            "updated": {},
+            "old_versions": {},
         }
+        for (component, arch), pkgs_diff in self.slots.items():
+            for bucket, pkgs in pkgs_diff._asdict().items():
+                ret[bucket].setdefault(component, {})[arch] = list(pkgs.values())
+        return ret
 
-    def update(
-        self,
-        component: str,
-        arch: str,
-        *,
-        added: dict[str, Package],
-        removed: dict[str, Package],
-        updated: dict[str, Package],
-        old_versions: dict[str, Package],
-    ) -> None:
-        """Update RepoDiff with new data.
+    def update(self, component: str, arch: str, pkgs_diff: PackagesDiff) -> None:
+        """Record how one slot changed.
 
         Args:
             component: component name
             arch: architecture
-            added: added packages
-            removed: removed packages
-            updated: updated packages
-            old_versions: old versions packages
+            pkgs_diff: how its packages changed
         """
-        self.added_pkgs.setdefault(component, {})[arch] = list(added.values())
-        self.removed_pkgs.setdefault(component, {})[arch] = list(removed.values())
-        self.updated_pkgs.setdefault(component, {})[arch] = list(updated.values())
-        self.old_versions_pkgs.setdefault(component, {})[arch] = list(old_versions.values())
+        self.slots[component, arch] = pkgs_diff
 
     def get_pkgs_to_copy(self) -> list[Package]:
         """Get list of packages to copy.
@@ -78,12 +55,10 @@ class RepoDiff:
             List of packages to copy
         """
         pkgs: list[Package] = []
-        for component in self.added_pkgs.values():
-            for arch in component.values():
-                pkgs.extend(arch)
-        for component in self.updated_pkgs.values():
-            for arch in component.values():
-                pkgs.extend(arch)
+        for pkgs_diff in self.slots.values():
+            pkgs.extend(pkgs_diff.added.values())
+        for pkgs_diff in self.slots.values():
+            pkgs.extend(pkgs_diff.updated.values())
         return pkgs
 
     def count_pkgs_to_copy(self) -> int:
@@ -108,12 +83,8 @@ class RepoDiff:
         Returns:
             List of packages to remove
         """
-        pkgs: list[Package] = []
-        for component in self.removed_pkgs.values():
-            for arch in component.values():
-                pkgs.extend(arch)
         # old versions are not removed: a package of the same name may be among the added ones
-        return pkgs
+        return [pkg for pkgs_diff in self.slots.values() for pkg in pkgs_diff.removed.values()]
 
     def count_pkgs_to_remove(self) -> int:
         """Get count of distinct payloads to remove; an `all` package in several arches counts once.
@@ -135,14 +106,9 @@ class RepoDiff:
         """Check if RepoDiff is empty.
 
         `update` records every component and arch it compared, so an unchanged slot holds
-        empty lists and counts as empty.
+        empty buckets and counts as empty.
 
         Returns:
             True if no slot lists a package, False otherwise
         """
-        return not any(
-            pkgs
-            for by_comp in self.dump().values()
-            for by_arch in by_comp.values()
-            for pkgs in by_arch.values()
-        )
+        return all(pkgs_diff.is_empty() for pkgs_diff in self.slots.values())

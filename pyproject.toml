@@ -67,6 +67,7 @@ select = [
     "PT",  # flake8-pytest-style
     "LOG", # flake8-logging: module loggers, never the root logger
     "G",   # flake8-logging-format: %-style lazy arguments
+    "SIM", # flake8-simplify
     "ERA", # eradicate: no commented-out code
     "FIX", # flake8-fixme: no TODO/FIXME/XXX/HACK; deviations go to ROADMAP.md
     "PLC0415", # import-outside-toplevel: local imports only for a named cycle or deferral
@@ -112,7 +113,8 @@ empty_parameter_set_mark = "fail_at_collect"
 
 [tool.coverage.run]
 source = ["debkit"]
-omit = ["*/tests/*"]
+# the entry shim carries no test → TESTING.md#file-layout
+omit = ["*/tests/*", "*/debkit/__main__.py"]
 branch = true
 
 [tool.coverage.report]

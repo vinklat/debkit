@@ -148,7 +148,7 @@ class RepoSync(Repo):
         repair_files: set[str] = set()
         purge_files: set[str] = set()
         if can_list:
-            repair_files, purge_files = self._repair_and_purge(
+            repair_files, purge_files = self._missing_and_unclaimed(
                 all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
             )
         # another dist sharing the root keeps its tree and the payloads it lists; reading
@@ -378,10 +378,9 @@ class RepoSync(Repo):
             logger.error("Error transfer file %s: %s", file, exc)
             return False
 
-        if self.params.verify_digests:
-            if not self.verify_checksum(file, digests):
-                target_repo.delete(file)
-                raise ChecksumException(f"Content verify mismatch in {file}")
+        if self.params.verify_digests and not self.verify_checksum(file, digests):
+            target_repo.delete(file)
+            raise ChecksumException(f"Content verify mismatch in {file}")
 
         target_repo.storage.add_metadata(file, digests)
 

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
-from email.parser import Parser
 from typing import TYPE_CHECKING
 
 from txstore import StorageException, is_unsafe_path
@@ -14,6 +12,7 @@ from debkit.repo.compress import SizeLimitError, read_capped
 from debkit.repo.gnupg import CLEARSIGN_BEGIN, GPGVerifyException, cleartext_body
 from debkit.repo.hashes import CHECKSUMS_SHA256, ChecksumException, HexDigests, parse_hash_block
 from debkit.repo.params import SOURCE_ARCH
+from debkit.repo.stanza import parse_stanza
 
 if TYPE_CHECKING:
     from txstore import Storage
@@ -67,6 +66,8 @@ class Changes(HexDigests):
         Raises:
             ChangesException: If the file is not UTF-8.
             ChangesException: If a field appears twice, its name compared without case.
+            ChangesException: If a blank line stands between two fields.
+            ChangesException: If a line is neither a field, a continuation, nor empty.
             ChangesException: If no SHA256 checksums found in changes file.
             ChangesException: If a listed file is not a bare, safe file name.
             ChangesException: If a clearsigned file is malformed.
@@ -83,13 +84,17 @@ class Changes(HexDigests):
         except UnicodeDecodeError as exc:
             raise ChangesException(f"not UTF-8: {exc}") from exc
 
-        data = re.sub("\n\n", "\n", data)  # fix - remove blank lines
-        parser = Parser()
-        parsed = parser.parsestr(data)
+        # one paragraph, as dpkg reads it: a blank line would end the fields there and hide
+        # the digests and architectures after it -> [VALIDATION.md](VALIDATION.md#blank-lines)
+        parsed, more_paragraphs, unreadable = parse_stanza(data)
+        if more_paragraphs:
+            raise ChangesException("blank line between fields: a .changes is one paragraph")
+        if unreadable:
+            raise ChangesException("unreadable line: a .changes field line needs a colon")
         # Debian Policy 5.1 field names ignore case, and dpkg refuses a repeated one: a reader
         # keeping another copy would see other digests and architectures than debkit checks
         # -> [VALIDATION.md](VALIDATION.md#repeated-fields)
-        names = [name.lower() for name in parsed.keys()]
+        names = [name.lower() for name in parsed]
         if repeated := sorted({name for name in names if names.count(name) > 1}):
             raise ChangesException(f"repeated field: {', '.join(repeated)}")
         self.fields = dict(parsed.items())

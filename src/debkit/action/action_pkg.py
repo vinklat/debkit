@@ -16,6 +16,7 @@ from debkit.action import (
     OutputType,
     attach_storage_plain,
     dump_json,
+    open_target_repo,
 )
 from debkit.argtypes import component_type, pkg_pattern_type
 from debkit.repo.changes import Changes
@@ -53,18 +54,41 @@ class ActionPkg(Action):
         Args:
             pars: Command line arguments from argparser.
             create_path: Create path or bucket if True.
+
+        Raises:
+            ActionException: An `insert` names neither or both of `--changes-filename` and
+                `--deb-filename`, or a `.deb` file name without the suffix; refused before
+                any storage is opened, so no target path or bucket is created.
         """
-        super().__init__(pars, create_path=create_path)
         # one action serves five subcommands, each registering only its own flags
         self.pkg_pattern: dict[str, re.Pattern[str]] | None = getattr(pars, "pkg_pattern", None)
         self.changes_filename: str | None = getattr(pars, "changes_filename", None)
         self.changes_sha256: str | None = getattr(pars, "changes_sha256", None)
         self.deb_filename: str | None = getattr(pars, "deb_filename", None)
         self.component: str = getattr(pars, "component", DEFAULT_COMPONENT)
+        is_insert = pars.command == "insert"
+        if is_insert:
+            self._check_insert_source()
 
+        super().__init__(pars)
+        self.target_repo = open_target_repo(pars, gpg=self.gpg, create_path=create_path)
         self.incoming_storage: Storage | None = (
-            attach_storage_plain(pars, pars.incoming_url) if hasattr(pars, "incoming_url") else None
+            attach_storage_plain(pars, pars.incoming_url) if is_insert else None
         )
+
+    def _check_insert_source(self) -> None:
+        """Check the `insert` upload flags -> [CONFIG.md](CONFIG.md#insert).
+
+        Raises:
+            ActionException: Neither or both of `--changes-filename` and `--deb-filename`.
+            ActionException: A `--deb-filename` that does not end with `.deb`.
+        """
+        if (self.changes_filename is None) == (self.deb_filename is None):
+            raise ActionException(
+                "insert needs exactly one of --changes-filename or --deb-filename"
+            )
+        if self.deb_filename is not None and not self.deb_filename.endswith(".deb"):
+            raise ActionException(f"Invalid .deb filename: {self.deb_filename}")
 
     def dump(self) -> None:
         """Dump repository to stdout."""
@@ -95,7 +119,7 @@ class ActionPkg(Action):
                         ", ".join(f"{k}: {v}" for k, v in packages.release.fields.items())
                     )
                 print(f"    {arch_name}: {release}")
-                print(f"      {len(packages.packages)} packages")
+                print(f"      {len(component.slot_packages(arch_name))} packages")
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
@@ -154,24 +178,6 @@ class ActionPkg(Action):
             json_formatted_str = dump_json(list(self.target_repo.get_packages()))
             print(json_formatted_str)
 
-    def _binary_archs(self) -> list[str]:
-        """Get the repository architectures a binary package can be inserted into.
-
-        A mirrored `Sources` index is read-only, so `source` never receives a `.deb`
-        -> [VALIDATION.md](VALIDATION.md#sources-stanzas). The empty arch names no
-        `binary-<arch>/` directory, so only a flat repo inserts under it
-        -> [VALIDATION.md](VALIDATION.md#architectures).
-
-        Returns:
-            The repository architectures without the source one.
-        """
-        is_flat = self.target_repo.params.is_flat
-        return [
-            arch
-            for arch in self.target_repo.get_archs()
-            if arch != SOURCE_ARCH and (arch or is_flat)
-        ]
-
     def _load_target_or_setup(self) -> RepoSnapshot:
         """Load the target, or set up a new one where it has no Release.
 
@@ -223,10 +229,10 @@ class ActionPkg(Action):
     def insert(self) -> None:
         """Insert packages into repository.
 
+        The upload flags were checked when the action was built
+        -> `_check_insert_source`.
+
         Raises:
-            ActionException: If both --changes-filename and --deb-filename are provided.
-            ActionException: If neither --changes-filename nor --deb-filename are provided.
-            ActionException: If the .deb filename does not end with '.deb'.
             ActionException: If the .changes architecture names the source one.
             ActionException: If an architecture token is not an architecture name.
             ActionException: If the package control field names the source architecture.
@@ -234,11 +240,6 @@ class ActionPkg(Action):
                 in the target.
             ChecksumException: If a transferred `.deb` does not match its `.changes` digest.
         """
-        if (self.changes_filename is None) == (self.deb_filename is None):
-            raise ActionException(
-                "insert needs exactly one of --changes-filename or --deb-filename"
-            )
-
         # `--incoming-url` is required for `insert`, so argparse already refused a missing one
         assert self.incoming_storage is not None, "insert without --incoming-url"
 
@@ -248,15 +249,13 @@ class ActionPkg(Action):
             changes = self._load_changes(self.incoming_storage, self.changes_filename)
             filenames = changes.get_deb_files()
         else:
-            # exactly one of the two filenames is set, checked above
+            # exactly one of the two filenames is set -> `_check_insert_source`
             assert self.deb_filename is not None
-            if not self.deb_filename.endswith(".deb"):
-                raise ActionException(f"Invalid .deb filename: {self.deb_filename}")
             filenames = [self.deb_filename]
 
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             target_before = self._load_target_or_setup()
-            binary_archs = self._binary_archs()
+            binary_archs = self.target_repo.binary_archs()
             for filename in filenames:
                 debfile_obj = DebFile(self.incoming_storage, filename, comp=self.component)
                 package = debfile_obj.get_package()
@@ -375,7 +374,7 @@ class ActionPkg(Action):
             self.target_repo.update()
             target_before = self.target_repo.snapshot()
             if not self.target_repo.remove_pkg(self.pkg_pattern):
-                raise ActionException("No packages matched the pattern.")
+                raise ActionException("No removable packages matched the pattern.")
             ret_diff = self._save_if_changed(target_before)
 
         self._print_pkg(ret_diff)

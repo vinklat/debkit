@@ -41,6 +41,8 @@ def test_debug_adds_module_and_function_and_quiets_third_party() -> None:
     configure_logging("DEBUG")
     assert _format("hello", logging.DEBUG) == "DEBUG test_logging fn hello"
     assert all(logging.getLogger(name).level == logging.INFO for name in QUIET_LOGGERS)
+    # python-gnupg logs every gpg command line at debug
+    assert logging.getLogger("gnupg").level == logging.INFO
 
 
 @pytest.mark.parametrize("level", ["INFO", "DEBUG"])

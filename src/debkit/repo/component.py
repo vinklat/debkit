@@ -119,6 +119,42 @@ class Component:
         kind = container_for(arch)
         return next((pkgs for pkgs in self.packages.values() if type(pkgs) is kind), None)
 
+    def containers(self) -> list[Packages]:
+        """Get every index container of the component, each once.
+
+        Flat arch slots share one container
+        -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+
+        Returns:
+            The distinct containers, in slot order.
+        """
+        return list({id(pkgs): pkgs for pkgs in self.packages.values()}.values())
+
+    def slot_packages(self, arch: str) -> dict[str, Package]:
+        """Get the packages one arch slot reports, keyed by `Filename`.
+
+        A componented slot reports its whole index. The one index of a flat layout holds
+        every arch, whichever are selected, so a flat arch slot reports the packages of its
+        arch and of `all`, as a componented `binary-<arch>/` index lists them; a package with
+        no `Architecture`, or the empty arch of a flat repo naming none, is reported whole.
+        Reports read it; payload planning reads the whole index, since a flat sync copies the
+        index whole -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
+
+        Args:
+            arch: The architecture of the slot.
+
+        Returns:
+            The slot's packages.
+        """
+        packages = self.packages[arch]
+        if not (self.is_flat and arch):
+            return packages.packages
+        return {
+            filename: package
+            for filename, package in packages.packages.items()
+            if package.fields.get("Architecture", arch) in (arch, ARCH_ANY)
+        }
+
     def load(self, archs: list[str], mode: IndexLoad = IndexLoad.WRITABLE) -> int:
         """Load package sets (Packages objects) for all architectures.
 
@@ -200,7 +236,7 @@ class Component:
         """
         ret: bool = False
         # a container shared by several flat slots is saved once
-        for packages in {id(pkgs): pkgs for pkgs in self.packages.values()}.values():
+        for packages in self.containers():
             digests = packages.save()
 
             if digests is None:
@@ -218,7 +254,10 @@ class Component:
         Returns:
             A dictionary where the keys are architectures and the values are the dumped packages.
         """
-        return {arch: packages.dump() for arch, packages in self.packages.items()}
+        return {
+            arch: packages.dump(self.slot_packages(arch).values())
+            for arch, packages in self.packages.items()
+        }
 
     def get_indices_paths(self) -> list[str]:
         """Get list of indices files paths.
@@ -226,11 +265,7 @@ class Component:
         Returns:
             A list of indices paths for each package in the component.
         """
-        paths = (
-            path for packages in self.packages.values() for path in packages.get_indices_paths()
-        )
-        # flat slots sharing one container list its paths once
-        return list(dict.fromkeys(paths))
+        return [path for packages in self.containers() for path in packages.get_indices_paths()]
 
     def setup(self, archs: list[str]) -> None:
         """Setup the component.
@@ -291,6 +326,6 @@ class Component:
             Filenames dropped from any arch, each once.
         """
         removed: set[str] = set()
-        for packages in self.packages.values():
+        for packages in self.containers():
             removed |= packages.remove(fields_patterns)
         return removed

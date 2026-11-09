@@ -140,12 +140,19 @@ class Sources(Packages):
         """Remove nothing: a `Sources` index is mirrored, never composed.
 
         Returning the base contract's "nothing removed" lets a caller iterate every
-        container without knowing which one is read-only.
+        container without knowing which one is read-only; a match is logged as kept, so
+        the caller's "nothing matched" is not the only word on it
+        -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
 
         Args:
-            fields: Ignored.
+            fields: Compiled pattern per package field.
 
         Returns:
             Always empty.
         """
+        if kept := self.matching(fields):
+            logger.warning(
+                "%d source payloads match but the mirrored Sources index is read-only; kept.",
+                len(kept),
+            )
         return set()

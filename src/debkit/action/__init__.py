@@ -205,6 +205,42 @@ def attach_storage_root(pars: Namespace, url: str, create_path: bool = False) ->
     return attach_storage_plain(pars, url.split()[0], create_path=create_path)
 
 
+def open_target_repo(
+    pars: Namespace,
+    *,
+    gpg: GnuPG | None,
+    create_path: bool = False,
+    archs: list[str] | None = None,
+    indices_exclude: list[str] | None = None,
+) -> RepoRW:
+    """Open the `--target-url` repository with its selection.
+
+    Args:
+        pars: Parsed CLI namespace.
+        gpg: Verifies and signs its Release; None reads it unverified and never signs it.
+        create_path: Create the target path or bucket if missing.
+        archs: The `--architectures` selection; None keeps the Release's.
+        indices_exclude: The `--indices-exclude` globs; None excludes nothing.
+
+    Raises:
+        RepoParamsException: If the deb source or its URL is invalid.
+        RepoReadException: If the storage cannot be constructed.
+
+    Returns:
+        The target repository, not yet loaded.
+    """
+    # `--target-url` is required, so every action has a target
+    logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
+    storage, params = attach_storage_repo(
+        pars,
+        pars.target_url,
+        create_path=create_path,
+        archs=archs,
+        indices_exclude=indices_exclude,
+    )
+    return RepoRW(storage, params, gpg=gpg)
+
+
 class ActionException(Exception):
     """Exception raised for errors in the Action class."""
 
@@ -263,25 +299,15 @@ class Action:
 
     target_repo: RepoRW
 
-    def __init__(
-        self,
-        pars: Namespace,
-        create_path: bool = False,
-        *,
-        archs: list[str] | None = None,
-        indices_exclude: list[str] | None = None,
-    ):
-        """Initialize repo objects and storages.
+    def __init__(self, pars: Namespace):
+        """Read the output, verification, and history settings every action shares.
 
-        The repositories open last, through `_attach_repos`, after `gpg` is set; the
-        selection is passed to it rather than kept on the action.
+        No storage is opened here: each subcommand opens its repositories after this
+        returns, through `open_target_repo` or `attach_storage_repo`, so it can refuse its
+        own flags first and set every attribute before a repository exists.
 
         Args:
             pars: Parsed command line arguments.
-            create_path: Create path or bucket if True.
-            archs: The architectures every opened repository selects; None selects the Release's.
-            indices_exclude: Index exclude globs every opened repository applies; None excludes
-                nothing.
         """
         # every action subcommand registers `--output` -> [CONFIG.md](CONFIG.md#global-flags)
         self.output: OutputType = pars.output
@@ -305,36 +331,6 @@ class Action:
             self.gpg = GnuPG(
                 pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase, pars.gnupg_sign_key
             )
-
-        self._attach_repos(pars, create_path, archs, indices_exclude)
-
-    def _attach_repos(
-        self,
-        pars: Namespace,
-        create_path: bool,
-        archs: list[str] | None,
-        indices_exclude: list[str] | None,
-    ) -> None:
-        """Open the target repository with the selection, verified and signed with `gpg`.
-
-        A subclass that opens more repositories overrides it.
-
-        Args:
-            pars: Parsed command line arguments.
-            create_path: Create the target path or bucket if True.
-            archs: The architectures to select; None selects the Release's.
-            indices_exclude: Index exclude globs; None excludes nothing.
-        """
-        # `--target-url` is required, so every action has a target
-        logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
-        storage, params = attach_storage_repo(
-            pars,
-            pars.target_url,
-            create_path=create_path,
-            archs=archs,
-            indices_exclude=indices_exclude,
-        )
-        self.target_repo = RepoRW(storage, params, gpg=self.gpg)
 
     @property
     def _target_metrics(self) -> StorageMetrics:

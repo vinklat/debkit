@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 from helpers.factories import make_deb, make_package, make_params
@@ -29,6 +29,7 @@ from debkit.repo.debfile import DebFileException
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import RepoParams, pool_path
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
+from debkit.repo.repo_diff import RepoDiff
 from debkit.repo.repo_rw import RepoRW
 
 # ---------------------------------------------------------------------------
@@ -55,17 +56,22 @@ def _make_pkg_action(*, storage: object = None) -> ActionPkg:
     action.incoming_storage = MagicMock()
     action.history_retention = HistoryRetention(max_age_days=0)
 
-    target = MagicMock()
+    # autospecced, so a renamed `RepoRW` method or a changed signature fails here as well;
+    # the instance attributes `__init__` sets are set by hand
+    target = create_autospec(RepoRW, instance=True)
     target.storage = storage if storage is not None else MagicMock()
-    target.get_archs.return_value = ["amd64"]
+    target.params = MagicMock(spec=make_params())
     target.params.is_flat = False
+    target.get_archs.return_value = ["amd64"]
+    # which arches take a binary package is `RepoRW.binary_archs`'s rule, tested there
+    target.binary_archs.return_value = ["amd64"]
     target.transfer_from.return_value = {"SHA256": "abc", "Size": "100"}
     target.held_digests.return_value = None
-    target.diff.return_value = MagicMock(
-        is_empty=MagicMock(return_value=False),
-        count_pkgs_to_copy=MagicMock(return_value=1),
-        count_pkgs_to_remove=MagicMock(return_value=0),
-    )
+    diff = create_autospec(RepoDiff, instance=True)
+    diff.is_empty.return_value = False
+    diff.count_pkgs_to_copy.return_value = 1
+    diff.count_pkgs_to_remove.return_value = 0
+    target.diff.return_value = diff
     action.target_repo = target
 
     return action
@@ -390,20 +396,19 @@ def test_insert_starts_the_index_of_an_arch_that_has_none(
 
 
 @patch("debkit.action.action_pkg.DebFile")
-def test_insert_of_an_arch_all_deb_skips_the_source_arch(mock_debfile_cls: MagicMock) -> None:
-    """An `Architecture: all` deb fans out over the binary arches only.
-
-    A mirrored `Sources` index is read-only, so inserting into it would raise
-    `PackagesException` and surface through the Read exit group on a write path.
-    """
+def test_insert_of_an_arch_all_deb_fans_out_over_the_binary_arches(
+    mock_debfile_cls: MagicMock,
+) -> None:
+    """An `Architecture: all` deb goes to every arch `RepoRW.binary_archs` names, and only
+    those: a mirrored `Sources` index is read-only."""
     action = _make_pkg_action(storage=TxnStorageStub())
-    _target(action).get_archs.return_value = ["amd64", "source"]
+    _target(action).binary_archs.return_value = ["amd64", "arm64"]
     _debfile_mock(mock_debfile_cls, arch="all")
 
     action.insert()
 
     inserted = [call.args[1] for call in _target(action).insert_pkg.call_args_list]
-    assert inserted == ["amd64"]
+    assert inserted == ["amd64", "arm64"]
 
 
 # ---------------------------------------------------------------------------
@@ -455,23 +460,20 @@ def test_insert_of_a_changes_targets_each_file_by_its_own_arch(
 ) -> None:
     """Neither the `Architecture` field order nor the file order picks a package's arches."""
     action = _changes_upload(mock_changes_cls, mock_debfile_cls, field, files)
-    _target(action).get_archs.return_value = ["amd64", "arm64", "source"]
+    _target(action).binary_archs.return_value = ["amd64", "arm64"]
 
     action.insert()
 
     assert _inserted(action) == {"a_1_amd64.deb": ["amd64"], "b_1_all.deb": ["amd64", "arm64"]}
 
 
-@pytest.mark.parametrize(
-    "repo_archs", [["source"], [], [""]], ids=["source-only", "none", "empty-arch"]
-)
 @patch("debkit.action.action_pkg.DebFile")
 @patch("debkit.action.action_pkg.Changes")
 def test_insert_refuses_an_all_package_when_the_target_has_no_binary_arch(
-    mock_changes_cls: MagicMock, mock_debfile_cls: MagicMock, repo_archs: list[str]
+    mock_changes_cls: MagicMock, mock_debfile_cls: MagicMock
 ) -> None:
     action = _changes_upload(mock_changes_cls, mock_debfile_cls, "all", ["b_1_all.deb"])
-    _target(action).get_archs.return_value = repo_archs
+    _target(action).binary_archs.return_value = []
 
     with pytest.raises(ActionException, match="lists no binary architecture"):
         action.insert()
@@ -514,7 +516,7 @@ def test_insert_refuses_a_deb_whose_control_names_the_source_arch(
     mock_debfile_cls: MagicMock,
 ) -> None:
     """The control field is read straight out of the uploaded .deb, so it can overwrite
-    the binary set `_binary_archs` picked and reach the read-only source index.
+    the binary set `RepoRW.binary_archs` picked and reach the read-only source index.
     """
     txn = TxnStorageStub()
     action = _make_pkg_action(storage=txn)
@@ -738,24 +740,30 @@ def test_list_of_a_repository_without_packages_prints_nothing(
 
 
 @pytest.mark.parametrize(
-    ("changes", "deb"),
-    [(None, None), ("hello.changes", "hello_1.0_amd64.deb")],
-    ids=["neither", "both"],
+    ("upload", "message"),
+    [
+        ((), "exactly one of --changes-filename or"),
+        (("--deb-filename", "a.deb", "--changes-filename", "a.changes"), "exactly one of"),
+        (("--deb-filename", "hello_1.0_amd64.txt"), "Invalid .deb filename"),
+    ],
+    ids=["neither-file", "both-files", "no-deb-suffix"],
 )
-def test_insert_needs_exactly_one_upload_file(changes: str | None, deb: str | None) -> None:
-    action = _make_pkg_action()
-    action.changes_filename, action.deb_filename = changes, deb
+def test_insert_refuses_its_flags_before_creating_the_target(
+    tmp_path: Path, upload: tuple[str, ...], message: str
+) -> None:
+    """Regression: the refusal came after `create_path` had made the target path or bucket."""
+    (tmp_path / "in").mkdir()
+    pars = parse_cli(
+        [
+            *("--target-url", f"fs://{tmp_path / 'repo'} bookworm main", "--skip-verify"),
+            *("insert", *upload, "--incoming-url", f"fs://{tmp_path / 'in'}"),
+        ]
+    )
 
-    with pytest.raises(ActionException, match="exactly one of --changes-filename or"):
-        action.insert()
+    with pytest.raises(ActionException, match=message):
+        ActionPkg(pars, create_path=True)
 
-
-def test_insert_refuses_a_deb_filename_without_the_deb_suffix() -> None:
-    action = _make_pkg_action()
-    action.deb_filename = "hello_1.0_amd64.txt"
-
-    with pytest.raises(ActionException, match="Invalid .deb filename"):
-        action.insert()
+    assert not (tmp_path / "repo").exists()
 
 
 def test_remove_refuses_a_pattern_no_package_matches(tmp_path: Path) -> None:
@@ -769,7 +777,7 @@ def test_remove_refuses_a_pattern_no_package_matches(tmp_path: Path) -> None:
     action.pkg_pattern = {"Package": re.compile("^nomatch$")}
     action.target_repo = RepoRW(storage, make_params())
 
-    with pytest.raises(ActionException, match="No packages matched the pattern"):
+    with pytest.raises(ActionException, match="No removable packages matched the pattern"):
         action.remove()
 
     assert TransactionHistory(storage).load() == []

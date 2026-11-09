@@ -12,6 +12,7 @@ import io
 import tarfile
 from argparse import Namespace
 from collections.abc import Iterable
+from functools import partial
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -225,6 +226,10 @@ def _attach_state(
         for cname, archs in components.items():
             comp = MagicMock(spec=Component)
             comp.packages = archs
+            comp.is_flat = repo.params.is_flat
+            # the real views, so a stubbed component cannot disagree with the real one
+            comp.slot_packages.side_effect = partial(Component.slot_packages, comp)
+            comp.containers.side_effect = partial(Component.containers, comp)
             comp.get_indices_paths.return_value = list(comp_indices.get(cname, []))
             repo.components[cname] = comp
 

@@ -17,10 +17,11 @@ from helpers.trees import payload_path, write_dist
 from txstore import Storage, StorageException, StorageFS
 
 from debkit.repo import _listed_slots, shared_root_claims
-from debkit.repo.component import Component
+from debkit.repo.component import Component, IndexLoad
 from debkit.repo.params import RepoParams
 from debkit.repo.release import RootRelease
 from debkit.repo.repo_rw import CheckReport, RepoRW
+from debkit.repo.repo_sync import RepoSync
 
 
 def _repo() -> tuple[RepoRW, MagicMock]:
@@ -256,6 +257,30 @@ def _flat_repo(root: Path) -> RepoRW:
     return repo
 
 
+def test_flat_repo_with_several_release_components_keeps_one_slot(tmp_path: Path) -> None:
+    """Regression: `Components: main contrib` loaded two slots over the one `Packages` file,
+    and the second saved last, dropping a package the first one inserted."""
+    digest = hashlib.sha256(_FLAT_INDEX).hexdigest()
+    (tmp_path / "Packages").write_bytes(_FLAT_INDEX)
+    (tmp_path / "Release").write_text(
+        f"Origin: x\nArchitectures: amd64\nComponents: main contrib\n"
+        f"SHA256:\n {digest} {len(_FLAT_INDEX)} Packages\n"
+    )
+    payload = tmp_path / "pool/u/upstream/upstream_1_amd64.deb"
+    payload.parent.mkdir(parents=True)
+    payload.write_bytes(b"x")
+    repo = _flat_repo(tmp_path)
+
+    repo.insert_pkg("main", "amd64", make_package("pool/n/new/new_1_amd64.deb", Package="new"))
+    repo.remove_pkg({"Package": re.compile("^upstream$")})
+    repo.save()
+
+    assert list(repo.components) == ["main"]
+    index = (tmp_path / "Packages").read_text()
+    assert "Package: new" in index
+    assert "Package: upstream" not in index
+
+
 def test_insert_pkg_into_flat_repo_joins_its_single_component(tmp_path: Path) -> None:
     """Regression: `--component main` added a second slot over the same `Packages` file."""
     digest = hashlib.sha256(_FLAT_INDEX).hexdigest()
@@ -305,17 +330,77 @@ def test_insert_into_a_new_multi_arch_flat_repo_keeps_every_package(tmp_path: Pa
     repo = RepoRW(StorageFS(str(tmp_path)), params)
     repo.setup(fields={"Architectures": "amd64 arm64 all"})
 
-    repo.insert_pkg("main", "amd64", make_package("pool/a/aa/aa_1_amd64.deb", Package="aa"))
+    aa = make_package("pool/a/aa/aa_1_amd64.deb", Package="aa", Architecture="amd64")
+    repo.insert_pkg("main", "amd64", aa)
     for arch in repo.get_archs():
-        repo.insert_pkg("main", arch, make_package("pool/c/cc/cc_1_all.deb", Package="cc"))
+        cc = make_package("pool/c/cc/cc_1_all.deb", Package="cc", Architecture="all")
+        repo.insert_pkg("main", arch, cc)
     repo.save()
 
     assert sorted(_flat_packages(tmp_path)) == ["aa", "cc"]
     reloaded = _flat_repo(tmp_path)
+    # each slot reports its arch and `all`, as a componented binary index lists them
     assert {arch: s["packages_total"] for arch, s in reloaded.stats()["/"].items()} == {
         "amd64": 2,
-        "arm64": 2,
+        "arm64": 1,
     }
+    dumped = reloaded.dump()["components"]["/"]
+    assert [str(p) for p in dumped["arm64"]["packages"]["data"]] == ["pool/c/cc/cc_1_all.deb"]
+
+
+def _write_flat(root: Path, pkgs: list[tuple[str, str, bytes]]) -> None:
+    """Write a flat repo whose one index lists `pkgs` (name, arch, payload bytes)."""
+    index = "".join(
+        f"Package: {name}\nVersion: 1\nArchitecture: {arch}\nFilename: pool/{name}_1_{arch}.deb\n"
+        f"Size: {len(data)}\nSHA256: {hashlib.sha256(data).hexdigest()}\n\n"
+        for name, arch, data in pkgs
+    ).encode()
+    (root / "Packages").write_bytes(index)
+    (root / "Release").write_text(
+        "Origin: x\nArchitectures: amd64 i386 arm64\n"
+        f"SHA256:\n {hashlib.sha256(index).hexdigest()} {len(index)} Packages\n"
+    )
+    (root / "pool").mkdir(exist_ok=True)
+    for name, arch, data in pkgs:
+        (root / f"pool/{name}_1_{arch}.deb").write_bytes(data)
+
+
+def _flat_params(root: Path, archs: list[str] | None) -> RepoParams:
+    params = RepoParams(archs=archs, verify_gpg=False, verify_digests=True)
+    params.from_deb_source(f"fs://{root} /")
+    return params
+
+
+def test_flat_sync_of_an_arch_subset_copies_a_changed_payload_of_another_arch(
+    tmp_path: Path,
+) -> None:
+    """Regression: an arch view of the flat index hid an i386 payload changed under its
+    `Filename` from a sync selecting amd64 and arm64, while the index naming its new digest
+    was copied, so the target served old bytes under a new digest."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    _write_flat(src, [("a", "amd64", b"A1"), ("b", "i386", b"B2")])
+    _write_flat(dst, [("a", "amd64", b"A1"), ("b", "i386", b"B1")])
+    source = RepoSync(StorageFS(str(src)), _flat_params(src, ["amd64", "arm64"]))
+    source.update(IndexLoad.STRICT)
+    target = RepoRW(StorageFS(str(dst)), _flat_params(dst, ["amd64", "arm64"]))
+    target.update(IndexLoad.READ_ONLY)
+
+    assert "pool/b_1_i386.deb" in source.build_sync_lists(target).copy
+
+
+@pytest.mark.parametrize("archs", [["amd64"], ["amd64", "i386"]], ids=["one-arch", "two-arch"])
+def test_flat_stats_report_an_arch_slot_by_its_arch_whatever_else_is_selected(
+    tmp_path: Path, archs: list[str]
+) -> None:
+    """Regression: a slot was filtered only when another selected slot shared the index, so
+    selecting i386 too changed what the amd64 slot reported."""
+    _write_flat(tmp_path, [("a", "amd64", b"A"), ("b", "i386", b"B"), ("c", "all", b"C")])
+    repo = RepoRW(StorageFS(str(tmp_path)), _flat_params(tmp_path, archs))
+    repo.update(IndexLoad.READ_ONLY)
+
+    assert repo.stats()["/"]["amd64"]["packages_total"] == 2
 
 
 def test_insert_into_a_loaded_multi_arch_flat_repo_keeps_every_package(tmp_path: Path) -> None:
@@ -656,3 +741,24 @@ def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root
 
     assert shared.complete
     assert shared.prefix == ""
+
+
+@pytest.mark.parametrize(
+    ("archs", "flat", "expected"),
+    [
+        (["amd64", "source", "arm64"], False, ["amd64", "arm64"]),
+        (["source"], False, []),
+        ([""], False, []),
+        ([""], True, [""]),
+    ],
+    ids=["source-dropped", "source-only", "empty-arch-componented", "empty-arch-flat"],
+)
+def test_binary_archs_drops_the_source_arch_and_a_componented_empty_one(
+    monkeypatch: pytest.MonkeyPatch, archs: list[str], flat: bool, expected: list[str]
+) -> None:
+    """A mirrored `Sources` index is read-only, and the empty arch names no `binary-<arch>/`
+    directory, so only a flat repo inserts under it."""
+    repo = RepoRW(make_storage_mock(), make_params(flat=flat))
+    monkeypatch.setattr(repo, "get_archs", lambda: iter(archs))
+
+    assert repo.binary_archs() == expected

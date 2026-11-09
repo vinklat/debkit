@@ -25,8 +25,8 @@ in [examples.md](../guides/examples.md#remove-packages).
   → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
-- The target is loaded and copied for the diff only after `history_lock` is granted, so a peer
-  that commits while this run waits is read, not saved over →
+- The target is loaded and copied for the diff only after `history_lock` is granted, so a peer that
+  commits while this run waits is read, not saved over →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed pattern exits 2
   before the target is read → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
@@ -34,9 +34,9 @@ in [examples.md](../guides/examples.md#remove-packages).
   filenames; `RepoRW.remove_pkg` deletes each payload once, since an `Architecture: all` package is
   listed by every binary arch index. The rewritten indices reach storage only through
   `target.save()`, and only when the diff is non-empty.
-- Every dist of a componented root shares `pool/`, so `remove_pkg` asks `Repo.shared_root()`
-  which payloads another dist claims and deletes only what `SharedRoot.deletable()` allows; that
-  lists the whole root and loads every other dist, as a sync does →
+- Every dist of a componented root shares `pool/`, so `remove_pkg` asks `Repo.shared_root()` which
+  payloads another dist claims and deletes only what `SharedRoot.deletable()` allows; that lists the
+  whole root and loads every other dist, as a sync does →
   [VALIDATION.md](../../VALIDATION.md#index-selection).
 - No match is an orchestration failure, not a write failure →
   [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
@@ -48,10 +48,9 @@ in [examples.md](../guides/examples.md#remove-packages).
 
 `tests/test_argtypes.py` covers pattern parsing, length, and compilation; `tests/test_action_pkg.py`
 covers the no-match `ActionException`, the transaction wiring, and a peer's removal committed while
-the run waited for the lock; `tests/test_packages.py` covers
-`Packages.remove()` and its filename-safety check; `tests/test_repo_rw.py` removes an `all` payload
-from a real `StorageFS` and keeps a payload another dist lists →
-[TESTING.md](../../TESTING.md#required-coverage).
+the run waited for the lock; `tests/test_packages.py` covers `Packages.remove()` and its
+filename-safety check; `tests/test_repo_rw.py` removes an `all` payload from a real `StorageFS` and
+keeps a payload another dist lists → [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 

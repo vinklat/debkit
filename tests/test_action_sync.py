@@ -12,9 +12,10 @@ from collections.abc import Callable, Iterator
 from copy import copy
 from pathlib import Path
 from typing import IO, Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
+from helpers.factories import make_params
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history, storage_namespace
 from helpers.trees import write_dist
 from txstore import (
@@ -31,9 +32,10 @@ from debkit.action import ActionException, OutputType
 from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionCheck, ActionSync
 from debkit.repo.component import ComponentException, IndexLoad
 from debkit.repo.params import RepoParams
-from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
-from debkit.repo.repo_rw import CheckReport
-from debkit.repo.repo_sync import SyncPlan
+from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException, RootRelease
+from debkit.repo.repo_diff import RepoDiff
+from debkit.repo.repo_rw import CheckReport, RepoRW
+from debkit.repo.repo_sync import RepoSync, SyncPlan
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,17 +60,26 @@ def _make_action(*, storage: object = None) -> ActionSync:
     action.allow_release_rollback = False
     action.history_retention = HistoryRetention(max_age_days=0)
 
-    source = MagicMock()
+    # autospecced, so a renamed `Repo*` method or a changed signature fails here as well;
+    # the instance attributes `__init__` sets are set by hand
+    source = create_autospec(RepoSync, instance=True)
+    source.params = MagicMock(spec=make_params())
     source.params.url = "fs:///src"
     source.params.verify_gpg = True
+    source.release = MagicMock(spec=RootRelease(MagicMock(), make_params()))
     source.release.hash = "hash1"
+    source.storage = MagicMock()
     source.build_sync_lists.return_value = SyncPlan(["pkg.deb"], [], set())
     source.sync.return_value = []
-    source.diff.return_value = MagicMock(is_empty=MagicMock(return_value=True))
+    unchanged = create_autospec(RepoDiff, instance=True)
+    unchanged.is_empty.return_value = True
+    source.diff.return_value = unchanged
     action.source_repo = source
 
-    target = MagicMock()
+    target = create_autospec(RepoRW, instance=True)
+    target.params = MagicMock(spec=make_params())
     target.params.url = "s3:///tgt"
+    target.release = MagicMock(spec=RootRelease(MagicMock(), make_params()))
     target.storage = storage if storage is not None else MagicMock()
     action.target_repo = target
 
@@ -361,6 +372,52 @@ def test_sync_refuses_a_root_release_copy_that_differs_from_the_verified_one(
 
     assert (tmp_path / "tgt" / _PREFIX / "Release").read_bytes() == target_before
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
+
+
+@pytest.mark.parametrize("separator", [b"\n\n\n", b"\r\n\r\n"], ids=["blank-run", "crlf-blank"])
+def test_sync_keeps_the_target_when_a_blank_line_hid_the_source_architectures(
+    tmp_path: Path, separator: bytes
+) -> None:
+    """A blank line hid the Architectures field and every hash block, so a sync letting the
+    Release choose the architectures loaded nothing and purged the whole target; apt reads
+    the first paragraph alone, so the sync refuses a source selecting nothing."""
+    from debkit.repo import RepoReadException
+
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    release = tmp_path / "src" / _PREFIX / "Release"
+    release.write_bytes(
+        release.read_bytes().replace(b"\nArchitectures:", separator + b"Architectures:")
+    )
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.source_repo.params.archs = None
+    action.target_repo.params.archs = None
+
+    with pytest.raises(RepoReadException, match="selects no architecture"):
+        action.sync()
+
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
+    assert (tmp_path / "tgt" / _PREFIX / "main/binary-amd64/Packages.gz").exists()
+
+
+def test_sync_refuses_a_source_release_selecting_no_architecture(tmp_path: Path) -> None:
+    """A signed Release that declares no architecture and lists no index loads nothing."""
+    from debkit.repo import RepoReadException
+
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    release = tmp_path / "src" / _PREFIX / "Release"
+    head = release.read_bytes().split(b"\nArchitectures:", 1)[0]
+    release.write_bytes(head + b"\n")
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+    action.source_repo.params.archs = None
+    action.target_repo.params.archs = None
+
+    with pytest.raises(RepoReadException, match="selects no architecture"):
+        action.sync()
+
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
+    assert (tmp_path / "tgt" / _PREFIX / "main/binary-amd64/Packages.gz").exists()
 
 
 def _write_other_dist(base: Path, dist: str, packages: dict[str, str]) -> None:
@@ -755,9 +812,11 @@ def test_sync_floors_against_a_peer_commit_that_lands_before_the_lock(tmp_path: 
         with real_transaction(storage, retention):
             yield
 
-    with patch.object(action_sync, "maybe_transaction", peer_commits_first):
-        with pytest.raises(ReleaseFreshnessException, match="older than the target"):
-            action.sync()
+    with (
+        patch.object(action_sync, "maybe_transaction", peer_commits_first),
+        pytest.raises(ReleaseFreshnessException, match="older than the target"),
+    ):
+        action.sync()
 
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
 

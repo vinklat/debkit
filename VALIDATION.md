@@ -68,10 +68,11 @@ Built by `RepoParams.indices_path()` from the layout prefix, component, and inne
 | Compression preference | `Packages` and `Sources` discovery follows the codec order in `repo/compress.py`, the uncompressed index last; a save rewrites every form discovery found |
 | Release files | Root `Release`, `Release.gpg`, and `InRelease`, and the per-component `Release` under the architecture directory (`binary-<arch>/` or `source/`), come from `indices_path()`, read and write alike |
 | Component Release | Only a componented repo reads or writes a per-component `Release`; its component and architecture are non-empty; an empty one is a programming error, an uncaught `ValueError`. |
-| Flat component | A flat layout has one component slot: insert joins the component it loaded, `/` when its Release names none, whatever `--component` says. |
+| Flat component | A flat layout has one component slot: the first safe `Components` token, `/` when its Release names none; further tokens are dropped and logged. Insert joins it whatever `--component` says. |
 | Flat Components field | A new flat repository is set up without `Components`; a save never rewrites the field, so a loaded one is kept. |
 | Flat pool key | `--component` still names the pool key of a flat insert → [Filename safety](#filename-safety). |
-| Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. |
+| Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. `stats` and `dump` report a flat arch slot as its arch and `all` packages, as a componented `binary-<arch>/` index lists them; a package with no `Architecture` is in every slot. |
+| Flat payload plan | A flat sync copies its one index whole, so the package diff and the payload plan read the whole index whatever `--architectures` selects. |
 | Release key | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends |
 
 Every other index, `Contents`, `Translation`, dep11, and `Commands` among them, is reached through
@@ -126,15 +127,15 @@ per entry by its transfer; the source is never probed.
 
 Release files, stored indices, and `.changes` files are read by `read_capped()` in
 `repo/compress.py`, which reads at most one byte past a cap, so each is refused before it is
-verified or buffered in full. Upload control data is capped by `_control_of()` in
-`repo/debfile.py`, which decodes the `control.tar` member under a limit and walks it as a stream.
-"Checked" means digest verification is on.
+verified or buffered in full. Upload control data is capped by `_control_of()` in `repo/debfile.py`,
+which decodes the `control.tar` member under a limit and walks it as a stream. "Checked" means
+digest verification is on.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Root Release files | `Release`, `InRelease`, and `Release.gpg` are at most `MAX_RELEASE_BYTES` (16 MiB): no signed file records their size. | → `ReleaseReadException` (Read) |
-| Per-arch Release | At most the `Size` the checked root Release records, else `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
-| Stored index | At most the largest `Size` a checked root or per-arch Release records, else `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
+| Per-arch Release | At most the `Size` the checked root Release records, and never past `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
+| Stored index | At most the largest `Size` a checked root or per-arch Release records, and never past `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
 | `.changes` file | At most `MAX_CHANGES_BYTES` (4 MiB), read by `read_capped()` before `--changes-sha256` is checked. | → `ChangesException` (Read) |
 | Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
 | Upload control tar | The `control.tar` decodes to at most `MAX_CONTROL_TAR_BYTES` (64 MiB), which also bounds its member count; it is uncompressed, `.gz`, `.xz`, `.bz2`, `.lzma`, or `.zst`, the last decoded by the `zstd` binary. | Past the limit, another compression, or a stream that does not decode → `DebFileException` (Read) |
@@ -203,7 +204,7 @@ every file becomes one record keyed by `<directory>/<name>`.
 | Size | Agrees across every hash block that lists the file. | → `PackagesException` (Read) |
 | Digests | At least one algorithm normalization keeps; `Files` alone is MD5, which it drops → [CRYPTO.md](CRYPTO.md#checksums). | → `PackagesException` (Read) |
 | Shared payload | A file named by several stanzas is kept once, last stanza wins; disagreeing digests are logged. | — |
-| Mutation | `insert` is refused; `remove` matches nothing; `save` writes nothing. | `insert` → `PackagesException` (Read) |
+| Mutation | `insert` is refused; `remove` drops nothing and logs how many source payloads it kept; `save` writes nothing. | `insert` → `PackagesException` (Read) |
 | Container | The source architecture resolves to `Sources` on the read and the write path alike, through `container_for()` in `repo/component.py`: `Packages.setup` names its file from the layout, so a binary container would write a binary index into the canonical `Sources` path. | → `PackagesException` (Read) on the refused insert |
 | Insert architecture | A package whose control field names the source architecture is refused before the transfer, as a `.changes` is when any of its `Architecture` tokens names it. | → `ActionException` (Generic) |
 
@@ -250,6 +251,21 @@ Implemented by `Changes.parse()`, `Release.parse()`, and the `Sources` stanza ex
 | -- | -- | -- |
 | `.changes` | No field appears twice, names compared without case, as dpkg refuses one: its digests and architectures gate the insert. | → `ChangesException` (Read) |
 | `Release` and `Sources` | A repeated field keeps its last value, so a sloppy mirror still syncs. | — |
+
+## Blank lines
+
+Implemented by `parse_stanza()` in `repo/stanza.py`, called by `Changes.parse()` and
+`Release.parse()`. Debian Policy 5.1 ends a paragraph at an empty line; a `.changes` and a `Release`
+hold one.
+
+| Rule | Constraint | Failure |
+| -- | -- | -- |
+| Line ends | CRLF is read as LF. | — |
+| Leading and trailing empty lines | Ignored. | — |
+| Whitespace line | A line of only spaces or tabs continues the field before it, as apt reads it. | — |
+| Unreadable line | A line that is neither a field, a continuation, nor empty, such as one with no colon, a space before the colon, or a bare CR, would end the fields and hide the rest. A `Release` is checked after its unindented-continuation repair. | `.changes` → `ChangesException` (Read); `Release` → `ReleaseReadException` (Read) |
+| `.changes` | One paragraph: no empty line between two fields, as its digests and architectures gate the insert. | → `ChangesException` (Read) |
+| `Release` | The first paragraph is read, as apt reads it, so freshness and the index set agree with its clients; a later one is ignored. | Logged as a warning |
 
 ## Log levels
 
@@ -321,6 +337,7 @@ path.
 | Token | Lower-case letters, digits, and `-`, not starting with `-`, e.g. `amd64`, `hurd-i386`; a flag token is checked before any storage is opened. | Flag token → `ActionException` (Generic) |
 | Release token | A root Release `Architectures` or `Architecture` token follows the token rule. | Dropped and logged |
 | No Release token | A root Release with neither `Architectures` nor a valid `Architecture` token selects the empty arch in a flat repo; a componented one selects each arch its digest block lists `<component>/binary-<arch>/Packages*` for, under the token rule, `all` skipped. | Bad token dropped and logged |
+| No architecture | A strict load, the `sync` source, that selects no architecture loads nothing, so a sync would purge the target. | → `RepoReadException` (Read) |
 | Upload token | Every `.changes` `Architecture` token and the `.deb` control `Architecture` follow the token rule, checked before the transfer. | → `ActionException` (Generic) |
 | Index slot | `Component.insert_pkg` refuses an arch that is neither empty nor a token, whatever its caller checked. | → `ComponentException` (Read) |
 | Insert target | A `.deb` goes to its control `Architecture` alone; an `all` or missing one goes to every root Release architecture but `source`. The `.changes` field and its file order play no part. | — |

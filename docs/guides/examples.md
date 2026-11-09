@@ -161,7 +161,8 @@ export DEBKIT_PKG_PATTERN='{"Filename":"some_package1.deb|some_package2.deb"}'
 debkit remove
 ```
 
-Every package matching all regex patterns is removed from every component and architecture. Pattern
+Every package matching all regex patterns is removed from every component and binary architecture. A
+mirrored `Sources` index is read-only, so a matching source package is kept and logged. Pattern
 rules → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 
 ## Mirror a repository

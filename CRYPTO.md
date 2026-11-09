@@ -88,10 +88,10 @@ Otherwise it returns `False`; callers differ → [Verification failures](#verifi
 
 ## Release freshness
 
-Implemented by `RootRelease.check_fresh_against()` in `repo/release.py`; `sync` runs it before
-each pass builds its transfer lists, when GPG verification is on and `--allow-release-rollback` is
-not set. A signature proves who signed a Release, not that it is current, and the orphan pass
-purges what an older Release no longer lists.
+Implemented by `RootRelease.check_fresh_against()` in `repo/release.py`; `sync` runs it before each
+pass builds its transfer lists, when GPG verification is on and `--allow-release-rollback` is not
+set. A signature proves who signed a Release, not that it is current, and the orphan pass purges
+what an older Release no longer lists.
 
 | Condition | Result |
 | -- | -- |

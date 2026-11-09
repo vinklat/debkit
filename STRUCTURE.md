@@ -16,7 +16,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/_env.py` | Environment access → [CONFIG.md](CONFIG.md#resolution); value rules → [VALIDATION.md](VALIDATION.md#environment-values). |
 | `src/debkit/_logging.py` | `configure_logging()`: root handler, plain or JSON lines → [CONFIG.md](CONFIG.md#global-flags). |
 | `src/debkit/_escape.py` | `escape_control()`: control characters in untrusted text bound for a terminal, as `\xNN` → [CONFIG.md](CONFIG.md#output-flag). |
-| `src/debkit/action/__init__.py` | `ActionException`, `open_storage()`, `storage_url()`, `history_retention()`, `verify_policy()`, the `attach_storage_*` helpers, `Action` base → [STORAGE.md](STORAGE.md#construction). |
+| `src/debkit/action/__init__.py` | `ActionException`, `open_storage()`, `storage_url()`, `history_retention()`, `verify_policy()`, the `attach_storage_*` helpers, `open_target_repo()`, `Action` base → [STORAGE.md](STORAGE.md#construction). |
 | `src/debkit/action/action_pkg.py` | `ActionPkg`: list (`list_packages()`), dump, stats, insert, remove. |
 | `src/debkit/action/action_sync.py` | `ActionSync`: sync; `ActionCheck`: check; the selection both read → [CONFIG.md](CONFIG.md#check). |
 | `src/debkit/action/action_history.py` | `ActionHistory`: log, revert, prune → [STORAGE.md](STORAGE.md#history-commands). |
@@ -31,10 +31,11 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/sources.py` | `Sources` index expanded into one read-only record per payload file. |
 | `src/debkit/repo/component.py` | Component (suite/component) helpers. |
 | `src/debkit/repo/changes.py` | `.changes` parsing. |
+| `src/debkit/repo/stanza.py` | `parse_stanza()`: a single-paragraph control file read through the email parser → [VALIDATION.md](VALIDATION.md#blank-lines). |
 | `src/debkit/repo/debfile.py` | `.deb` introspection. |
 | `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` and `zstd_decompress()` read and decode up to a size limit → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | `src/debkit/repo/gnupg.py` | GPG sign/verify wrapper → [CRYPTO.md](CRYPTO.md#gpg). |
-| `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `HexDigests`, `ChecksumException`; re-exports txstore's algorithm-name lists → [CRYPTO.md](CRYPTO.md#checksums). |
+| `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `parse_size()`, `HexDigests`, `ChecksumException`; re-exports txstore's algorithm-name lists → [CRYPTO.md](CRYPTO.md#checksums). |
 | `tests/` | Test suite → [TESTING.md](TESTING.md#file-layout). |
 | `scripts/check_docs.py` | Contract-doc gate → [SETUP.md](SETUP.md#quality-gates). |
 | `scripts/render_diagrams.py` | PlantUML renderer and freshness checker → [SETUP.md](SETUP.md#diagrams). |

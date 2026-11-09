@@ -61,6 +61,45 @@ def test_parse_refuses_a_repeated_field(repeat: bytes) -> None:
         Changes(_storage_with(b"")).parse(_CHANGES_BLOB + repeat)
 
 
+_SPLIT_CHANGES = (b"Format: 1.8\n", b"Architecture: amd64\n" + _CHANGES_BLOB.split(b"\n", 2)[2])
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        _SPLIT_CHANGES[0] + b"\n\n" + _SPLIT_CHANGES[1],
+        (_SPLIT_CHANGES[0] + b"\n" + _SPLIT_CHANGES[1]).replace(b"\n", b"\r\n"),
+        make_clearsigned(_SPLIT_CHANGES[0] + b" \n\n" + _SPLIT_CHANGES[1]),
+    ],
+    ids=["blank-run", "crlf-blank", "signed-whitespace-then-blank"],
+)
+def test_parse_refuses_a_blank_line_between_fields(blob: bytes) -> None:
+    """A blank line hid the digests after it, reported as "No SHA256 checksums found"."""
+    with pytest.raises(ChangesException, match="blank line between fields"):
+        Changes(_storage_with(blob)).parse(blob)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [b"Date: now\nnocolon\n", b"Date: now\r\r"],
+    ids=["no-colon", "bare-cr-blank"],
+)
+def test_parse_refuses_a_line_that_hides_the_fields_after_it(line: bytes) -> None:
+    """A hidden second `Architecture: source` passed the repeated-field and source checks."""
+    blob = _CHANGES_BLOB + line + b"Architecture: source\n"
+
+    with pytest.raises(ChangesException, match="unreadable line"):
+        Changes(_storage_with(blob)).parse(blob)
+
+
+def test_parse_reads_a_trailing_blank_line() -> None:
+    blob = _CHANGES_BLOB + b"\n\n"
+    changes = Changes(_storage_with(blob))
+    changes.parse(blob)
+
+    assert changes.get_deb_files() == ["foo_1.0_amd64.deb", "bar_1.0_all.deb"]
+
+
 def test_get_archs_returns_every_token() -> None:
     blob = b"Format: 1.8\nArchitecture: amd64 all\nChecksums-Sha256:\n deadbeef 1 x.deb\n"
     changes = Changes(_storage_with(blob))

@@ -19,9 +19,14 @@ from helpers.factories import make_package, make_packages_block, make_params, ma
 from txstore import StorageFS, calc_digests
 
 from debkit.repo import packages as packages_module
-from debkit.repo.compress import codec_for
+from debkit.repo.compress import codec_for, read_capped
 from debkit.repo.hashes import ChecksumException
-from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
+from debkit.repo.packages import (
+    Packages,
+    PackagesException,
+    PackagesNotFoundException,
+    diff_packages,
+)
 from debkit.repo.params import RepoParams
 from debkit.repo.release import Release
 
@@ -53,6 +58,16 @@ def test_packages_parse_indices_trailing_blank_block_does_not_stop() -> None:
     pkgs = _new_packages()
     data = make_packages_block("foo") + "\n" + make_packages_block("bar") + "\n\n"
     pkgs._parse_indices(data)
+    assert len(pkgs) == 2
+
+
+@pytest.mark.parametrize("junk", ["# comment", "garbage", " continuation"])
+def test_packages_parse_indices_skips_a_stanza_holding_no_field(junk: str) -> None:
+    """A remote index may hold a stanza nothing parses; it is skipped, not a crash."""
+    pkgs = _new_packages()
+    data = make_packages_block("foo") + "\n" + junk + "\n\n" + make_packages_block("bar")
+
+    assert pkgs._parse_indices(data) == 2
     assert len(pkgs) == 2
 
 
@@ -441,6 +456,31 @@ def test_packages_load_caps_an_unchecked_index_as_stored(
         Packages(storage, params).load(root, "main", "amd64")
 
 
+def test_packages_load_caps_a_checked_index_recording_a_size_past_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recorded `Size` tightens the cap, never lifts it: one past it was buffered whole."""
+    monkeypatch.setattr(packages_module, "MAX_INDICES_BYTES", 64)
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    stored = make_packages_block("foo").encode() * 4
+    storage.put("dists/bookworm/main/binary-amd64/Packages", stored)
+    root = Release(storage, params)
+    root.update_digests("main/binary-amd64/Packages", {**calc_digests(stored), "Size": "10" * 6})
+    read: list[int] = []
+
+    def spy(storage: StorageFS, path: str, limit: int) -> bytes:
+        read.append(limit)
+        return read_capped(storage, path, limit)
+
+    monkeypatch.setattr(packages_module, "read_capped", spy)
+
+    with pytest.raises(PackagesException, match="Stored indices"):
+        Packages(storage, params).load(root, "main", "amd64")
+
+    assert read == [64]
+
+
 @pytest.mark.parametrize("suffix", [".gz", ".xz"])
 def test_packages_load_refuses_an_index_past_the_size_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
@@ -629,23 +669,38 @@ def test_packages_remove_no_match_returns_false() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_packages_diff_added_removed_updated_old_versions() -> None:
-    s = make_storage_mock()
-    p = make_params()
+def test_diff_packages_added_removed_updated_old_versions() -> None:
     older = {
         "a.deb": make_package("a.deb", size=1),
         "b.deb": make_package("b.deb", size=1),
     }
-    newer = Packages(s, p)
-    newer.packages = {
+    newer = {
         "a.deb": make_package("a.deb", size=2),  # updated (different Size)
         "c.deb": make_package("c.deb", size=1),  # added in the newer set
     }
-    added, removed, updated, old = newer.diff(older)
-    assert set(added) == {"c.deb"}
-    assert set(removed) == {"b.deb"}
-    assert set(updated) == {"a.deb"}
-    assert set(old) == {"a.deb"}
+
+    pkgs_diff = diff_packages(newer, older)
+
+    assert set(pkgs_diff.added) == {"c.deb"}
+    assert set(pkgs_diff.removed) == {"b.deb"}
+    assert set(pkgs_diff.updated) == {"a.deb"}
+    assert set(pkgs_diff.old_versions) == {"a.deb"}
+    assert not pkgs_diff.is_empty()
+
+
+def test_diff_packages_of_equal_sets_is_empty() -> None:
+    same = {"a.deb": make_package("a.deb", size=1)}
+
+    assert diff_packages(same, dict(same)).is_empty()
+
+
+def test_packages_dump_lists_the_given_packages_or_every_one() -> None:
+    pkgs = _new_packages()
+    pkgs._parse_indices(make_packages_block("foo") + "\n" + make_packages_block("bar"))
+    foo = [pkg for pkg in pkgs.packages.values() if pkg.fields["Package"] == "foo"]
+
+    assert len(pkgs.dump()["packages"]["data"]) == 2
+    assert pkgs.dump(foo)["packages"]["data"] == foo
 
 
 # ---------------------------------------------------------------------------

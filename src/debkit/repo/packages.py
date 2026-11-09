@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -53,6 +53,10 @@ class PackagesDiff(NamedTuple):
     updated: dict[str, Package]
     old_versions: dict[str, Package]
 
+    def is_empty(self) -> bool:
+        """Report whether the sets are equal: nothing added, removed, or updated."""
+        return not (self.added or self.removed or self.updated)
+
 
 class PackagesException(Exception):
     """Exception raised for errors in the Packages class."""
@@ -64,6 +68,30 @@ class PackagesException(Exception):
 
 class PackagesNotFoundException(PackagesException):
     """No index file the Release lists for the arch is in storage; nothing was read."""
+
+
+def diff_packages(newer: Mapping[str, Package], older: Mapping[str, Package]) -> PackagesDiff:
+    """Compare a newer package map with an older one, both keyed by `Filename`.
+
+    Args:
+        newer: The newer package map.
+        older: The older package map.
+
+    Returns:
+        Packages by `Filename`: added, removed, and updated in `newer`, and the old versions
+        the updated ones replace.
+    """
+    updated = {
+        filename: package
+        for filename, package in newer.items()
+        if filename in older and package != older[filename]
+    }
+    return PackagesDiff(
+        added={filename: pkg for filename, pkg in newer.items() if filename not in older},
+        removed={filename: pkg for filename, pkg in older.items() if filename not in newer},
+        updated=updated,
+        old_versions={filename: pkg for filename, pkg in older.items() if filename in updated},
+    )
 
 
 class Packages:
@@ -249,8 +277,8 @@ class Packages:
 
         Raises:
             ChecksumException: The file is larger than the size a checked Release records.
-            PackagesException: No checked Release records its size and it is stored past
-                `MAX_INDICES_BYTES`.
+            PackagesException: The file is stored past `MAX_INDICES_BYTES`, whatever size a
+                Release records.
 
         Returns:
             The stored index bytes -> [VALIDATION.md](VALIDATION.md#object-sizes).
@@ -264,12 +292,12 @@ class Packages:
                 if (size := release.declared_size(key)) is not None
             ]
             declared = max(sizes) if sizes else None
+        # a recorded size tightens the cap, never lifts it: the Release is remote metadata
+        limit = MAX_INDICES_BYTES if declared is None else min(declared, MAX_INDICES_BYTES)
         try:
-            return read_capped(
-                self.storage, path, MAX_INDICES_BYTES if declared is None else declared
-            )
+            return read_capped(self.storage, path, limit)
         except SizeLimitError as exc:
-            if declared is None:
+            if declared is None or declared > MAX_INDICES_BYTES:
                 raise PackagesException(f"Stored indices {exc}.") from exc
             raise ChecksumException(f"Mismatch for {path}: {exc}.") from exc
 
@@ -289,13 +317,9 @@ class Packages:
         # map the full path back to the key the Release lists it under
         path = self.params.release_key(path)
 
-        if root_release.verify_digests(path, digests):
-            return True
-
-        if self.release.verify_digests(path, digests):
-            return True
-
-        return False
+        return root_release.verify_digests(path, digests) or self.release.verify_digests(
+            path, digests
+        )
 
     def load(
         self,
@@ -393,14 +417,18 @@ class Packages:
 
         return ret
 
-    def dump(self) -> dict[str, dict[str, Any]]:
+    def dump(self, packages: Iterable[Package] | None = None) -> dict[str, dict[str, Any]]:
         """Dump packages object to a dict.
+
+        Args:
+            packages: The packages to list; None lists every package of the index.
 
         Returns:
             The dictionary representation of the packages object.
         """
+        listed = self.packages.values() if packages is None else packages
         ret: dict[str, dict[str, Any]] = {
-            "packages": {"files": self.found_indices_paths, "data": list(self.packages.values())}
+            "packages": {"files": self.found_indices_paths, "data": list(listed)}
         }
 
         # add release
@@ -418,6 +446,25 @@ class Packages:
         self.packages[str(package)] = package
         self.modified = True
 
+    def matching(self, fields: dict[str, re.Pattern[str]]) -> set[str]:
+        """Get the packages every pattern finds a match in.
+
+        Args:
+            fields: Compiled pattern per package field; a package matches when every pattern finds a
+                match in its field → [VALIDATION.md](VALIDATION.md#package-pattern-matching).
+
+        Returns:
+            Filenames of the matching packages.
+        """
+        return {
+            pkg_name
+            for pkg_name, package in self.packages.items()
+            if all(
+                field in package.fields and rx.search(package.fields[field])
+                for field, rx in fields.items()
+            )
+        }
+
     def remove(self, fields: dict[str, re.Pattern[str]]) -> set[str]:
         """Drop the matching packages from this index; never touch storage.
 
@@ -434,15 +481,10 @@ class Packages:
         Returns:
             Filenames of the dropped packages; empty when nothing matched.
         """
-        removed: set[str] = set()
-        for pkg_name, package in self.packages.items():
-            if all(
-                field in package.fields and rx.search(package.fields[field])
-                for field, rx in fields.items()
-            ):
-                if is_unsafe_path(pkg_name):
-                    raise PackagesException(f"unsafe filename: {pkg_name}")
-                removed.add(pkg_name)
+        removed = self.matching(fields)
+        for pkg_name in removed:
+            if is_unsafe_path(pkg_name):
+                raise PackagesException(f"unsafe filename: {pkg_name}")
 
         for pkg_name in removed:
             self.packages.pop(pkg_name)
@@ -477,38 +519,7 @@ class Packages:
         if package is None:
             return False
 
-        return compare_digests(incoming_digests, package.get_digests())
-
-    def diff(self, older: Mapping[str, Package]) -> PackagesDiff:
-        """Compare this, the newer set of packages, with `older`, as a snapshot took it.
-
-        Args:
-            older: The older package map, keyed by `Filename`.
-
-        Returns:
-            Packages by `Filename`: added, removed, and updated here, and the old versions the
-            updated ones replace.
-        """
-        added_packages = {
-            filename: package
-            for filename, package in self.packages.items()
-            if filename not in older
-        }
-        removed_packages = {
-            filename: package
-            for filename, package in older.items()
-            if filename not in self.packages
-        }
-        updated_packages = {
-            filename: package
-            for filename, package in self.packages.items()
-            if filename in older and package != older[filename]
-        }
-        old_versions = {
-            filename: package for filename, package in older.items() if filename in updated_packages
-        }
-
-        return PackagesDiff(added_packages, removed_packages, updated_packages, old_versions)
+        return compare_digests(package.get_digests(), incoming_digests)
 
     def __len__(self) -> int:
         """Return the number of packages.

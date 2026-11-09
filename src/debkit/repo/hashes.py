@@ -31,6 +31,19 @@ CHECKSUM_FIELDS = {
 }
 
 
+def parse_size(value: object) -> int | None:
+    """Read a `Size` field as a byte count.
+
+    Args:
+        value: The field value.
+
+    Returns:
+        The byte count, or None when the value is not a run of ASCII digits.
+    """
+    size = str(value)
+    return int(size) if size.isascii() and size.isdigit() else None
+
+
 def parse_hash_block(text: str) -> list[tuple[str, str, str]]:
     """Split a Debian hash block into `(hexdigest, size, filename)` triples.
 
@@ -86,10 +99,7 @@ class HexDigests:
         if filename not in self.digests:
             return False
 
-        if not compare_digests(self.digests[filename], incoming_digests):
-            return False
-
-        return True
+        return compare_digests(self.digests[filename], incoming_digests)
 
     def declared_size(self, filename: str) -> int | None:
         """Get the `Size` the digest table records for a file.
@@ -100,8 +110,7 @@ class HexDigests:
         Returns:
             The recorded size, or None when the file or a well-formed size is not recorded.
         """
-        size = str(self.digests.get(filename, {}).get("Size", ""))
-        return int(size) if size.isascii() and size.isdigit() else None
+        return parse_size(self.digests.get(filename, {}).get("Size", ""))
 
     def update_digests(self, filename: str, incoming_digests: dict[str, str]) -> None:
         """Update checksums of a file.

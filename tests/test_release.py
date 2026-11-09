@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from debian.deb822 import Deb822
-from helpers.factories import make_clearsigned
+from helpers.factories import make_clearsigned, make_storage_mock
 from txstore import StorageFS, calc_digests
 
 from debkit.repo import release as release_module
@@ -76,7 +76,7 @@ def test_serialize_writes_folded_and_non_ascii_values_verbatim() -> None:
         "Origin: Café\nDate: Sat, 07 Sep 2024 10:00:00 UTC\nDescription: line one\n line two\n"
         "Architectures: amd64\n arm64\nSHA256:\n aa 1 main/binary-amd64/Packages\n"
     ).encode()
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(blob)
 
     out = r.serialize()
@@ -84,7 +84,7 @@ def test_serialize_writes_folded_and_non_ascii_values_verbatim() -> None:
     assert "Origin: Café\n" in out
     assert "Date: Sat, 07 Sep 2024 10:00:00 UTC\n" in out
     assert "Description: line one\n line two\n" in out
-    again = Release(MagicMock(), _params())
+    again = Release(make_storage_mock(), _params())
     again.parse(out.encode())
     assert again.fields == r.fields
     assert again.digests == r.digests
@@ -97,7 +97,7 @@ def test_serialize_writes_a_blank_continuation_line_as_a_dot(blank: str) -> None
         f"Origin: x\nDescription: line one\n{blank}\n line three\nSuite: s\n"
         "SHA256:\n aa 1 main/binary-amd64/Packages\n"
     ).encode()
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(blob)
 
     out = r.serialize()
@@ -111,10 +111,10 @@ def test_serialize_writes_a_blank_continuation_line_as_a_dot(blank: str) -> None
 def test_serialize_twice_keeps_a_long_value_on_one_line() -> None:
     """A value past the old 160-column fold came back multi-line and broke the next save."""
     components = " ".join(f"component{n}" for n in range(30))
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(f"Components: {components}\n".encode())
 
-    again = Release(MagicMock(), _params())
+    again = Release(make_storage_mock(), _params())
     again.parse(r.serialize().encode())
 
     assert again.serialize() == f"Components: {components}"
@@ -122,7 +122,7 @@ def test_serialize_twice_keeps_a_long_value_on_one_line() -> None:
 
 def test_parse_again_replaces_the_digest_block() -> None:
     """A reload is a new manifest: a key or algorithm the new file drops must not survive."""
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(
         b"Components: main\n"
         b"SHA1:\n 1111 16 main/binary-amd64/Packages\n"
@@ -136,14 +136,14 @@ def test_parse_again_replaces_the_digest_block() -> None:
 
 
 def test_parse_keeps_the_last_of_duplicate_fields() -> None:
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(b"Origin: first\nCodename: bookworm\nOrigin: last\n")
     assert r.fields == {"Origin": "last", "Codename": "bookworm"}
 
 
 def test_reset_clears_the_digest_block() -> None:
     """A reset target records nothing, so no stale digest can settle a sync decision."""
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(_release_blob())
 
     r.reset()
@@ -175,7 +175,7 @@ def test_load_checksum_mismatch_raises() -> None:
 
 
 def test_setup_initializes_root_release() -> None:
-    r = RootRelease(MagicMock(), _params())
+    r = RootRelease(make_storage_mock(), _params())
     r.setup(fields={"Origin": "test", "Codename": "bookworm"})
     assert r.modified is True
     assert r.filename == "dists/bookworm/Release"
@@ -183,7 +183,7 @@ def test_setup_initializes_root_release() -> None:
 
 
 def test_is_empty_true_after_construction() -> None:
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     assert r.is_empty() is True
 
 
@@ -304,7 +304,7 @@ def test_save_refuses_a_root_read_with_verification_on_and_no_gnupg(tmp_path: Pa
 def test_signature_mode_combines_the_gpg_switch_and_the_gnupg(
     verify_gpg: bool, gpg: MagicMock | None, mode: SignatureMode
 ) -> None:
-    r = RootRelease(MagicMock(), _params(verify_gpg=verify_gpg), gpg=gpg)
+    r = RootRelease(make_storage_mock(), _params(verify_gpg=verify_gpg), gpg=gpg)
 
     assert r.signature_mode is mode
 
@@ -433,7 +433,7 @@ def test_save_of_a_component_release_leaves_the_root_signatures() -> None:
 
 
 def test_parse_falls_back_to_latin_1_for_a_non_utf_8_release() -> None:
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
 
     r.parse(b"Origin: Caf\xe9\nSuite: bookworm\n")
 
@@ -441,10 +441,44 @@ def test_parse_falls_back_to_latin_1_for_a_non_utf_8_release() -> None:
     assert r.fields["Suite"] == "bookworm"
 
 
+@pytest.mark.parametrize(
+    "separator", [b"\n\n", b"\n\n\n", b"\r\n\r\n"], ids=["one-blank", "blank-run", "crlf-blank"]
+)
+def test_parse_reads_the_first_paragraph_as_apt_does(
+    separator: bytes, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A second paragraph overrode `Valid-Until` and the digest block apt reads from the
+    first, so freshness and the index set disagreed with the mirror's clients."""
+    blob = (
+        b"Origin: x\nValid-Until: Fri, 01 Oct 2100 00:00:00 UTC\n"
+        b"SHA256:\n cccc 16 main/binary-amd64/Packages\n"
+        + separator
+        + b"Valid-Until: Thu, 01 Jan 1970 00:00:00 UTC\nSHA256:\n dddd 9 evil/Packages\n"
+    )
+    r = Release(make_storage_mock(), _params())
+
+    r.parse(blob)
+
+    assert r.fields["Valid-Until"] == "Fri, 01 Oct 2100 00:00:00 UTC"
+    assert r.digests == {"main/binary-amd64/Packages": {"Size": "16", "SHA256": "cccc"}}
+    assert "more than one paragraph" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "line", [b"Label: x\nnocolon\n", b"Label: x\r\r"], ids=["no-colon", "bare-cr-blank"]
+)
+def test_parse_refuses_a_line_that_hides_the_fields_after_it(line: bytes) -> None:
+    """The fields after the line, the digest block among them, were silently missing."""
+    blob = b"Origin: x\n" + line + b"SHA256:\n cccc 16 main/binary-amd64/Packages\n"
+
+    with pytest.raises(ReleaseReadException, match="unreadable line"):
+        Release(make_storage_mock(), _params()).parse(blob)
+
+
 def test_parse_nonstandard_continuation_lines() -> None:
     """Bare unindented continuation tokens (e.g. ProxySQL) must be folded correctly."""
     blob = b"Origin: example\nArchitectures: amd64\narm64\nComponents: main\n"
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(blob)
 
     assert "arm64" in r.fields["Architectures"]
@@ -466,7 +500,7 @@ def test_parse_stray_bare_token_in_hash_block_not_folded() -> None:
         b"stray\n"  # bare token inside hash block — must NOT be folded onto SHA256:
         b" aaaa             8 main/binary-amd64/Packages\n"
     )
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.parse(blob)
 
     assert "main/binary-amd64/Packages" in r.digests
@@ -477,7 +511,7 @@ def test_parse_stray_bare_token_in_hash_block_not_folded() -> None:
 
 def test_listed_indices_prefixes_componented_paths() -> None:
     """Each digest key becomes a full `dists/<dist>/` storage path, sorted by key."""
-    r = Release(MagicMock(), _params())
+    r = Release(make_storage_mock(), _params())
     r.digests = {
         "main/i18n/Translation-en.bz2": {"SHA256": "bbbb", "Size": "2"},
         "main/dep11/Components-amd64.yml.gz": {"SHA256": "aaaa", "Size": "1"},
@@ -499,7 +533,7 @@ def test_listed_indices_prefixes_componented_paths() -> None:
 def test_listed_indices_flat_real_dist_prefixes_dist() -> None:
     p = RepoParams(dist="stable", verify_gpg=False, verify_digests=False)
     p.is_flat = True
-    r = Release(MagicMock(), p)
+    r = Release(make_storage_mock(), p)
     r.digests = {"Packages.xz": {"SHA256": "aaaa"}}
     assert r.listed_indices() == [
         IndexEntry("Packages.xz", "stable/Packages.xz", {"SHA256": "aaaa"})
@@ -509,14 +543,14 @@ def test_listed_indices_flat_real_dist_prefixes_dist() -> None:
 def test_listed_indices_rootless_flat_returns_key() -> None:
     p = RepoParams(dist="/", verify_gpg=False, verify_digests=False)
     p.is_flat = True
-    r = Release(MagicMock(), p)
+    r = Release(make_storage_mock(), p)
     r.digests = {"Packages.xz": {"SHA256": "aaaa"}}
     assert r.listed_indices() == [IndexEntry("Packages.xz", "Packages.xz", {"SHA256": "aaaa"})]
 
 
 def test_listed_indices_empty_release_returns_empty() -> None:
     """A Release with no digest block lists nothing."""
-    assert Release(MagicMock(), _params()).listed_indices() == []
+    assert Release(make_storage_mock(), _params()).listed_indices() == []
 
 
 # --- layout paths come from RepoParams.indices_path -----------------------------------------
@@ -531,7 +565,7 @@ def _flat_params(dist: str = "bookworm") -> RepoParams:
 
 def test_setup_flat_real_dist_writes_the_root_release_under_the_dist() -> None:
     """A flat repo publishes its manifest under `<dist>/`, where its loader looks."""
-    r = RootRelease(MagicMock(), _flat_params())
+    r = RootRelease(make_storage_mock(), _flat_params())
     r.setup(fields={"Origin": "test"})
 
     assert r.filename == "bookworm/Release"
@@ -540,7 +574,7 @@ def test_setup_flat_real_dist_writes_the_root_release_under_the_dist() -> None:
 
 def test_setup_rootless_flat_writes_the_bare_root_release() -> None:
     """A rootless flat repo has no prefix to add."""
-    r = RootRelease(MagicMock(), _flat_params(dist="/"))
+    r = RootRelease(make_storage_mock(), _flat_params(dist="/"))
     r.setup(fields={"Origin": "test"})
 
     assert r.filename == "Release"
@@ -551,6 +585,7 @@ def test_find_file_flat_real_dist_reads_the_root_release_setup_wrote() -> None:
     storage = MagicMock()
     storage.exists.side_effect = lambda path: path in {"bookworm/Release", "bookworm/Release.gpg"}
     storage.get.return_value = b"Origin: x\n"
+    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
 
     r = RootRelease(storage, _flat_params())
     r.load()
@@ -562,6 +597,7 @@ def test_find_file_source_arch_reads_the_source_release() -> None:
     storage = MagicMock()
     storage.exists.return_value = True
     storage.get.return_value = b"Origin: x\n"
+    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
 
     r = Release(storage, _params())
     r.load_component("main", "source", RootRelease(r.storage, r.params))
@@ -574,6 +610,7 @@ def test_find_file_flat_component_release_path_carries_no_leading_slash() -> Non
     storage = MagicMock()
     storage.exists.return_value = True
     storage.get.return_value = b"Origin: x\n"
+    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
 
     r = Release(storage, _flat_params())
     r.load_component("main", "amd64", RootRelease(r.storage, r.params))
@@ -590,6 +627,7 @@ def test_find_file_reads_the_component_release_setup_wrote(
     """One composition for both sides, so a written component Release is found again."""
     storage = MagicMock()
     storage.get.return_value = b"Origin: x\n"
+    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
 
     writer = Release(storage, params_fn())
     writer.setup_component("main", arch)
@@ -620,7 +658,7 @@ def test_component_entry_points_refuse_an_empty_coordinate(comp: str, arch: str)
 def test_setup_copies_the_fields_it_is_given() -> None:
     """The caller's mapping, e.g. a module-level default, must not gain generated fields."""
     fields = {"Components": "main"}
-    RootRelease(MagicMock(), _params()).setup(fields=fields)
+    RootRelease(make_storage_mock(), _params()).setup(fields=fields)
     assert fields == {"Components": "main"}
 
 
@@ -973,7 +1011,7 @@ NOW = datetime(2025, 1, 1, tzinfo=UTC)
 
 def _dated(fields: dict[str, str]) -> RootRelease:
     """A real root Release with only header fields, as a loaded or unloaded repo holds them."""
-    release = RootRelease(MagicMock(), _params())
+    release = RootRelease(make_storage_mock(), _params())
     release.fields = dict(fields)
     return release
 
@@ -1032,3 +1070,38 @@ def test_load_component_refuses_a_file_past_the_cap_no_root_release_sizes(
 
     with pytest.raises(ReleaseReadException, match="larger than"):
         Release(storage, _params()).load_component("main", "amd64", root_release=root)
+
+
+def test_load_component_caps_a_release_whose_recorded_size_is_past_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A recorded `Size` tightens `MAX_RELEASE_BYTES`, never lifts it."""
+    monkeypatch.setattr(release_module, "MAX_RELEASE_BYTES", 4)
+    data = b"Origin: x\n"
+    storage = MagicMock()
+    storage.exists.return_value = True
+    storage.get_stream.side_effect = lambda path: io.BytesIO(data)
+    params = _flat_params()
+    params.verify_digests = True
+    root_release = Release(storage, _flat_params())
+    root_release.digests["binary-amd64/Release"] = {**calc_digests(data), "Size": str(10**12)}
+
+    with pytest.raises(ReleaseReadException, match="larger than"):
+        Release(storage, params).load_component("main", "amd64", root_release=root_release)
+
+
+def test_a_reload_of_an_empty_release_drops_the_previous_parse() -> None:
+    """Regression: an empty reload kept the old hash, so a sync read it as unchanged."""
+    r = Release(make_storage_mock(), _params())
+    r._parse_loaded(b"Origin: x\nSHA256:\n cccc 16 main/binary-amd64/Packages\n")
+    assert r.hash
+
+    r.filename = "dists/bookworm/main/binary-amd64/Release"
+    r._parse_loaded(b"")
+
+    assert not r.is_loaded
+    assert r.fields == {}
+    assert r.digests == {}
+    assert r.hashfuns == []
+    # found before the parse, so it outlives the reload
+    assert r.filename == "dists/bookworm/main/binary-amd64/Release"

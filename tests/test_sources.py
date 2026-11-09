@@ -215,12 +215,31 @@ def test_sources_insert_raises() -> None:
         _new_sources().insert(MagicMock())
 
 
-def test_sources_remove_matches_nothing() -> None:
-    """The base contract's "nothing removed", so no caller has to know the type."""
+def test_sources_remove_drops_nothing_and_logs_the_kept_matches(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The base contract's "nothing removed", so no caller has to know the type; the match
+    is logged, as the caller's "nothing matched" would otherwise hide it."""
     src = _new_sources()
     src._parse_indices(_STANZA_3)
 
-    assert src.remove({"Package": re.compile(".*")}) == set()
+    with caplog.at_level(logging.WARNING):
+        assert src.remove({"Package": re.compile(".*")}) == set()
+
+    assert "3 source payloads match" in caplog.text
+    assert len(src.packages) == 3
+
+
+def test_sources_remove_logs_nothing_when_nothing_matches(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    src = _new_sources()
+    src._parse_indices(_STANZA_3)
+
+    with caplog.at_level(logging.WARNING):
+        assert src.remove({"Package": re.compile("^absent$")}) == set()
+
+    assert "source payloads match" not in caplog.text
 
 
 def test_sources_payload_verifies_through_the_repo_whatever_its_compression() -> None:

@@ -29,9 +29,8 @@ opt ReleaseNotFoundException
 end
 ActionPkg -> Tgt: snapshot()
 Tgt --> ActionPkg: target_before
-ActionPkg -> Tgt: get_archs()
-Tgt --> ActionPkg: archs
-ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]
+ActionPkg -> Tgt: binary_archs()\n[get_archs() minus "source"]
+Tgt --> ActionPkg: binary_archs
 
 loop for filename in filenames
   ActionPkg -> Df: DebFile(Inc, filename, comp)

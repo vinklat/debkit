@@ -14,8 +14,9 @@ from debkit._escape import escape_control
 
 LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 
-# Chatty third-party loggers held at INFO when the root runs at DEBUG.
-QUIET_LOGGERS = ("urllib3", "botocore", "boto3", "s3transfer")
+# Chatty third-party loggers held at INFO when the root runs at DEBUG; python-gnupg logs every
+# gpg command line and status line there, and `GnuPG.verify` logs the status of a failure itself
+QUIET_LOGGERS = ("urllib3", "botocore", "boto3", "s3transfer", "gnupg")
 
 _PLAIN_FORMAT = "%(levelname)s %(message)s"
 _DEBUG_FORMAT = "%(levelname)s %(module)s %(funcName)s %(message)s"

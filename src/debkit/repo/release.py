@@ -6,7 +6,6 @@ import hashlib
 import logging
 import re
 from datetime import UTC, datetime
-from email.parser import Parser
 from email.utils import parsedate_to_datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -22,6 +21,7 @@ from debkit.repo.hashes import (
     HexDigests,
     parse_hash_block,
 )
+from debkit.repo.stanza import parse_stanza
 
 if TYPE_CHECKING:
     from txstore import Storage
@@ -181,10 +181,18 @@ class Release(HexDigests):
         its subclass sets after `super().__init__()`.
         """
         self.modified = False
-        self.fields: dict[str, str] = {}
-        self.digests = {}
         self.filename: str | None = None
         self.found_indices_files: list[str] = []
+        self._reset_parsed()
+
+    def _reset_parsed(self) -> None:
+        """Set everything a parse fills to its empty value.
+
+        A load finds the file and, for the root Release, fetches its root digests before it
+        parses, so those survive; a reload replaces the rest.
+        """
+        self.fields: dict[str, str] = {}
+        self.digests = {}
         self.hashfuns: list[str] = []
         self.hash = ""
 
@@ -260,6 +268,9 @@ class Release(HexDigests):
             fields span several lines without the required leading whitespace on continuation
             lines.  ``_fix_unindented_continuations`` normalises such lines before the email
             parser runs; see that method's docstring for the full failure chain this prevents.
+
+        Raises:
+            ReleaseReadException: A line is neither a field, a continuation, nor empty.
         """
         try:
             data = enc_data.decode("utf-8")
@@ -269,10 +280,15 @@ class Release(HexDigests):
         except UnicodeDecodeError:
             data = enc_data.decode("latin-1")
 
-        data = re.sub("\n\n", "\n", data)  # fix - remove blank lines
         data = self._fix_unindented_continuations(data)
-        parser = Parser()
-        parsed = parser.parsestr(data)
+        parsed, more_paragraphs, unreadable = parse_stanza(data)
+        # the fields after an unreadable line would be missing: Suite, Components, or a
+        # digest block -> [VALIDATION.md](VALIDATION.md#blank-lines)
+        if unreadable:
+            raise ReleaseReadException("unreadable line: a Release field line needs a colon")
+        if more_paragraphs:
+            # apt reads the first paragraph, so freshness and the index set read it too
+            logger.warning("Release: more than one paragraph; reading the first, as apt does")
         # `dict(parsed)` would keep the first of duplicate fields; `items()` lets the last win
         self.fields = dict(parsed.items())
 
@@ -328,7 +344,12 @@ class Release(HexDigests):
         return bool(self.hash)
 
     def _parse_loaded(self, data: bytes) -> None:
-        """Parse loaded Release bytes and record their hash for change detection."""
+        """Parse loaded Release bytes and record their hash for change detection.
+
+        A reload replaces the previous parse, so an empty file leaves the Release unloaded
+        rather than keeping the fields and hash it replaced.
+        """
+        self._reset_parsed()
         if data:
             self.parse(data)
             self.hash = hashlib.sha256(data).hexdigest()
@@ -348,8 +369,8 @@ class Release(HexDigests):
             ValueError: `comp` or `arch` is empty.
             ChecksumException: Checksum mismatch against the root Release, or a file larger than
                 the size the root Release records.
-            ReleaseReadException: The file is larger than `MAX_RELEASE_BYTES` and no checked
-                root Release records its size.
+            ReleaseReadException: The file is larger than `MAX_RELEASE_BYTES`, whatever size
+                the root Release records, or holds an unreadable line.
 
         Returns:
             True if the Release file was loaded, False when storage lacks it.
@@ -365,12 +386,13 @@ class Release(HexDigests):
         key = self.params.release_key(filename)
         checked = self.params.verify_digests
         declared = root_release.declared_size(key) if checked else None
+        # a recorded size tightens the cap, never lifts it
+        # -> [VALIDATION.md](VALIDATION.md#object-sizes)
+        limit = MAX_RELEASE_BYTES if declared is None else min(declared, MAX_RELEASE_BYTES)
         try:
-            data = read_capped(
-                self.storage, filename, MAX_RELEASE_BYTES if declared is None else declared
-            )
+            data = read_capped(self.storage, filename, limit)
         except SizeLimitError as exc:
-            if declared is None:
+            if declared is None or declared > MAX_RELEASE_BYTES:
                 raise ReleaseReadException(f"{exc}.") from exc
             raise ChecksumException(f"{key} is larger than the root Release records.") from exc
         if checked and not root_release.verify_digests(key, calc_digests(data)):
@@ -737,7 +759,8 @@ class RootRelease(Release):
 
         Raises:
             ReleaseNotFoundException: Neither a root `Release` nor an `InRelease` exists.
-            ReleaseReadException: Signatures are checked and the root Release has none.
+            ReleaseReadException: Signatures are checked and the root Release has none, or
+                it holds an unreadable line.
             GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
             ChecksumException: `Release` and `InRelease` carry different content.
         """

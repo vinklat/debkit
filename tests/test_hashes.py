@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 from txstore import calc_digests
 
-from debkit.repo.hashes import HexDigests, parse_hash_block
+from debkit.repo.hashes import HexDigests, parse_hash_block, parse_size
 
 
 def test_verify_digests_refuses_an_md5_only_entry() -> None:
@@ -42,3 +43,12 @@ def test_parse_hash_block_drops_a_trailing_partial_run() -> None:
 def test_parse_hash_block_empty_text_yields_nothing() -> None:
     assert parse_hash_block("") == []
     assert parse_hash_block("   \n  ") == []
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("12", 12), ("0", 0), ("12kB", None), ("\u0661\u0662", None), ("", None), (" 1", None)],
+    ids=["digits", "zero", "suffix", "non-ascii-digits", "empty", "padded"],
+)
+def test_parse_size_reads_only_ascii_digits(value: str, expected: int | None) -> None:
+    assert parse_size(value) == expected

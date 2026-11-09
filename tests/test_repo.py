@@ -4,13 +4,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 import pytest
 from helpers.factories import make_package, make_packages, make_params, make_storage_mock
 
-from debkit.repo import Repo
-from debkit.repo.component import Component
+from debkit.repo import Repo, RepoReadException
+from debkit.repo.component import Component, IndexLoad
 from debkit.repo.package import PackageException
 from debkit.repo.params import RepoParams
 
@@ -212,6 +213,19 @@ def test_get_components_defaults_to_the_flat_marker() -> None:
     assert list(repo.get_components()) == ["/"]
 
 
+def test_get_components_of_a_flat_repo_yields_one_slot(caplog: pytest.LogCaptureFixture) -> None:
+    """A flat layout names one index file, so a second slot over it would save last."""
+    repo = _repo(make_params(flat=True))
+    repo.params.components = None
+
+    repo.release.fields = {"Components": "main contrib"}
+    assert list(repo.get_components()) == ["main"]
+    assert "using 'main'" in caplog.text
+
+    repo.release.fields = {"Components": ".. ../x"}
+    assert list(repo.get_components()) == ["/"]
+
+
 def test_get_archs_prefers_the_params_list() -> None:
     assert list(_repo(RepoParams(dist="bookworm", archs=["arm64"])).get_archs()) == ["arm64"]
 
@@ -299,6 +313,40 @@ def test_update_drops_a_component_the_reloaded_release_no_longer_lists(
     repo.update()
 
     assert list(repo.components) == ["main"]
+
+
+def test_update_strict_refuses_a_release_selecting_no_architecture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A strict source load of nothing would let a sync plan every target object away."""
+    repo = _repo(RepoParams("bookworm", ["main"], None))
+    monkeypatch.setattr(repo.release, "load", lambda: True)
+
+    with pytest.raises(RepoReadException, match="selects no architecture"):
+        repo.update(IndexLoad.STRICT)
+
+
+def test_update_resolves_the_architectures_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Resolving them per component logged the Release-derived set once per component."""
+    repo = _repo(RepoParams("bookworm", None, None))
+    monkeypatch.setattr(repo.release, "load", lambda: True)
+    repo.release.fields = {"Components": "main contrib"}
+    repo.release.digests = {"main/binary-amd64/Packages": dict(_DIGEST)}
+    loaded: list[list[str]] = []
+
+    def load(self: Component, archs: list[str], *_: object) -> int:
+        loaded.append(archs)
+        return 0
+
+    monkeypatch.setattr(Component, "load", load)
+
+    with caplog.at_level(logging.INFO):
+        repo.update()
+
+    assert loaded == [["amd64"], ["amd64"]]
+    assert caplog.text.count("Release declares no Architectures") == 1
 
 
 # --- release precedence over a colliding package stanza -----------------------------------------

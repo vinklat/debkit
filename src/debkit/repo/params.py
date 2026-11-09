@@ -161,17 +161,12 @@ class RepoParams:
         if not isinstance(deb_source, str):
             raise RepoParamsException("no debian source provided")
 
-        # deduplicate repeating spaces in deb_source
-        deb_source = re.sub(r"\s+", " ", deb_source)
-
-        # remove trailing and leading spaces
-        deb_source = re.sub(r"^\s+|\s+$", "", deb_source)
-
-        parts: list[str] = deb_source.split(" ")
+        # fields are separated by any whitespace run, leading and trailing runs dropped
+        parts: list[str] = deb_source.split()
         if len(parts) < 2:
             # the URL may carry credentials -> [CONFIG.md](CONFIG.md#secrets)
             raise RepoParamsException(
-                f"there is no dist/components fields in source {redact_url(deb_source)}"
+                f"there is no dist/components fields in source {redact_url(' '.join(parts))}"
             )
 
         url, self.dist, *components = parts

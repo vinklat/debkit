@@ -15,10 +15,10 @@ from txstore import StorageException, compare_digests, is_unsafe_path
 
 from debkit.repo.component import Component, ComponentException, IndexLoad
 from debkit.repo.gnupg import GPGVerifyException
-from debkit.repo.hashes import COMPARE_HASH_LIST, ChecksumException
+from debkit.repo.hashes import COMPARE_HASH_LIST, ChecksumException, parse_size
 from debkit.repo.index_selection import select_index_entry
 from debkit.repo.package import PackageException
-from debkit.repo.packages import Packages, PackagesException
+from debkit.repo.packages import PackagesException, diff_packages
 from debkit.repo.params import (
     ARCH_ANY,
     FLAT_COMPONENT,
@@ -75,10 +75,10 @@ def _package_size(filename: str, package: Package) -> int:
     Raises:
         PackageException: The `Size` is not a decimal byte count.
     """
-    size = str(package.fields["Size"])
-    if not (size.isascii() and size.isdigit()):
-        raise PackageException(f"{filename} has a malformed Size: {size!r}")
-    return int(size)
+    size = parse_size(package.fields["Size"])
+    if size is None:
+        raise PackageException(f"{filename} has a malformed Size: {package.fields['Size']!r}")
+    return size
 
 
 class Repo:
@@ -120,7 +120,9 @@ class Repo:
         """Snapshot the package maps, as a diff against this repo's later state needs them.
 
         A load or a mutation replaces packages rather than changing one in place, so copied
-        maps keep describing the repo as it was.
+        maps keep describing the repo as it was. A flat slot snapshots its whole index, not
+        its arch view: a flat sync copies the index whole, so it plans every payload in it
+        -> [VALIDATION.md](VALIDATION.md#repository-index-paths).
 
         Returns:
             Each component and arch slot → a copy of its package map.
@@ -145,11 +147,20 @@ class Repo:
         # is dropped like a bad architecture token
         # -> [VALIDATION.md](VALIDATION.md#debian-source-strings)
         elif "Components" in self.release.fields:
+            names = []
             for name in self.release.fields.get("Components", "").split():
                 if is_safe_name(name):
-                    yield name
+                    names.append(name)
                 else:
                     logger.warning("Release component %r is not a safe name. Skipped.", name)
+            # a flat layout names one index file whatever the component, so a second slot
+            # over it would save last and drop what the first one changed
+            # -> [VALIDATION.md](VALIDATION.md#repository-index-paths)
+            if self.params.is_flat:
+                if len(names) > 1:
+                    logger.warning("Flat Release lists components %s; using %r.", names, names[0])
+                names = names[:1] or [FLAT_COMPONENT]
+            yield from names
 
         else:
             yield FLAT_COMPONENT
@@ -243,9 +254,10 @@ class Repo:
                 that saves would replace it -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Raises:
-            RepoReadException: The root Release storage fails to read.
-            ReleaseReadException: The root Release is missing, too large, or unsigned while
-                signatures are checked.
+            RepoReadException: The root Release storage fails to read, or a strict load
+                selects no architecture.
+            ReleaseReadException: The root Release is missing, too large, unsigned while
+                signatures are checked, or a Release holds an unreadable line.
             GPGVerifyException: A signature fails, or an `InRelease` is malformed.
             ChecksumException: A per-arch Release or index fails its digest, or the two signed
                 root forms differ.
@@ -261,13 +273,22 @@ class Repo:
         if not self.params.is_flat and "Components" not in self.release.fields:
             logger.warning("Components field not found in Release of non-flat repo.")
 
+        # the arch set reads only the selection and the root Release, so it is resolved once
+        archs = list(self.get_archs())
+        # a strict load that selects no architecture loads nothing, and a sync would plan
+        # every target index and payload away -> [VALIDATION.md](VALIDATION.md#architectures)
+        if mode is IndexLoad.STRICT and not archs:
+            raise RepoReadException(
+                "Release selects no architecture: it declares none and lists no index."
+            )
+
         # a reload replaces the components: one the new Release drops must not survive
         self.components = {}
         pkgs_total = 0
         for component_name in self.get_components():
             component = Component(self.storage, self.params, self.release, component_name)
 
-            pkgs_total += component.load(list(self.get_archs()), mode)
+            pkgs_total += component.load(archs, mode)
 
             self.components[component_name] = component
 
@@ -305,19 +326,18 @@ class Repo:
         Returns:
             A dict representation of the repository statistics.
         """
-        return {
-            comp_name: {
-                arch: {
-                    "packages_total": len(packages.packages),
+        stats: dict[str, dict[str, dict[str, int]]] = {}
+        for comp_name, component in self.components.items():
+            stats[comp_name] = {}
+            for arch in component.packages:
+                slot = component.slot_packages(arch)
+                stats[comp_name][arch] = {
+                    "packages_total": len(slot),
                     "packages_bytes": sum(
-                        _package_size(filename, package)
-                        for filename, package in packages.packages.items()
+                        _package_size(filename, package) for filename, package in slot.items()
                     ),
                 }
-                for arch, packages in component.packages.items()
-            }
-            for comp_name, component in self.components.items()
-        }
+        return stats
 
     def get_packages(self) -> Generator[Package]:
         """Get every package of the repository, each payload once.
@@ -349,21 +369,14 @@ class Repo:
             Packages added, removed and updated in this repo, by component and arch.
         """
         diff = RepoDiff()
-        empty = Packages(self.storage, self.params)
-        newer_maps = self.snapshot()
+        newer = self.snapshot()
 
         # always compared: equal Release bytes do not prove equal loaded packages, since a
         # load may skip an unreadable index -> [VALIDATION.md](VALIDATION.md#index-loading)
-        for comp_name, arch in sorted(newer_maps.keys() | older.keys()):
-            newer = self._slot(comp_name, arch) or empty
-            diff.update(comp_name, arch, **newer.diff(older.get((comp_name, arch), {}))._asdict())
+        for slot in sorted(newer.keys() | older.keys()):
+            diff.update(*slot, diff_packages(newer.get(slot, {}), older.get(slot, {})))
 
         return diff
-
-    def _slot(self, comp_name: str, arch: str) -> Packages | None:
-        """Return the package container of one component and arch, or None when absent."""
-        component = self.components.get(comp_name)
-        return component.packages.get(arch) if component is not None else None
 
     def _release_blocks(self) -> Generator[Release]:
         """Yield every Release whose digest block is authoritative for this repo.
@@ -377,7 +390,7 @@ class Repo:
         yield self.release
 
         for component in self.components.values():
-            for packages in component.packages.values():
+            for packages in component.containers():
                 yield packages.release
 
     def _release_owns(self, release_key: str) -> bool:
@@ -407,12 +420,12 @@ class Repo:
         """
         return {key for release in self._release_blocks() for key in release.digests}
 
-    def verify_checksum(self, filename: str, digests_incoming: dict[str, str]) -> bool:
+    def verify_checksum(self, filename: str, incoming_digests: dict[str, str]) -> bool:
         """Verify file checksum in all available indices files.
 
         Args:
             filename: The name of the file to verify.
-            digests_incoming: The digests of the file.
+            incoming_digests: The digests of the file.
 
         Returns:
             Whether the file checksum was verified.
@@ -423,7 +436,7 @@ class Repo:
         # the load fetched and verified, and no stanza may vouch for one
         # -> [CRYPTO.md](CRYPTO.md#verification-order)
         if release_key in ROOT_RELEASE_KEYS:
-            return self.release.verify_root_digests(release_key, digests_incoming)
+            return self.release.verify_root_digests(release_key, incoming_digests)
 
         # a package index is remote metadata, so a stanza naming a path the signed Release
         # also covers would define that path's content instead of the GPG-rooted Release.
@@ -432,7 +445,7 @@ class Repo:
         # -> [CRYPTO.md](CRYPTO.md#verification-order)
         if self._release_owns(release_key):
             return any(
-                release.verify_digests(release_key, digests_incoming)
+                release.verify_digests(release_key, incoming_digests)
                 for release in self._release_blocks()
             )
 
@@ -440,9 +453,9 @@ class Repo:
         # field it parsed, so this is one dict lookup and a path no index names simply misses.
         # A suffix gate here would have to track every compression `dpkg-source` emits
         return any(
-            packages.verify_checksum(filename, digests_incoming)
+            packages.verify_checksum(filename, incoming_digests)
             for component in self.components.values()
-            for packages in component.packages.values()
+            for packages in component.containers()
         )
 
     def _get_indices(self) -> dict[str, IndexTarget]:
@@ -569,7 +582,7 @@ class Repo:
         return ret
 
     @staticmethod
-    def _repair_and_purge(
+    def _missing_and_unclaimed(
         payloads: set[str],
         indices: Collection[str],
         existing_files: set[str],
@@ -615,7 +628,9 @@ class Repo:
             return ConsistencyLists([], [], _unlisted_shared_root(self.params))
 
         indices = self._get_indices()
-        missing, orphans = self._repair_and_purge(self._payload_files(), indices, existing_files)
+        missing, orphans = self._missing_and_unclaimed(
+            self._payload_files(), indices, existing_files
+        )
         shared = shared_root_claims(
             self.storage, self.params, existing_files, with_digests=with_digests
         )

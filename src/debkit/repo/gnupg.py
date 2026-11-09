@@ -162,6 +162,8 @@ class GnuPG:
                     raise GPGVerifyException("GPG gnupg_home data error.") from exc
 
         if not verified:
+            # the `gnupg` logger is held quiet at debug, so the reason is logged here
+            logger.debug("gpg verification failed: %s", getattr(verified, "status", None))
             raise GPGVerifyException("GPG not valid signature!")
 
         logger.info("GPG verified. Signed by %s", verified.username)

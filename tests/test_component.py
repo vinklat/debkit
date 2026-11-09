@@ -54,7 +54,7 @@ def test_component_exception_message_no_self_leak() -> None:
 def test_component_load_non_flat_aggregates_size() -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = True
         pkgs_mock.size = 7
         PackagesCls.return_value = pkgs_mock
@@ -71,7 +71,7 @@ def test_component_load_storage_exception_skips_when_unreadable_may_be_skipped(
 ) -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with caplog.at_level(logging.WARNING):
@@ -84,7 +84,7 @@ def test_component_load_storage_exception_stops_a_load_that_may_save() -> None:
     """A fresh slot would overwrite the arch's index, so an unread Release stops the load."""
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.load_component.side_effect = StorageException("timeout")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main: amd64: timeout"):
@@ -95,7 +95,7 @@ def test_component_load_storage_exception_stops_a_load_that_may_save() -> None:
 def test_component_load_storage_exception_strict_raises() -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main"):
@@ -106,7 +106,7 @@ def test_component_load_architectures_field_multi_token_succeeds() -> None:
     """Regression: per-arch Release listing ``Architectures: amd64 arm64 all``."""
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = False
         pkgs_mock.release.fields = {"Architectures": "amd64 arm64 all"}
         pkgs_mock.size = 1
@@ -118,7 +118,7 @@ def test_component_load_architectures_field_multi_token_succeeds() -> None:
 def test_component_load_architecture_mismatch_raises() -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = False
         pkgs_mock.release.fields = {"Architectures": "i386"}
         pkgs_mock.size = 0
@@ -130,7 +130,7 @@ def test_component_load_architecture_mismatch_raises() -> None:
 def test_component_load_packages_failure_strict_raises() -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.load.side_effect = PackagesException("bad")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main"):
@@ -142,7 +142,7 @@ def test_component_load_skips_an_arch_without_an_index(mode: IndexLoad) -> None:
     """An insert starts the index of an arch that has none yet."""
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.load.side_effect = PackagesNotFoundException("missing indices file")
         PackagesCls.return_value = pkgs_mock
         assert comp.load(["amd64"], mode) == 0
@@ -153,7 +153,7 @@ def test_component_load_stops_on_an_index_that_does_not_load() -> None:
     """Regression: the arch was skipped, so a save replaced its index with a fresh one."""
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.load.side_effect = PackagesException("Cannot decode indices")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="amd64: Packages: Cannot decode"):
@@ -166,7 +166,7 @@ def test_component_load_skips_an_unreadable_index_when_asked(
 ) -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.load.side_effect = PackagesException("Cannot decode indices")
         PackagesCls.return_value = pkgs_mock
         with caplog.at_level(logging.WARNING):
@@ -180,7 +180,7 @@ def test_component_load_index_storage_failure_propagates_in_every_mode(mode: Ind
     """A backend failure reading an existing index is not an unreadable index to skip."""
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = True
         pkgs_mock.load.side_effect = StorageException("timeout")
         PackagesCls.return_value = pkgs_mock
@@ -193,7 +193,7 @@ def test_component_load_skips_an_unreadable_sources_index() -> None:
     """A `Sources` index is never written, so no save can replace it."""
     comp = _component()
     with patch("debkit.repo.component.Sources") as SourcesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.load.side_effect = PackagesException("carries no SHA digest")
         SourcesCls.return_value = pkgs_mock
         assert comp.load(["source"]) == 0
@@ -223,7 +223,7 @@ def test_component_load_source_arch_accepts_an_architecture_source_release() -> 
     """`<comp>/source/Release` declares `Architecture: source`, which must pass."""
     comp = _component()
     with patch("debkit.repo.component.Sources") as SourcesCls:
-        pkgs_mock = MagicMock()
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = False
         pkgs_mock.release.fields = {"Architecture": "source"}
         pkgs_mock.size = 2
@@ -416,3 +416,56 @@ def test_component_load_refuses_a_release_without_an_architecture_field() -> Non
 
         with pytest.raises(ComponentException, match="no 'Architecture' field"):
             comp.load(["amd64"])
+
+
+def _component_with(params: RepoParams, slots: dict[str, Packages]) -> Component:
+    component = Component(make_storage_mock(), params, Release(make_storage_mock(), params), "/")
+    component.packages = slots
+    return component
+
+
+def _index_of(*pkgs: tuple[str, str | None]) -> Packages:
+    """A container holding one package per (filename, Architecture or None)."""
+    packages = Packages(make_storage_mock(), make_params())
+    packages.packages = {
+        name: make_package(name, **({"Architecture": arch} if arch else {})) for name, arch in pkgs
+    }
+    return packages
+
+
+def test_containers_lists_a_container_shared_by_flat_slots_once() -> None:
+    shared, other = _index_of(("a.deb", "amd64")), _index_of(("s.dsc", None))
+    component = _component_with(make_params(flat=True), {"amd64": shared, "arm64": shared})
+    component.packages["source"] = other
+
+    assert component.containers() == [shared, other]
+
+
+def test_containers_keeps_distinct_componented_containers() -> None:
+    amd64, arm64 = _index_of(("a.deb", "amd64")), _index_of(("b.deb", "arm64"))
+    component = _component_with(make_params(), {"amd64": amd64, "arm64": arm64})
+
+    assert component.containers() == [amd64, arm64]
+
+
+@pytest.mark.parametrize("selected", [["amd64"], ["amd64", "arm64"]], ids=["one-slot", "two-slots"])
+def test_slot_packages_reports_a_flat_slot_by_its_arch(selected: list[str]) -> None:
+    """The flat index holds every arch whichever are selected; a slot reports its own arch,
+    `all`, and a package naming none."""
+    index = _index_of(("a.deb", "amd64"), ("b.deb", "arm64"), ("c.deb", "all"), ("d.deb", None))
+    component = _component_with(make_params(flat=True), dict.fromkeys(selected, index))
+
+    assert set(component.slot_packages("amd64")) == {"a.deb", "c.deb", "d.deb"}
+
+
+def test_slot_packages_reports_the_empty_flat_arch_and_a_componented_slot_whole() -> None:
+    index = _index_of(("a.deb", "amd64"), ("b.deb", "arm64"))
+
+    assert set(_component_with(make_params(flat=True), {"": index}).slot_packages("")) == {
+        "a.deb",
+        "b.deb",
+    }
+    assert set(_component_with(make_params(), {"amd64": index}).slot_packages("amd64")) == {
+        "a.deb",
+        "b.deb",
+    }

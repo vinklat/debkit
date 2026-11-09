@@ -323,6 +323,18 @@ def test_zstd_decompress_kills_a_decoder_writing_past_the_limit(
         zstd_decompress(_DATA, 1024)
 
 
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+def test_zstd_decompress_feeds_a_killed_decoder_without_a_thread_traceback(
+    fake_zstd: Callable[[str], None],
+) -> None:
+    """Input larger than the pipe buffer is still being written when the cap kills the
+    decoder, so the writer thread sees a broken pipe and ends quietly."""
+    fake_zstd("exec /usr/bin/yes")
+
+    with pytest.raises(SizeLimitError, match="past 1024 bytes"):
+        zstd_decompress(b"x" * (4 << 20), 1024)
+
+
 def test_zstd_decompress_refuses_when_no_decoder_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

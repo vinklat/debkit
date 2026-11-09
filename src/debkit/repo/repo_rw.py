@@ -14,14 +14,12 @@ from txstore import StorageException, StorageNull
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
-from debkit.repo.params import FLAT_COMPONENT
+from debkit.repo.params import FLAT_COMPONENT, SOURCE_ARCH
 
 if TYPE_CHECKING:
     from txstore import Storage
 
-    from debkit.repo.gnupg import GnuPG
     from debkit.repo.package import Package
-    from debkit.repo.params import RepoParams
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -49,16 +47,6 @@ class RepoRW(Repo):
     Whether anything changed is the caller's diff against a snapshot; `save` writes only the
     containers that changed, then the root Release that lists them.
     """
-
-    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
-        """Initialize RepoRW.
-
-        Args:
-            storage: Storage backend of the repository.
-            params: Repository parameters.
-            gpg: Verifies and signs Release files. Defaults to None.
-        """
-        super().__init__(storage, params, gpg=gpg)
 
     def setup(self, fields: dict[str, str] | None = None) -> None:
         """Setup the repository.
@@ -137,6 +125,23 @@ class RepoRW(Repo):
             logger.info("Remove package: %s", filename)
             self.storage.delete(filename)
         return True
+
+    def binary_archs(self) -> list[str]:
+        """Get the repository architectures a binary package can be inserted into.
+
+        A mirrored `Sources` index is read-only, so `source` never receives a `.deb`
+        -> [VALIDATION.md](VALIDATION.md#sources-stanzas). The empty arch names no
+        `binary-<arch>/` directory, so only a flat repo inserts under it
+        -> [VALIDATION.md](VALIDATION.md#architectures).
+
+        Returns:
+            The repository architectures without the source one.
+        """
+        return [
+            arch
+            for arch in self.get_archs()
+            if arch != SOURCE_ARCH and (arch or self.params.is_flat)
+        ]
 
     def insert_pkg(self, component_name: str, arch: str, package: Package) -> None:
         """Add deb package object to the repo.

@@ -49,7 +49,7 @@ ActionPkg --> Caller: brief / json output
 
 alt no match, or exception from remove_pkg or save
   alt remove_pkg returned False
-    ActionPkg -> ActionPkg: raise ActionException\n("No packages matched the pattern.")
+    ActionPkg -> ActionPkg: raise ActionException\n("No removable packages matched the pattern.")
   else exception from remove_pkg or save
     Tgt --> ActionPkg: exception
   end

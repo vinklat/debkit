@@ -6,17 +6,23 @@ import logging
 from argparse import BooleanOptionalAction
 from contextlib import nullcontext
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from humanize import naturalsize
 from txstore import get_supported_schemes, maybe_transaction, redact_url
 
-from debkit.action import Action, ActionException, OutputType, attach_storage_repo, dump_json
+from debkit.action import (
+    Action,
+    ActionException,
+    OutputType,
+    attach_storage_repo,
+    dump_json,
+    open_target_repo,
+)
 from debkit.repo.component import IndexLoad
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
-from debkit.repo.repo_rw import RepoRW
 from debkit.repo.repo_sync import RepoSync
 
 if TYPE_CHECKING:
@@ -24,6 +30,7 @@ if TYPE_CHECKING:
 
     from debkit._options import EnvArgumentParser
     from debkit.repo.repo_diff import RepoDiff
+    from debkit.repo.repo_rw import RepoRW
 
 ARCHITECTURES_DEFAULT = "amd64,arm64"
 INDICES_EXCLUDE_DEFAULT = ""
@@ -99,46 +106,22 @@ class ActionSync(Action):
                 before any storage is opened, so no target path or bucket is created.
         """
         archs, indices_exclude = _selection(pars)
-        super().__init__(
-            pars, create_path=create_path, archs=archs, indices_exclude=indices_exclude
-        )
+        super().__init__(pars)
         self.verify_existing: bool = pars.verify_existing
         self.indices_only: bool = pars.indices_only
         self.allow_release_rollback: bool = pars.allow_release_rollback
 
-    def _attach_repos(
-        self,
-        pars: Namespace,
-        create_path: bool,
-        archs: list[str] | None,
-        indices_exclude: list[str] | None,
-    ) -> None:
-        """Open the source, then the target, each with the selection applied.
-
-        A sync overwrites the target, so the target gets no `GnuPG`: its Release is
-        read unverified and never signed -> [CRYPTO.md](CRYPTO.md#gpg).
-
-        Args:
-            pars: Command line arguments from argparser.
-            create_path: Create the target path or bucket if True.
-            archs: The architectures to select; None selects the Release's.
-            indices_exclude: Index exclude globs; None excludes nothing.
-        """
+        # the source, then the target, each with the selection applied
         logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
         storage, params = attach_storage_repo(
             pars, pars.source_url, archs=archs, indices_exclude=indices_exclude
         )
         self.source_repo = RepoSync(storage, params, gpg=self.gpg)
-
-        logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
-        storage, params = attach_storage_repo(
-            pars,
-            pars.target_url,
-            create_path=create_path,
-            archs=archs,
-            indices_exclude=indices_exclude,
+        # a sync overwrites the target, so it gets no `GnuPG`: its Release is read
+        # unverified and never signed -> [CRYPTO.md](CRYPTO.md#gpg)
+        self.target_repo = open_target_repo(
+            pars, gpg=None, create_path=create_path, archs=archs, indices_exclude=indices_exclude
         )
-        self.target_repo = RepoRW(storage, params)
 
     def _print_sync_brief(self, diff: RepoDiff) -> None:
         """Print sync brief output.
@@ -378,6 +361,18 @@ class ActionSync(Action):
         )
 
 
+class CheckStatus(NamedTuple):
+    """The totals a check reports; the JSON output prints them under these names.
+
+    Attributes:
+        errors_total: Missing, orphan, and failed files.
+        errors_fixed_total: Files `--fix` deleted.
+    """
+
+    errors_total: int
+    errors_fixed_total: int
+
+
 class ActionCheck(Action):
     """Check a repository against its own indices.
 
@@ -397,10 +392,15 @@ class ActionCheck(Action):
                 before any storage is opened.
         """
         archs, indices_exclude = _selection(pars)
-        super().__init__(
-            pars, create_path=create_path, archs=archs, indices_exclude=indices_exclude
-        )
+        super().__init__(pars)
         self.fix: bool = pars.fix
+        self.target_repo = open_target_repo(
+            pars,
+            gpg=self.gpg,
+            create_path=create_path,
+            archs=archs,
+            indices_exclude=indices_exclude,
+        )
 
     def check(self) -> bool:
         """Check debian repo for consistency.
@@ -428,9 +428,9 @@ class ActionCheck(Action):
         else:
             self._print_check_brief(status)
 
-        return status["errors_total"] == status["errors_fixed_total"]
+        return status.errors_total == status.errors_fixed_total
 
-    def _check_target(self, target: RepoRW) -> dict[str, int]:
+    def _check_target(self, target: RepoRW) -> CheckStatus:
         """Check the loaded target against its own indices, fixing it with `--fix`.
 
         Args:
@@ -451,27 +451,27 @@ class ActionCheck(Action):
             logger.warning("Found %s orphan files in storage.", len(report.orphans))
             logger.info("Orphan files: %s", report.orphans)
 
-        return {
-            "errors_total": len(report.missing) + len(report.orphans) + report.failed,
-            "errors_fixed_total": report.fixed,
-        }
+        return CheckStatus(
+            errors_total=len(report.missing) + len(report.orphans) + report.failed,
+            errors_fixed_total=report.fixed,
+        )
 
-    def _print_check_brief(self, status: dict[str, int]) -> None:
+    def _print_check_brief(self, status: CheckStatus) -> None:
         """Print check brief output.
 
         Args:
-            status: Dictionary with errors and fixed errors.
+            status: The error and fixed-error totals.
         """
-        print(f"Errors total: {status['errors_total']} files")
-        print(f"Errors fixed: {status['errors_fixed_total']} files")
+        print(f"Errors total: {status.errors_total} files")
+        print(f"Errors fixed: {status.errors_fixed_total} files")
 
-    def _print_check_json(self, status: dict[str, int]) -> None:
+    def _print_check_json(self, status: CheckStatus) -> None:
         """Print check json output.
 
         Args:
-            status: Dictionary with errors and fixed errors.
+            status: The error and fixed-error totals.
         """
-        json_dict: dict[str, dict[str, Any]] = {"status": status, "metrics": {}}
+        json_dict: dict[str, dict[str, Any]] = {"status": status._asdict(), "metrics": {}}
         json_dict["metrics"]["target_storage"] = self._target_metrics.dump()
 
         print(dump_json(json_dict))

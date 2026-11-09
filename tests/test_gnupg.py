@@ -9,6 +9,7 @@ signature, is in ``tests/test_gnupg_real.py`` on throwaway homes.
 from __future__ import annotations
 
 import errno
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -35,9 +36,11 @@ def _gpg_mock(verify_ok: bool = True, sign_out: str = "signed-bytes") -> MagicMo
 
 
 def test_init_keyring_failure_raises() -> None:
-    with patch("debkit.repo.gnupg.gnupg.GPG", side_effect=ValueError("bad keyring")):
-        with pytest.raises(GPGVerifyException):
-            _gnupg()
+    with (
+        patch("debkit.repo.gnupg.gnupg.GPG", side_effect=ValueError("bad keyring")),
+        pytest.raises(GPGVerifyException),
+    ):
+        _gnupg()
 
 
 def test_init_opens_the_given_home_and_keyring() -> None:
@@ -56,9 +59,11 @@ def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.Monkey
 
 def test_init_missing_gpg_binary_raises() -> None:
     """python-gnupg raises OSError when it cannot run the gpg binary."""
-    with patch("debkit.repo.gnupg.gnupg.GPG", side_effect=OSError("Unable to run gpg (gpg)")):
-        with pytest.raises(GPGVerifyException, match="Cannot run gpg"):
-            _gnupg()
+    with (
+        patch("debkit.repo.gnupg.gnupg.GPG", side_effect=OSError("Unable to run gpg (gpg)")),
+        pytest.raises(GPGVerifyException, match="Cannot run gpg"),
+    ):
+        _gnupg()
 
 
 def test_verify_inrelease_returns_the_signed_body() -> None:
@@ -82,6 +87,26 @@ def test_verify_detached_cleans_tempfile_on_failure() -> None:
     args, _ = mock_gpg.verify_data.call_args
     assert isinstance(args[0], str)
     assert not Path(args[0]).exists()
+
+
+def test_verify_failure_logs_the_gpg_status_at_debug(caplog: pytest.LogCaptureFixture) -> None:
+    """The `gnupg` logger is held quiet at debug, so the failure carries gpg's status."""
+    mock_gpg = _gpg_mock(verify_ok=False)
+    mock_gpg.verify.return_value.status = "signature bad"
+    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=mock_gpg):
+        gpg = _gnupg()
+        with (
+            caplog.at_level(logging.DEBUG, logger="debkit.repo.gnupg"),
+            pytest.raises(GPGVerifyException),
+        ):
+            gpg.verify(b"-----BEGIN PGP SIGNED MESSAGE-----\n")
+
+    assert "gpg verification failed: signature bad" in caplog.text
+
+
+def test_verify_detached_returns_the_data() -> None:
+    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=True)):
+        assert _gnupg().verify(b"data", detach_sign=b"sig") == b"data"
 
 
 def test_verify_detached_cleans_tempfile_when_verify_data_raises() -> None:
