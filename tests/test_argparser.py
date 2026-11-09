@@ -41,6 +41,19 @@ def test_parse_cli_remove_requires_pkg_pattern(capsys: pytest.CaptureFixture[str
     assert "--pkg-pattern or DEBKIT_PKG_PATTERN is required" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("env", [None, ""], ids=["unset", "empty"])
+def test_parse_cli_insert_requires_incoming_url(
+    env: str | None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression: an insert without `--incoming-url` returned silently with exit 0."""
+    if env is not None:
+        monkeypatch.setenv("DEBKIT_INCOMING_URL", env)
+    with pytest.raises(SystemExit) as excinfo:
+        parse_cli(["--target-url", "fs:///tmp dist main", "insert", "--deb-filename", "foo.deb"])
+    assert excinfo.value.code == 2
+    assert "--incoming-url or DEBKIT_INCOMING_URL is required" in capsys.readouterr().err
+
+
 def test_parse_cli_remove_compiles_pkg_pattern() -> None:
     ns = parse_cli(
         ["--target-url", "fs:///tmp dist main", "remove", "--pkg-pattern", '{"Package": "^a"}']

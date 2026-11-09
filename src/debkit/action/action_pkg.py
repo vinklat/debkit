@@ -230,7 +230,6 @@ class ActionPkg(Action):
         """Insert packages into repository.
 
         Raises:
-            ActionException: If no incoming storage is set.
             ActionException: If both --changes-filename and --deb-filename are provided.
             ActionException: If neither --changes-filename nor --deb-filename are provided.
             ActionException: If the .deb filename does not end with '.deb'.
@@ -246,8 +245,8 @@ class ActionPkg(Action):
                 "insert needs exactly one of --changes-filename or --deb-filename"
             )
 
-        if self.incoming_storage is None:
-            raise ActionException("insert needs --incoming-url or DEBKIT_INCOMING_URL")
+        # `--incoming-url` is required for `insert`, so argparse already refused a missing one
+        assert self.incoming_storage is not None, "insert without --incoming-url"
 
         # process deb files
         changes: Changes | None = None

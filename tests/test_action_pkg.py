@@ -775,16 +775,6 @@ def test_remove_refuses_a_pattern_no_package_matches(tmp_path: Path) -> None:
     assert TransactionHistory(storage).load() == []
 
 
-def test_insert_without_incoming_storage_raises() -> None:
-    """Regression: a namespace without `incoming_url` returned silently with exit 0."""
-    action = _make_pkg_action()
-    action.deb_filename = "foo_1.0_amd64.deb"
-    action.incoming_storage = None
-
-    with pytest.raises(ActionException, match="incoming-url"):
-        action.insert()
-
-
 @patch("debkit.action.action_pkg.DebFile")
 def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
     mock_debfile_cls: MagicMock, tmp_path: Path
