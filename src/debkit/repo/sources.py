@@ -66,7 +66,8 @@ class Sources(Packages):
             block: One stanza, without its trailing blank line.
 
         Raises:
-            PackagesException: On a missing or unsafe `Directory`, a file name with a
+            PackagesException: On a missing or unsafe `Directory`, one in the `dists/` tree
+                of a componented layout, a file name with a
                 path segment, a size that differs between hash blocks, or a payload
                 carrying no SHA digest.
 
@@ -79,6 +80,12 @@ class Sources(Packages):
         if not directory or directory == "." or is_unsafe_path(directory):
             raise PackagesException(
                 f"no usable Directory in Sources stanza: {fields.get('Package')}"
+            )
+        # a payload under `dists/` would overwrite the metadata of any dist sharing the root
+        # -> [VALIDATION.md](VALIDATION.md#filename-safety)
+        if self.params.is_index_tree_key(directory):
+            raise PackagesException(
+                f"Sources stanza Directory lies in the dists/ tree: {directory}"
             )
 
         stanza = {key: fields[key].strip() for key in STANZA_FIELDS if key in fields}

@@ -286,6 +286,21 @@ class RepoParams:
             return remove_prefix_from_path(path, self.indices_prefix)
         return path
 
+    def is_index_tree_key(self, path: str) -> bool:
+        """Report whether a payload key lands in the `dists/` tree of a componented layout.
+
+        Every dist sharing the root keeps its Release and indices there, so a remote
+        `Filename` or `Directory` naming that tree would overwrite another dist's metadata
+        -> [VALIDATION.md](VALIDATION.md#filename-safety). A flat layout has no such tree.
+
+        Args:
+            path: A POSIX-normalized payload key.
+
+        Returns:
+            True for `dists` or a key under `dists/` in a componented layout.
+        """
+        return not self.is_flat and (path == "dists" or path.startswith("dists/"))
+
     def is_real_dist(self) -> bool:
         """Check if the distribution name is a real dist, one naming a flat layout's directory.
 

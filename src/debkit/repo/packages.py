@@ -171,6 +171,11 @@ class Packages:
             if pkg_name == "." or is_unsafe_path(pkg_name):
                 logger.warning("%s named in an index is an unsafe package path. Skipped.", pkg_name)
                 continue
+            # a payload under `dists/` would overwrite the metadata of any dist sharing the
+            # root -> [VALIDATION.md](VALIDATION.md#filename-safety)
+            if self.params.is_index_tree_key(pkg_name):
+                logger.warning("%s named in an index lies in the dists/ tree. Skipped.", pkg_name)
+                continue
 
             self.packages[pkg_name] = package
         return self.size

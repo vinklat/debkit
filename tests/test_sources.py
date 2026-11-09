@@ -142,6 +142,15 @@ def test_sources_parse_missing_directory_raises() -> None:
         src._parse_indices(stanza)
 
 
+def test_sources_parse_rejects_a_directory_in_the_dists_tree() -> None:
+    """Every dist sharing a componented root keeps its metadata under `dists/`."""
+    src = _new_sources()
+    stanza = "Package: hello\nDirectory: dists/bullseye\nChecksums-Sha256:\n aaaa 1 Release\n"
+
+    with pytest.raises(PackagesException, match="dists/ tree"):
+        src._parse_indices(stanza)
+
+
 @pytest.mark.parametrize("name", ["sub/hello.dsc", "../hello.dsc"])
 def test_sources_parse_rejects_an_unsafe_file_name(name: str) -> None:
     """A payload name is a bare file name; a path segment could escape the pool."""

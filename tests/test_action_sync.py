@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import io
 import json
 import logging
@@ -394,6 +396,51 @@ def test_sync_keeps_another_dist_sharing_the_target_root(tmp_path: Path, fix: bo
         assert (tmp_path / "tgt" / path).exists(), path
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
     assert not orphan.exists()
+
+
+@pytest.mark.parametrize(
+    "victim",
+    [
+        "dists/bullseye/Release",
+        "dists/bullseye/InRelease",
+        "dists/bullseye/main/binary-amd64/Packages.gz",
+    ],
+)
+def test_sync_never_writes_another_dist_tree_a_source_filename_names(
+    tmp_path: Path, victim: str
+) -> None:
+    """Regression: a source stanza naming `dists/bullseye/...` overwrote that dist's metadata."""
+    evil = b"Origin: evil\nSuite: bullseye\n"
+    src = tmp_path / "src"
+    write_dist(src, "bookworm", {"foo": "3"}, detached_signature=True)
+    (src / victim).parent.mkdir(parents=True, exist_ok=True)
+    (src / victim).write_bytes(evil)
+    # the source's own signed Release lists the index naming the victim
+    index_path = src / "dists/bookworm/main/binary-amd64/Packages.gz"
+    stanzas = gzip.decompress(index_path.read_bytes()).decode() + (
+        f"\nPackage: evil\nVersion: 1\nArchitecture: amd64\nFilename: {victim}\n"
+        f"Size: {len(evil)}\nSHA256: {hashlib.sha256(evil).hexdigest()}\n"
+    )
+    index = gzip.compress(stanzas.encode(), mtime=0)
+    index_path.write_bytes(index)
+    release = src / "dists/bookworm/Release"
+    head = release.read_text().split("SHA256:\n")[0]
+    release.write_text(
+        f"{head}SHA256:\n {hashlib.sha256(index).hexdigest()} {len(index)} "
+        "main/binary-amd64/Packages.gz\n"
+    )
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    _write_other_dist(tmp_path / "tgt", "bullseye", {"bar": "1"})
+    before = (
+        (tmp_path / "tgt" / victim).read_bytes() if (tmp_path / "tgt" / victim).exists() else None
+    )
+
+    _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+
+    after = (
+        (tmp_path / "tgt" / victim).read_bytes() if (tmp_path / "tgt" / victim).exists() else None
+    )
+    assert after == before
 
 
 def _corrupt_index(base: Path) -> None:

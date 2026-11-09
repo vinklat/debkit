@@ -96,6 +96,26 @@ def test_packages_parse_indices_drops_an_empty_filename(caplog: pytest.LogCaptur
     assert "unsafe package path" in caplog.text
 
 
+@pytest.mark.parametrize("filename", ["dists/bullseye/InRelease", "dists"])
+def test_packages_parse_indices_drops_a_filename_in_the_dists_tree(
+    filename: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Every dist sharing a componented root keeps its metadata under `dists/`."""
+    pkgs = _new_packages()
+    with caplog.at_level(logging.WARNING):
+        n = pkgs._parse_indices(make_packages_block("evil", filename=filename))
+
+    assert n == 0
+    assert "dists/ tree" in caplog.text
+
+
+def test_packages_parse_indices_keeps_a_dists_filename_of_a_flat_layout() -> None:
+    """A flat layout has no `dists/` tree, so the path is an ordinary payload there."""
+    pkgs = _new_packages(params=make_params(flat=True))
+
+    assert pkgs._parse_indices(make_packages_block("ok", filename="dists/ok.deb")) == 1
+
+
 _FOO, _BAR = make_packages_block("foo"), make_packages_block("bar")
 
 
