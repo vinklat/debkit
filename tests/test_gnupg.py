@@ -8,7 +8,10 @@ signature, is in ``tests/test_gnupg_real.py`` on throwaway homes.
 
 from __future__ import annotations
 
+import errno
+import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -203,3 +206,25 @@ def test_verify_rejects_data_after_signature(trailer: bytes) -> None:
         gpg = _gnupg()
         with pytest.raises(GPGVerifyException, match="after the signature"):
             gpg.verify(_SIGNED + trailer)
+
+
+def test_verify_detached_cleans_tempfile_when_staging_the_signature_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full disk fails the write itself, before gpg is ever asked."""
+    real = tempfile.NamedTemporaryFile
+
+    def full_disk(*args: Any, **kwargs: Any) -> Any:
+        staged = real(*args, **kwargs)
+        failing = MagicMock(side_effect=OSError(errno.ENOSPC, "No space left on device"))
+        monkeypatch.setattr(staged, "write", failing)
+        return staged
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr("debkit.repo.gnupg.tempfile.NamedTemporaryFile", full_disk)
+    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock()):
+        gpg = _gnupg()
+        with pytest.raises(OSError, match="No space left"):
+            gpg.verify(b"data", detach_sign=b"sig")
+
+    assert list(tmp_path.iterdir()) == []

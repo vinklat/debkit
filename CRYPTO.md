@@ -28,7 +28,7 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 | `cleartext_body(data)` | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else. Works on bytes, so the body keeps its encoding. |
 | `canonical_text(data)` | `data` with the line canonicalization of `cleartext_body`, so a detached `Release` compares with an `InRelease` body. |
 | `verify(data)` | Inline `InRelease` verification; returns `cleartext_body(data)`. |
-| `verify(data, detach_sign)` | Detached `Release` + `Release.gpg` verification; returns `data`. The signature is staged in a `tempfile.NamedTemporaryFile` removed in `finally`, because `python-gnupg` needs a path on disk. |
+| `verify(data, detach_sign)` | Detached `Release` + `Release.gpg` verification; returns `data`. The signature is staged in a `tempfile.NamedTemporaryFile` removed when its context exits, even when staging it fails, because `python-gnupg` needs a path on disk. |
 | Root Release load | Fetches every root `Release`, `Release.gpg`, and `InRelease` present once and records their digests → [Verification order](#verification-order). |
 | Root Release load, GPG verification on | Verifies the inline and the detached form alike when both are present, since `sync` mirrors both. |
 | Root Release load, `Release.gpg` without `Release` | Signs nothing: skipped with a warning, so it is neither fetched nor mirrored. |

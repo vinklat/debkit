@@ -6,7 +6,6 @@ import logging
 import os
 import re
 import tempfile
-from pathlib import Path
 
 import gnupg
 
@@ -144,19 +143,16 @@ class GnuPG:
             # data should be from InRelease
             verified = self.gnupg.verify(data)
         else:
-            # The python-gnupg ``verify_data`` API requires the detached
-            # signature to live on disk; use a ``NamedTemporaryFile`` that
-            # cleans itself up even when verification raises.
-            with tempfile.NamedTemporaryFile(suffix=".gpg", delete=False) as tmp:
+            # python-gnupg's `verify_data` reads the detached signature from a path, so it is
+            # staged in a file closed before gpg opens it and removed when the context exits,
+            # a failed write included
+            with tempfile.NamedTemporaryFile(suffix=".gpg", delete_on_close=False) as tmp:
                 tmp.write(detach_sign)
-                tmp_sig_path = tmp.name
-            try:
+                tmp.close()
                 try:
-                    verified = self.gnupg.verify_data(tmp_sig_path, data)
+                    verified = self.gnupg.verify_data(tmp.name, data)
                 except AttributeError as exc:
                     raise GPGVerifyException("GPG gnupg_home data error.") from exc
-            finally:
-                Path(tmp_sig_path).unlink(missing_ok=True)
 
         if not verified:
             raise GPGVerifyException("GPG not valid signature!")
