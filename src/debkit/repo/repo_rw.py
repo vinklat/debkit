@@ -187,7 +187,7 @@ class RepoRW(Repo):
         return source_storage.transfer(path_src, self.storage, path_dst=path_dst)
 
     def held_digests(self, path: str) -> dict[str, str] | None:
-        """Read an object of this repo's storage through and return its digests.
+        """Return the digests of the bytes this repo's storage holds at `path`, if any.
 
         Args:
             path: The object path.

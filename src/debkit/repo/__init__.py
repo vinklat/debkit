@@ -664,7 +664,7 @@ class SharedRoot(NamedTuple):
     recorded: Mapping[str, tuple[dict[str, str], ...]] = {}
 
     def deletable(self, path: str) -> bool:
-        """Report whether a sync, `check --fix`, or `remove` may delete `path` from the root.
+        """Report whether deleting `path` from the root leaves every other dist's claims intact.
 
         Args:
             path: Storage path in the target root.
