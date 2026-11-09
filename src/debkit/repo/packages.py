@@ -16,6 +16,7 @@ from txstore import calc_digests, compare_digests, is_unsafe_path
 from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, codec_for, read_capped
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
+from debkit.repo.params import is_safe_name
 from debkit.repo.release import Release
 
 if TYPE_CHECKING:
@@ -168,7 +169,7 @@ class Packages:
             # storage root, or the root itself once an empty value is normalized to `.`; a
             # rejected stanza is dropped rather than failing the load, so one bad record
             # cannot stop a mirror -> [VALIDATION.md](VALIDATION.md#filename-safety)
-            if pkg_name == "." or is_unsafe_path(pkg_name):
+            if not is_safe_name(pkg_name):
                 logger.warning("%s named in an index is an unsafe package path. Skipped.", pkg_name)
                 continue
             # a payload under `dists/` would overwrite the metadata of any dist sharing the

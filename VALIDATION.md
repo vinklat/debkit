@@ -216,9 +216,9 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#filename-safety). | — |
 | `Packages.remove()` | Matched package filename passes the unsafe-key rule. | → `PackagesException` (Read) |
 | `RepoSync` index set | Release-listed index key and path pass the unsafe-key rule. | Entry dropped from the index set and logged |
-| `Packages` index parse | Stanza `Filename`, POSIX-normalized, is not `.` and passes the unsafe-key rule. | Stanza dropped from the container and logged |
+| `Packages` index parse | Stanza `Filename`, POSIX-normalized, passes `is_safe_name()`: not empty, not `.`, and the unsafe-key rule. | Stanza dropped from the container and logged |
 | Index tree | In a componented layout, a stanza `Filename` or `Directory` is not `dists` nor under `dists/`, where every dist sharing the root keeps its Release and indices. | `Packages`: stanza dropped and logged; `Sources` → `PackagesException` (Read) |
-| `Sources` payload | Stanza `Directory` and the joined payload key pass the unsafe-key rule. | → `PackagesException` (Read) |
+| `Sources` payload | Stanza `Directory` passes `is_safe_name()`, and the joined payload key the unsafe-key rule. | → `PackagesException` (Read) |
 | Insert `Package` name | The `.deb` control `Package` field is present and a Debian Policy name, `^[a-z0-9][a-z0-9+.-]+$`, checked before the transfer. | → `DebFileException` (Read) |
 | Insert source name | The control `Source` field, a trailing ` (<version>)` stripped, else the `Package` field, is a Debian Policy name as above, checked before the transfer. | → `DebFileException` (Read) |
 | Insert version | The control `Version` field is present and a Debian Policy version, `^(?:[0-9]+:)?[A-Za-z0-9][A-Za-z0-9.+~-]*$` not ending in `-`, checked before the transfer. | → `DebFileException` (Read) |

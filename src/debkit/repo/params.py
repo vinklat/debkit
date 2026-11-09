@@ -43,13 +43,15 @@ _REAL_DIST = re.compile(r"[A-Za-z0-9]*")
 
 
 def is_safe_name(name: str) -> bool:
-    """Report whether a dist or component name is safe to build a storage path from.
+    """Report whether a relative storage subpath is safe to build a key from.
 
-    A name may hold `/` (`updates/main`), but never a segment that steers the path out of
-    its directory -> [VALIDATION.md](VALIDATION.md#debian-source-strings).
+    A dist, component, `Sources` `Directory`, or package `Filename`: it may hold `/`
+    (`updates/main`), but never a segment that steers the path out of its directory
+    -> [VALIDATION.md](VALIDATION.md#debian-source-strings),
+    [VALIDATION.md](VALIDATION.md#filename-safety).
 
     Args:
-        name: A dist or component name.
+        name: A POSIX-normalized relative subpath.
 
     Returns:
         True when the name is non-empty, not `.`, and passes the unsafe-key rule.

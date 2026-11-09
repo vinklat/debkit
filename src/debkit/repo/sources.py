@@ -13,6 +13,7 @@ from txstore import is_unsafe_path
 from debkit.repo.hashes import CHECKSUM_FIELDS, COMPARE_HASH_LIST, parse_hash_block
 from debkit.repo.package import FILENAME_FIELD_KEY, Package
 from debkit.repo.packages import Packages, PackagesException
+from debkit.repo.params import is_safe_name
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -77,7 +78,7 @@ class Sources(Packages):
         fields = dict(Parser().parsestr(block).items())
 
         directory = posixpath.normpath(fields.get("Directory", "").strip())
-        if not directory or directory == "." or is_unsafe_path(directory):
+        if not is_safe_name(directory):
             raise PackagesException(
                 f"no usable Directory in Sources stanza: {fields.get('Package')}"
             )

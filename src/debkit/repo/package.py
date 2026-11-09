@@ -161,8 +161,7 @@ class Package:
         Args:
             digests: The hexdigests.
         """
-        for alg, value in digests.items():
-            self.fields[alg] = value
+        self.fields.update(digests)
 
     def __eq__(self, other: object) -> bool:
         """Check if this Package is equal to another Package.
