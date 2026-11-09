@@ -25,7 +25,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/repo_sync.py` | `RepoSync`: sync planning into a `SyncPlan` and transfer between repositories. |
 | `src/debkit/repo/index_selection.py` | `select_index_entry()`: the pure rules for which Release-listed indices a mirror carries → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `src/debkit/repo/repo_diff.py` | Index and file diffing. |
-| `src/debkit/repo/release.py` | Release file parse, sign, verify → [CRYPTO.md](CRYPTO.md#gpg). |
+| `src/debkit/repo/release.py` | `Release`: per-component Release file parse and write; `RootRelease`: the root one's load, signature verify and sign, and freshness → [CRYPTO.md](CRYPTO.md#gpg). |
 | `src/debkit/repo/packages.py`, `package.py` | Packages index and record. |
 | `src/debkit/repo/sources.py` | `Sources` index expanded into one read-only record per payload file. |
 | `src/debkit/repo/component.py` | Component (suite/component) helpers. |

@@ -17,7 +17,7 @@ from txstore import StorageFS
 
 from debkit.repo.gnupg import GnuPG, GPGVerifyException, cleartext_body
 from debkit.repo.params import RepoParams
-from debkit.repo.release import Release, ReleaseWriteException
+from debkit.repo.release import ReleaseWriteException, RootRelease
 
 pytestmark = requires_gpg
 
@@ -118,11 +118,11 @@ def test_release_signed_save_loads_back_verified(homes: dict[str, Path], tmp_pat
     """A root Release debkit signs passes its own verified load, inline and detached alike."""
     params = RepoParams(dist="bookworm", components=["main"], verify_gpg=True)
     storage = StorageFS(str(tmp_path))
-    written = Release(storage, params, gpg=_gnupg(homes["signer"]), root=True)
+    written = RootRelease(storage, params, gpg=_gnupg(homes["signer"]))
     written.setup(fields={"Date": "Sun, 08 Sep 2024 10:00:00 UTC"})
     written.save()
 
-    loaded = Release(storage, params, gpg=_gnupg(homes["signer"]), root=True)
+    loaded = RootRelease(storage, params, gpg=_gnupg(homes["signer"]))
     loaded.load()
 
     assert loaded.fields["Origin"] == "bookworm"
@@ -134,9 +134,7 @@ def test_release_save_with_a_wrong_passphrase_writes_no_inrelease(
 ) -> None:
     """Regression: a failed clearsign returned its unsigned armor, saved as `InRelease`."""
     params = RepoParams(dist="bookworm", components=["main"], verify_gpg=True)
-    release = Release(
-        StorageFS(str(tmp_path)), params, gpg=_gnupg(homes["locked"], "nope"), root=True
-    )
+    release = RootRelease(StorageFS(str(tmp_path)), params, gpg=_gnupg(homes["locked"], "nope"))
     release.setup()
 
     with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):

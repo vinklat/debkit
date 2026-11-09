@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Self
 
 from debian.deb822 import Deb822
 from txstore import StorageNotFoundException, calc_digests, compare_digests
@@ -149,48 +149,26 @@ class Release(HexDigests):
     Attributes:
         storage: The storage class of the repo.
         params: The input parameters of the repo.
-        gpg: The GnuPG object.
         fields: The fields of the release.
         filename: The filename of the release.
         found_indices_files: List of all found Release files.
         hashfuns: Available hexdigest algorithms in data.
         hash: Hexdigest of a file content (for changes detection).
-        root_digests: Release key → digests of each root Release file as the last load fetched it.
-        is_root: Whether this is the root Release, fixed at construction; a root save writes
-            and signs the layout's root paths, not the file it was read from, and a
-            per-component one is never signed.
     """
 
-    def __init__(
-        self,
-        storage: Storage,
-        params: RepoParams,
-        gpg: GnuPG | None = None,
-        *,
-        root: bool = False,
-    ) -> None:
+    def __init__(self, storage: Storage, params: RepoParams) -> None:
         """Initialize Release object.
 
         Args:
             storage: The storage class of the repo.
             params: The input parameters of the repo.
-            gpg: Optional GnuPG object. Defaults to None.
-            root: Whether this is the root Release, loaded by `load` and started by `setup`;
-                otherwise a per-component one, loaded by `load_component` and started by
-                `setup_component`. Defaults to False.
         """
         self.storage = storage
         self.params = params
-        self.gpg: GnuPG | None = gpg
-        self.is_root = root
         super().__init__()
-        self._clear_state()
+        self.reset()
 
     def reset(self) -> None:
-        """Reset Release object to defaults, keeping its kind."""
-        self._clear_state()
-
-    def _clear_state(self) -> None:
         """Set everything a load or a setup fills to its empty value."""
         self.modified = False
         self.fields: dict[str, str] = {}
@@ -199,26 +177,22 @@ class Release(HexDigests):
         self.found_indices_files: list[str] = []
         self.hashfuns: list[str] = []
         self.hash = ""
-        self.root_digests: dict[str, dict[str, str]] = {}
 
-    def __copy__(self) -> Release:
+    def __copy__(self) -> Self:
         """Create a copy of this Release whose digest records are its own.
 
         `update_digests` mutates a record in place, so a record shared with the copy
         would change the original too.
 
         Returns:
-            A copy of this Release.
+            A copy of this Release, of the same class.
         """
-        ret = Release(self.storage, self.params, gpg=self.gpg, root=self.is_root)
+        ret = type(self).__new__(type(self))
+        ret.__dict__.update(self.__dict__)
         ret.fields = self.fields.copy()
         ret.digests = {key: digests.copy() for key, digests in self.digests.items()}
-        ret.filename = self.filename
         ret.found_indices_files = self.found_indices_files.copy()
         ret.hashfuns = self.hashfuns.copy()
-        ret.modified = self.modified
-        ret.hash = self.hash
-        ret.root_digests = {key: digests.copy() for key, digests in self.root_digests.items()}
         return ret
 
     def __repr__(self) -> str:
@@ -338,63 +312,6 @@ class Release(HexDigests):
         filename = self.params.indices_path(f"{self.params.arch_dir(arch)}/Release", comp)
         return filename
 
-    def _find_root_files(self) -> tuple[bool, str]:
-        """Find the root Release files in storage and pick the one to parse.
-
-        Raises:
-            ReleaseNotFoundException: Neither `Release` nor `InRelease` exists.
-            ReleaseReadException: Signatures are checked and neither `Release.gpg` nor
-                `InRelease` exists.
-
-        Returns:
-            Whether to parse `InRelease`, and the file to parse.
-        """
-        # the layout decides the prefix -> [VALIDATION.md](VALIDATION.md#repository-index-paths)
-        release_path = self.params.indices_path("Release")
-        release_gpg_path = self.params.indices_path("Release.gpg")
-        inrelease_path = self.params.indices_path("InRelease")
-
-        release_path_exists = self.storage.exists(release_path)
-        release_gpg_path_exists = self.storage.exists(release_gpg_path)
-        inrelease_path_exists = self.storage.exists(inrelease_path)
-
-        # Release or InRelease not found
-        if not (release_path_exists or inrelease_path_exists):
-            raise ReleaseNotFoundException(f"File not found: {release_path} or {inrelease_path}")
-
-        # a detached signature signs `Release` alone, so without one it is never verified and
-        # never mirrored -> [CRYPTO.md](CRYPTO.md#gpg)
-        if release_gpg_path_exists and not release_path_exists:
-            logger.warning("%s signs no %s. Skipped.", release_gpg_path, release_path)
-            release_gpg_path_exists = False
-
-        # an unsigned Release reads as-is when no signature is checked
-        # -> [CRYPTO.md](CRYPTO.md#verification-switches)
-        mode = self.signature_mode
-        if mode is SignatureMode.VERIFY_AND_SIGN and not (
-            release_gpg_path_exists or inrelease_path_exists
-        ):
-            raise ReleaseReadException(
-                f"GPG signature file missing: {release_gpg_path} or {inrelease_path}"
-            )
-
-        self.found_indices_files = [
-            path
-            for path, exists in (
-                (release_path, release_path_exists),
-                (release_gpg_path, release_gpg_path_exists),
-                (inrelease_path, inrelease_path_exists),
-            )
-            if exists
-        ]
-
-        # with verification on, a Release without its detached signature is read from InRelease
-        # even when no GnuPG checks it here, as the sync target: the verified source reads the
-        # same form, so both hash the same body -> [CRYPTO.md](CRYPTO.md#gpg)
-        prefers_signed_form = mode is not SignatureMode.OFF and not release_gpg_path_exists
-        use_inrelease = inrelease_path_exists and (not release_path_exists or prefers_signed_form)
-        return use_inrelease, inrelease_path if use_inrelease else release_path
-
     @staticmethod
     def _require_coordinates(comp: str, arch: str) -> None:
         """Refuse an empty component or architecture for a per-component Release.
@@ -409,90 +326,6 @@ class Release(HexDigests):
             raise ValueError(f"component Release needs a component and an arch: {comp!r} {arch!r}")
 
     @property
-    def signature_mode(self) -> SignatureMode:
-        """How a root load and save treat signatures, from the GPG switch and the `GnuPG`.
-
-        GPG verification also turns signing on -> [CRYPTO.md](CRYPTO.md#verification-switches).
-
-        Returns:
-            The mode; the one place `params.verify_gpg` and `gpg` are combined.
-        """
-        if not self.params.verify_gpg:
-            return SignatureMode.OFF
-        if self.gpg is None:
-            return SignatureMode.READ_SIGNED_UNVERIFIED
-        return SignatureMode.VERIFY_AND_SIGN
-
-    def _verify_gpg(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
-        """Verify GPG signature.
-
-        Args:
-            data: The data to verify.
-            detach_sign: The detached signature. Defaults to None.
-
-        Returns:
-            The verified data.
-        """
-        # only reached in `VERIFY_AND_SIGN`, so a missing GnuPG is a caller bug,
-        # never an unverified load
-        assert self.gpg is not None, "signature check without GnuPG"
-
-        if detach_sign is None:
-            logger.debug("Verify signed InRelease...")
-            return self.gpg.verify(data)
-        logger.debug("Verify detached GPG signature...")
-        return self.gpg.verify(data, detach_sign=detach_sign)
-
-    def _load_root_files(self, use_inrelease: bool) -> bytes:
-        """Fetch every root Release file once and verify each signature present.
-
-        No digest block lists these files, so their digests are recorded here: a sync
-        copy must match the bytes this load verified, not a second fetch of them
-        -> [CRYPTO.md](CRYPTO.md#verification-order).
-
-        Args:
-            use_inrelease: Whether `InRelease` is the file to parse.
-
-        Raises:
-            ChecksumException: Both `InRelease` and `Release` are present and their
-                verified contents differ.
-            ReleaseReadException: A root Release file is larger than `MAX_RELEASE_BYTES`.
-
-        Returns:
-            The verified content of the file to parse.
-        """
-        raw: dict[str, bytes] = {}
-        for path in self.found_indices_files:
-            try:
-                raw[self.params.release_key(path)] = read_capped(
-                    self.storage, path, MAX_RELEASE_BYTES
-                )
-            except SizeLimitError as exc:
-                raise ReleaseReadException(f"{exc}.") from exc
-        self.root_digests = {key: calc_digests(data) for key, data in raw.items()}
-
-        if self.signature_mode is SignatureMode.VERIFY_AND_SIGN:
-            if "InRelease" in raw:
-                raw["InRelease"] = self._verify_gpg(raw["InRelease"])
-            if "Release" in raw and "Release.gpg" in raw:
-                self._verify_gpg(raw["Release"], detach_sign=raw["Release.gpg"])
-            # only the parsed form is checked for freshness, and apt prefers `InRelease`,
-            # so a mirrored pair must say the same -> [CRYPTO.md](CRYPTO.md#gpg)
-            if (
-                "InRelease" in raw
-                and "Release" in raw
-                and raw["InRelease"] != canonical_text(raw["Release"])
-            ):
-                raise ChecksumException("Release and InRelease carry different content.")
-        elif use_inrelease:
-            # unverified, as under `--skip-verify-gpg` or for a sync target, yet the signed
-            # body still holds the fields and the Date a source must not undercut
-            # -> [CRYPTO.md](CRYPTO.md#release-freshness)
-            raw["InRelease"] = cleartext_body(raw["InRelease"])
-
-        return raw["InRelease" if use_inrelease else "Release"]
-
-    @property
     def is_loaded(self) -> bool:
         """Whether a load read Release bytes that a reset has not cleared since.
 
@@ -500,18 +333,6 @@ class Release(HexDigests):
             True after a successful `load`, `load_component`, or parse of loaded bytes.
         """
         return bool(self.hash)
-
-    def verify_root_digests(self, key: str, incoming_digests: dict[str, str]) -> bool:
-        """Verify a root Release file against the bytes the last load fetched.
-
-        Args:
-            key: `Release`, `InRelease`, or `Release.gpg`.
-            incoming_digests: The digests to verify.
-
-        Returns:
-            True when the last load fetched the file with these digests.
-        """
-        return compare_digests(self.root_digests.get(key, {}), incoming_digests)
 
     def _parse_loaded(self, data: bytes) -> None:
         """Parse loaded Release bytes and record their hash for change detection."""
@@ -523,19 +344,6 @@ class Release(HexDigests):
         self.modified = False
         if self.hashfuns:
             logger.debug("Available hexdigests: %s", self.hashfuns)
-
-    def load(self) -> None:
-        """Load the root Release file, verifying its signatures when they are checked.
-
-        Raises:
-            ReleaseNotFoundException: Neither a root `Release` nor an `InRelease` exists.
-            ReleaseReadException: Signatures are checked and the root Release has none.
-            GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
-            ChecksumException: `Release` and `InRelease` carry different content.
-        """
-        use_inrelease, self.filename = self._find_root_files()
-        self._parse_loaded(self._load_root_files(use_inrelease))
-        logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
 
     def load_component(self, comp: str, arch: str, root_release: Release) -> bool:
         """Load the per-component Release of one architecture.
@@ -614,64 +422,14 @@ class Release(HexDigests):
 
         return ret
 
-    def _sign_gpg(self, enc_data: bytes) -> None:
-        """Sign the root Release into the layout's `InRelease` and `Release.gpg`.
-
-        Args:
-            enc_data: The encoded root Release to sign.
-
-        Raises:
-            ReleaseWriteException: GnuPG sign error
-        """
-        GPG_ERR_MSG = "GnuPG sign error (maybe wrong passphrase?)"
-
-        # only reached in `VERIFY_AND_SIGN`, so a missing GnuPG is a caller bug
-        assert self.gpg is not None, "signing without GnuPG"
-
-        signed_data = self.gpg.sign(enc_data).encode("utf-8")
-        if len(signed_data):
-            signed_filename = self.params.indices_path("InRelease")
-            logger.info("Save signed InRelease...")
-            self.storage.put(signed_filename, signed_data)
-        else:
-            raise ReleaseWriteException(GPG_ERR_MSG)
-
-        detached_signature = self.gpg.sign(enc_data, detach=True).encode("utf-8")
-        if len(detached_signature):
-            detached_filename = self.params.indices_path("Release.gpg")
-            logger.info("Save detached GPG signature...")
-            self.storage.put(detached_filename, detached_signature)
-        else:
-            raise ReleaseWriteException(GPG_ERR_MSG)
-
-    def _remove_root_signatures(self) -> None:
-        """Delete the root `InRelease` and `Release.gpg` an unsigned save leaves stale.
-
-        Both sign the previous content, so apt would read a hash mismatch or a bad
-        signature -> [CRYPTO.md](CRYPTO.md#verification-switches).
-        """
-        for path in (
-            self.params.indices_path("InRelease"),
-            self.params.indices_path("Release.gpg"),
-        ):
-            try:
-                self.storage.delete(path)
-            except StorageNotFoundException:
-                continue
-            logger.warning("Release saved unsigned: removed stale signature %s", path)
-            self.found_indices_files = [f for f in self.found_indices_files if f != path]
-
     def save(self) -> dict[str, str] | None:
-        """Save Release file.
+        """Save Release file when it changed.
 
-        A root Release is written to the layout's `Release` even when it was read from an
-        `InRelease`, then signed, or its old signatures dropped when it is saved unsigned
-        -> [CRYPTO.md](CRYPTO.md#verification-switches). A per-component Release is never
-        signed.
+        A per-component Release is written where it was read and never signed; a root one
+        -> `RootRelease`.
 
         Raises:
-            ReleaseWriteException: A root Release in `READ_SIGNED_UNVERIFIED` has no `GnuPG`
-                to sign with, and saving unsigned would drop the signatures it was read with.
+            ReleaseWriteException: A root Release cannot be signed.
 
         Returns:
             The digests of the saved file, or None when nothing was written.
@@ -683,30 +441,19 @@ class Release(HexDigests):
             logger.debug("%s not modified.", self.filename)
             return None
 
-        mode = self.signature_mode
-        if self.is_root and mode is SignatureMode.READ_SIGNED_UNVERIFIED:
-            raise ReleaseWriteException(
-                "GPG verification is on but no GnuPG signs the root Release; "
-                "refusing to save it unsigned"
-            )
+        return calc_digests(self._put())
 
-        if self.is_root:
-            self.filename = self.params.indices_path("Release")
+    def _put(self) -> bytes:
+        """Write the serialized Release to its file.
 
-        data = self.serialize()
-        enc_data = data.encode("utf-8")
+        Returns:
+            The bytes written.
+        """
+        assert self.filename is not None, "put without a file"
+        enc_data = self.serialize().encode("utf-8")
         logger.info("Save %s...", self.filename)
         self.storage.put(self.filename, enc_data)
-        digests = calc_digests(enc_data)
-
-        if not self.is_root:
-            return digests
-        if mode is SignatureMode.VERIFY_AND_SIGN:
-            self._sign_gpg(enc_data)
-        else:
-            self._remove_root_signatures()
-
-        return digests
+        return enc_data
 
     def dump(self, brief: bool = False) -> dict[str, Any]:
         """Dump Release object to a dict.
@@ -762,6 +509,333 @@ class Release(HexDigests):
         value = self.fields.get(field)
         return None if value is None else parse_release_date(value)
 
+    def is_empty(self) -> bool:
+        """Check if Release object is empty.
+
+        Returns:
+            True if the Release object is empty, False otherwise.
+        """
+        return bool(len(self.fields) == 0)
+
+    def setup_component(self, comp: str, arch: str) -> None:
+        """Start a new per-component Release of one architecture.
+
+        Args:
+            comp: The component.
+            arch: The architecture.
+
+        Raises:
+            ValueError: `comp` or `arch` is empty.
+        """
+        self._require_coordinates(comp, arch)
+        self.fields = {"Component": comp, "Architecture": arch}
+        self._start_file(self._component_release_path(comp, arch))
+
+    def _start_file(self, filename: str) -> None:
+        """Point this Release at a new file to write with every supported digest."""
+        self.hashfuns = list(SUPPORT_HASH_LIST)
+        self.filename = filename
+        self.found_indices_files = [filename]
+        self.modified = True
+
+
+class RootRelease(Release):
+    """The root Release of a repository: loaded and signed at the layout's root paths.
+
+    A root save writes the layout's `Release` whichever form the load read, then signs
+    it or removes its stale signatures -> [CRYPTO.md](CRYPTO.md#gpg).
+
+    Attributes:
+        gpg: The GnuPG object, None where none verifies or signs.
+        root_digests: Release key → digests of each root Release file as the last load fetched it.
+    """
+
+    def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
+        """Initialize RootRelease object.
+
+        Args:
+            storage: The storage class of the repo.
+            params: The input parameters of the repo.
+            gpg: Optional GnuPG object. Defaults to None.
+        """
+        self.gpg: GnuPG | None = gpg
+        super().__init__(storage, params)
+
+    def reset(self) -> None:
+        """Reset RootRelease object to defaults, dropping the fetched root digests too."""
+        super().reset()
+        self.root_digests: dict[str, dict[str, str]] = {}
+
+    def __copy__(self) -> Self:
+        """Create a copy of this RootRelease whose digest records are its own.
+
+        Returns:
+            A copy of this RootRelease.
+        """
+        ret = super().__copy__()
+        ret.root_digests = {key: digests.copy() for key, digests in self.root_digests.items()}
+        return ret
+
+    def _put(self) -> bytes:
+        """Write the layout's root `Release`, then sign it or drop its stale signatures.
+
+        Raises:
+            ReleaseWriteException: In `READ_SIGNED_UNVERIFIED` no `GnuPG` signs it, and
+                saving unsigned would drop the signatures it was read with.
+
+        Returns:
+            The bytes written.
+        """
+        mode = self.signature_mode
+        if mode is SignatureMode.READ_SIGNED_UNVERIFIED:
+            raise ReleaseWriteException(
+                "GPG verification is on but no GnuPG signs the root Release; "
+                "refusing to save it unsigned"
+            )
+        self.filename = self.params.indices_path("Release")
+        enc_data = super()._put()
+        if mode is SignatureMode.VERIFY_AND_SIGN:
+            self._sign_gpg(enc_data)
+        else:
+            self._remove_root_signatures()
+        return enc_data
+
+    @property
+    def signature_mode(self) -> SignatureMode:
+        """How a root load and save treat signatures, from the GPG switch and the `GnuPG`.
+
+        GPG verification also turns signing on -> [CRYPTO.md](CRYPTO.md#verification-switches).
+
+        Returns:
+            The mode; the one place `params.verify_gpg` and `gpg` are combined.
+        """
+        if not self.params.verify_gpg:
+            return SignatureMode.OFF
+        if self.gpg is None:
+            return SignatureMode.READ_SIGNED_UNVERIFIED
+        return SignatureMode.VERIFY_AND_SIGN
+
+    def _find_root_files(self) -> tuple[bool, str]:
+        """Find the root Release files in storage and pick the one to parse.
+
+        Raises:
+            ReleaseNotFoundException: Neither `Release` nor `InRelease` exists.
+            ReleaseReadException: Signatures are checked and neither `Release.gpg` nor
+                `InRelease` exists.
+
+        Returns:
+            Whether to parse `InRelease`, and the file to parse.
+        """
+        # the layout decides the prefix -> [VALIDATION.md](VALIDATION.md#repository-index-paths)
+        release_path = self.params.indices_path("Release")
+        release_gpg_path = self.params.indices_path("Release.gpg")
+        inrelease_path = self.params.indices_path("InRelease")
+
+        release_path_exists = self.storage.exists(release_path)
+        release_gpg_path_exists = self.storage.exists(release_gpg_path)
+        inrelease_path_exists = self.storage.exists(inrelease_path)
+
+        # Release or InRelease not found
+        if not (release_path_exists or inrelease_path_exists):
+            raise ReleaseNotFoundException(f"File not found: {release_path} or {inrelease_path}")
+
+        # a detached signature signs `Release` alone, so without one it is never verified and
+        # never mirrored -> [CRYPTO.md](CRYPTO.md#gpg)
+        if release_gpg_path_exists and not release_path_exists:
+            logger.warning("%s signs no %s. Skipped.", release_gpg_path, release_path)
+            release_gpg_path_exists = False
+
+        # an unsigned Release reads as-is when no signature is checked
+        # -> [CRYPTO.md](CRYPTO.md#verification-switches)
+        mode = self.signature_mode
+        if mode is SignatureMode.VERIFY_AND_SIGN and not (
+            release_gpg_path_exists or inrelease_path_exists
+        ):
+            raise ReleaseReadException(
+                f"GPG signature file missing: {release_gpg_path} or {inrelease_path}"
+            )
+
+        self.found_indices_files = [
+            path
+            for path, exists in (
+                (release_path, release_path_exists),
+                (release_gpg_path, release_gpg_path_exists),
+                (inrelease_path, inrelease_path_exists),
+            )
+            if exists
+        ]
+
+        # with verification on, a Release without its detached signature is read from InRelease
+        # even when no GnuPG checks it here, as the sync target: the verified source reads the
+        # same form, so both hash the same body -> [CRYPTO.md](CRYPTO.md#gpg)
+        prefers_signed_form = mode is not SignatureMode.OFF and not release_gpg_path_exists
+        use_inrelease = inrelease_path_exists and (not release_path_exists or prefers_signed_form)
+        return use_inrelease, inrelease_path if use_inrelease else release_path
+
+    def _verify_gpg(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
+        """Verify GPG signature.
+
+        Args:
+            data: The data to verify.
+            detach_sign: The detached signature. Defaults to None.
+
+        Returns:
+            The verified data.
+        """
+        # only reached in `VERIFY_AND_SIGN`, so a missing GnuPG is a caller bug,
+        # never an unverified load
+        assert self.gpg is not None, "signature check without GnuPG"
+
+        if detach_sign is None:
+            logger.debug("Verify signed InRelease...")
+            return self.gpg.verify(data)
+        logger.debug("Verify detached GPG signature...")
+        return self.gpg.verify(data, detach_sign=detach_sign)
+
+    def _load_root_files(self, use_inrelease: bool) -> bytes:
+        """Fetch every root Release file once and verify each signature present.
+
+        No digest block lists these files, so their digests are recorded here: a sync
+        copy must match the bytes this load verified, not a second fetch of them
+        -> [CRYPTO.md](CRYPTO.md#verification-order).
+
+        Args:
+            use_inrelease: Whether `InRelease` is the file to parse.
+
+        Raises:
+            ChecksumException: Both `InRelease` and `Release` are present and their
+                verified contents differ.
+            ReleaseReadException: A root Release file is larger than `MAX_RELEASE_BYTES`.
+
+        Returns:
+            The verified content of the file to parse.
+        """
+        raw: dict[str, bytes] = {}
+        for path in self.found_indices_files:
+            try:
+                raw[self.params.release_key(path)] = read_capped(
+                    self.storage, path, MAX_RELEASE_BYTES
+                )
+            except SizeLimitError as exc:
+                raise ReleaseReadException(f"{exc}.") from exc
+        self.root_digests = {key: calc_digests(data) for key, data in raw.items()}
+
+        if self.signature_mode is SignatureMode.VERIFY_AND_SIGN:
+            if "InRelease" in raw:
+                raw["InRelease"] = self._verify_gpg(raw["InRelease"])
+            if "Release" in raw and "Release.gpg" in raw:
+                self._verify_gpg(raw["Release"], detach_sign=raw["Release.gpg"])
+            # only the parsed form is checked for freshness, and apt prefers `InRelease`,
+            # so a mirrored pair must say the same -> [CRYPTO.md](CRYPTO.md#gpg)
+            if (
+                "InRelease" in raw
+                and "Release" in raw
+                and raw["InRelease"] != canonical_text(raw["Release"])
+            ):
+                raise ChecksumException("Release and InRelease carry different content.")
+        elif use_inrelease:
+            # unverified, as under `--skip-verify-gpg` or for a sync target, yet the signed
+            # body still holds the fields and the Date a source must not undercut
+            # -> [CRYPTO.md](CRYPTO.md#release-freshness)
+            raw["InRelease"] = cleartext_body(raw["InRelease"])
+
+        return raw["InRelease" if use_inrelease else "Release"]
+
+    def verify_root_digests(self, key: str, incoming_digests: dict[str, str]) -> bool:
+        """Verify a root Release file against the bytes the last load fetched.
+
+        Args:
+            key: `Release`, `InRelease`, or `Release.gpg`.
+            incoming_digests: The digests to verify.
+
+        Returns:
+            True when the last load fetched the file with these digests.
+        """
+        return compare_digests(self.root_digests.get(key, {}), incoming_digests)
+
+    def load(self) -> None:
+        """Load the root Release file, verifying its signatures when they are checked.
+
+        Raises:
+            ReleaseNotFoundException: Neither a root `Release` nor an `InRelease` exists.
+            ReleaseReadException: Signatures are checked and the root Release has none.
+            GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
+            ChecksumException: `Release` and `InRelease` carry different content.
+        """
+        use_inrelease, self.filename = self._find_root_files()
+        self._parse_loaded(self._load_root_files(use_inrelease))
+        logger.info("Repo: Storage=%s Release=%s", self.storage.get_type(), self.fields)
+
+    def setup(self, fields: dict[str, str] | None = None) -> None:
+        """Start a new root Release.
+
+        Args:
+            fields: Initial fields, copied; the generated identity fields are added to them.
+                Defaults to None (keep the current ones).
+        """
+        # a new root Release is named after its dist, which every repo that saves one has
+        dist = self.params.dist
+        assert dist is not None
+        if fields is not None:
+            self.fields = dict(fields)
+        self.fields.update(
+            {
+                "Origin": dist,
+                "Label": dist,
+                "Suite": dist,
+                "Codename": dist,
+                "Description": "Generated by debkit",
+            }
+        )
+        self._start_file(self.params.indices_path("Release"))
+
+    def _sign_gpg(self, enc_data: bytes) -> None:
+        """Sign the root Release into the layout's `InRelease` and `Release.gpg`.
+
+        Args:
+            enc_data: The encoded root Release to sign.
+
+        Raises:
+            ReleaseWriteException: GnuPG sign error
+        """
+        GPG_ERR_MSG = "GnuPG sign error (maybe wrong passphrase?)"
+
+        # only reached in `VERIFY_AND_SIGN`, so a missing GnuPG is a caller bug
+        assert self.gpg is not None, "signing without GnuPG"
+
+        signed_data = self.gpg.sign(enc_data).encode("utf-8")
+        if len(signed_data):
+            signed_filename = self.params.indices_path("InRelease")
+            logger.info("Save signed InRelease...")
+            self.storage.put(signed_filename, signed_data)
+        else:
+            raise ReleaseWriteException(GPG_ERR_MSG)
+
+        detached_signature = self.gpg.sign(enc_data, detach=True).encode("utf-8")
+        if len(detached_signature):
+            detached_filename = self.params.indices_path("Release.gpg")
+            logger.info("Save detached GPG signature...")
+            self.storage.put(detached_filename, detached_signature)
+        else:
+            raise ReleaseWriteException(GPG_ERR_MSG)
+
+    def _remove_root_signatures(self) -> None:
+        """Delete the root `InRelease` and `Release.gpg` an unsigned save leaves stale.
+
+        Both sign the previous content, so apt would read a hash mismatch or a bad
+        signature -> [CRYPTO.md](CRYPTO.md#verification-switches).
+        """
+        for path in (
+            self.params.indices_path("InRelease"),
+            self.params.indices_path("Release.gpg"),
+        ):
+            try:
+                self.storage.delete(path)
+            except StorageNotFoundException:
+                continue
+            logger.warning("Release saved unsigned: removed stale signature %s", path)
+            self.found_indices_files = [f for f in self.found_indices_files if f != path]
+
     def _signed_date(self, field: str) -> datetime | None:
         """Get a date field of this source Release, refusing a malformed one."""
         try:
@@ -809,55 +883,3 @@ class Release(HexDigests):
                 f"source Release dated {self.fields['Date']} is older than the target Release "
                 f"dated {target.fields['Date']}"
             )
-
-    def is_empty(self) -> bool:
-        """Check if Release object is empty.
-
-        Returns:
-            True if the Release object is empty, False otherwise.
-        """
-        return bool(len(self.fields) == 0)
-
-    def setup(self, fields: dict[str, str] | None = None) -> None:
-        """Start a new root Release.
-
-        Args:
-            fields: Initial fields, copied; the generated identity fields are added to them.
-                Defaults to None (keep the current ones).
-        """
-        # a new root Release is named after its dist, which every repo that saves one has
-        dist = self.params.dist
-        assert dist is not None
-        if fields is not None:
-            self.fields = dict(fields)
-        self.fields.update(
-            {
-                "Origin": dist,
-                "Label": dist,
-                "Suite": dist,
-                "Codename": dist,
-                "Description": "Generated by debkit",
-            }
-        )
-        self._start_file(self.params.indices_path("Release"))
-
-    def setup_component(self, comp: str, arch: str) -> None:
-        """Start a new per-component Release of one architecture.
-
-        Args:
-            comp: The component.
-            arch: The architecture.
-
-        Raises:
-            ValueError: `comp` or `arch` is empty.
-        """
-        self._require_coordinates(comp, arch)
-        self.fields = {"Component": comp, "Architecture": arch}
-        self._start_file(self._component_release_path(comp, arch))
-
-    def _start_file(self, filename: str) -> None:
-        """Point this Release at a new file to write with every supported digest."""
-        self.hashfuns = list(SUPPORT_HASH_LIST)
-        self.filename = filename
-        self.found_indices_files = [filename]
-        self.modified = True

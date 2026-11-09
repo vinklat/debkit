@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 from collections.abc import Callable
+from copy import copy
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -25,6 +26,7 @@ from debkit.repo.release import (
     ReleaseNotFoundException,
     ReleaseReadException,
     ReleaseWriteException,
+    RootRelease,
     SignatureMode,
     parse_release_date,
 )
@@ -153,7 +155,7 @@ def test_load_missing_files_raises_not_found() -> None:
     """The one read failure `insert` may answer by setting up a new repository."""
     storage = MagicMock()
     storage.exists.return_value = False
-    r = Release(storage, _params())
+    r = RootRelease(storage, _params())
     with pytest.raises(ReleaseNotFoundException):
         r.load()
 
@@ -174,7 +176,7 @@ def test_load_checksum_mismatch_raises() -> None:
 
 
 def test_setup_initializes_root_release() -> None:
-    r = Release(MagicMock(), _params())
+    r = RootRelease(MagicMock(), _params())
     r.setup(fields={"Origin": "test", "Codename": "bookworm"})
     assert r.modified is True
     assert r.filename == "dists/bookworm/Release"
@@ -212,7 +214,7 @@ def test_load_of_a_root_with_a_digest_block_is_not_modified(tmp_path: Path) -> N
     """Regression: parsing the digest block marked a fresh load modified, so save rewrote it."""
     storage = StorageFS(str(tmp_path))
     storage.put("dists/bookworm/Release", _release_blob())
-    r = Release(storage, _params())
+    r = RootRelease(storage, _params())
 
     r.load()
 
@@ -221,12 +223,20 @@ def test_load_of_a_root_with_a_digest_block_is_not_modified(tmp_path: Path) -> N
     assert r.save() is None
 
 
+def test_only_a_root_release_loads_signs_and_floors_at_the_root_paths() -> None:
+    """A per-component Release has no root API to misuse, and a copy keeps its kind."""
+    for name in ("load", "setup", "check_fresh_against", "signature_mode", "gpg"):
+        assert not hasattr(Release, name), name
+    assert type(copy(RootRelease(MagicMock(), _params()))) is RootRelease
+
+
 @pytest.mark.parametrize("root", [True, False], ids=["root", "component"])
 def test_reset_restores_a_fresh_release_of_the_same_kind(root: bool) -> None:
-    """The kind is fixed at construction: a reset clears the content, never the kind."""
-    fresh = Release(MagicMock(), _params(), root=root)
-    r = Release(fresh.storage, fresh.params, root=root)
-    if root:
+    """The kind is the class: a reset clears the content, never the kind."""
+    kind = RootRelease if root else Release
+    fresh = kind(MagicMock(), _params())
+    r = kind(fresh.storage, fresh.params)
+    if isinstance(r, RootRelease):
         r.setup(fields={"Origin": "test"})
     else:
         r.setup_component("main", "amd64")
@@ -250,7 +260,7 @@ def test_save_unsigned_removes_the_stale_root_signatures(
     storage = StorageFS(str(tmp_path))
     for name in ("Release", "Release.gpg", "InRelease"):
         storage.put(f"{_ROOT}/{name}", b"Origin: old\n")
-    r = Release(storage, _params(), gpg=None, root=True)
+    r = RootRelease(storage, _params(), gpg=None)
     r.load()
     r.fields["Origin"] = "new"
     r.modified = True
@@ -271,7 +281,7 @@ def test_save_refuses_a_root_read_with_verification_on_and_no_gnupg(tmp_path: Pa
     storage = StorageFS(str(tmp_path))
     for name in ("Release", "Release.gpg"):
         storage.put(f"{_ROOT}/{name}", b"Origin: old\n")
-    r = Release(storage, _params(verify_gpg=True), gpg=None, root=True)
+    r = RootRelease(storage, _params(verify_gpg=True), gpg=None)
     r.load()
     r.fields["Origin"] = "new"
     r.modified = True
@@ -296,7 +306,7 @@ def test_save_refuses_a_root_read_with_verification_on_and_no_gnupg(tmp_path: Pa
 def test_signature_mode_combines_the_gpg_switch_and_the_gnupg(
     verify_gpg: bool, gpg: MagicMock | None, mode: SignatureMode
 ) -> None:
-    r = Release(MagicMock(), _params(verify_gpg=verify_gpg), gpg=gpg, root=True)
+    r = RootRelease(MagicMock(), _params(verify_gpg=verify_gpg), gpg=gpg)
 
     assert r.signature_mode is mode
 
@@ -305,7 +315,7 @@ def test_save_unsigned_without_signatures_only_writes_the_release(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     storage = StorageFS(str(tmp_path))
-    r = Release(storage, _params())
+    r = RootRelease(storage, _params())
     r.setup(fields={"Origin": "test"})
 
     with caplog.at_level(logging.WARNING):
@@ -324,7 +334,7 @@ def _signing_gpg(inline: str = "inline", detached: str = "detached") -> MagicMoc
 def test_save_signed_keeps_and_rewrites_the_root_signatures() -> None:
     storage = MagicMock()
     gpg = _signing_gpg()
-    r = Release(storage, _params(verify_gpg=True), gpg=gpg, root=True)
+    r = RootRelease(storage, _params(verify_gpg=True), gpg=gpg)
     r.setup(fields={"Origin": "test"})
 
     digests = r.save()
@@ -349,7 +359,7 @@ def test_save_signed_names_the_signatures_by_layout_not_by_dist(source: str, roo
     params = RepoParams(verify_gpg=True)
     params.from_deb_source(source)
     storage = MagicMock()
-    r = Release(storage, params, gpg=_signing_gpg(), root=True)
+    r = RootRelease(storage, params, gpg=_signing_gpg())
     r.setup(fields={"Origin": "test"})
 
     r.save()
@@ -358,10 +368,10 @@ def test_save_signed_names_the_signatures_by_layout_not_by_dist(source: str, roo
     assert written == [f"{root}/Release", f"{root}/InRelease", f"{root}/Release.gpg"]
 
 
-def _inrelease_only_root(tmp_path: Path, params: RepoParams, gpg: MagicMock | None) -> Release:
+def _inrelease_only_root(tmp_path: Path, params: RepoParams, gpg: MagicMock | None) -> RootRelease:
     storage = StorageFS(str(tmp_path))
     storage.put(f"{_ROOT}/InRelease", make_clearsigned(b"Origin: inline\nSuite: bookworm\n"))
-    r = Release(storage, params, gpg=gpg, root=True)
+    r = RootRelease(storage, params, gpg=gpg)
     r.load()
     r.fields["Origin"] = "new"
     r.modified = True
@@ -393,7 +403,7 @@ def test_save_signed_of_an_inrelease_loaded_root_writes_every_root_file(tmp_path
 def test_save_refuses_an_empty_inline_signature_before_writing_inrelease() -> None:
     """`GnuPG.sign` returns an empty signature when signing fails, e.g. on a wrong passphrase."""
     storage = MagicMock()
-    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(inline=""), root=True)
+    r = RootRelease(storage, _params(verify_gpg=True), gpg=_signing_gpg(inline=""))
     r.setup(fields={"Origin": "test"})
 
     with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
@@ -404,7 +414,7 @@ def test_save_refuses_an_empty_inline_signature_before_writing_inrelease() -> No
 
 def test_save_refuses_an_empty_detached_signature() -> None:
     storage = MagicMock()
-    r = Release(storage, _params(verify_gpg=True), gpg=_signing_gpg(detached=""), root=True)
+    r = RootRelease(storage, _params(verify_gpg=True), gpg=_signing_gpg(detached=""))
     r.setup(fields={"Origin": "test"})
 
     with pytest.raises(ReleaseWriteException, match="GnuPG sign error"):
@@ -524,7 +534,7 @@ def _flat_params(dist: str = "bookworm") -> RepoParams:
 
 def test_setup_flat_real_dist_writes_the_root_release_under_the_dist() -> None:
     """A flat repo publishes its manifest under `<dist>/`, where its loader looks."""
-    r = Release(MagicMock(), _flat_params())
+    r = RootRelease(MagicMock(), _flat_params())
     r.setup(fields={"Origin": "test"})
 
     assert r.filename == "bookworm/Release"
@@ -533,7 +543,7 @@ def test_setup_flat_real_dist_writes_the_root_release_under_the_dist() -> None:
 
 def test_setup_rootless_flat_writes_the_bare_root_release() -> None:
     """A rootless flat repo has no prefix to add."""
-    r = Release(MagicMock(), _flat_params(dist="/"))
+    r = RootRelease(MagicMock(), _flat_params(dist="/"))
     r.setup(fields={"Origin": "test"})
 
     assert r.filename == "Release"
@@ -545,7 +555,7 @@ def test_find_file_flat_real_dist_reads_the_root_release_setup_wrote() -> None:
     storage.exists.side_effect = lambda path: path in {"bookworm/Release", "bookworm/Release.gpg"}
     storage.get.return_value = b"Origin: x\n"
 
-    r = Release(storage, _flat_params())
+    r = RootRelease(storage, _flat_params())
     r.load()
     assert r.filename == "bookworm/Release"
 
@@ -557,7 +567,7 @@ def test_find_file_source_arch_reads_the_source_release() -> None:
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _params())
-    r.load_component("main", "source", Release(r.storage, r.params, root=True))
+    r.load_component("main", "source", RootRelease(r.storage, r.params))
 
     assert r.filename == "dists/bookworm/main/source/Release"
 
@@ -569,7 +579,7 @@ def test_find_file_flat_component_release_path_carries_no_leading_slash() -> Non
     storage.get.return_value = b"Origin: x\n"
 
     r = Release(storage, _flat_params())
-    r.load_component("main", "amd64", Release(r.storage, r.params, root=True))
+    r.load_component("main", "amd64", RootRelease(r.storage, r.params))
 
     assert r.filename == "bookworm/binary-amd64/Release"
     assert not r.filename.startswith("/")
@@ -589,7 +599,7 @@ def test_find_file_reads_the_component_release_setup_wrote(
 
     storage.exists.side_effect = lambda path: path == writer.filename
     reader = Release(storage, params_fn())
-    reader.load_component("main", arch, Release(reader.storage, reader.params, root=True))
+    reader.load_component("main", arch, RootRelease(reader.storage, reader.params))
 
     assert reader.filename == writer.filename
 
@@ -601,7 +611,7 @@ def test_component_entry_points_refuse_an_empty_coordinate(comp: str, arch: str)
     r = Release(storage, _params())
 
     with pytest.raises(ValueError, match="needs a component and an arch"):
-        r.load_component(comp, arch, Release(r.storage, r.params, root=True))
+        r.load_component(comp, arch, RootRelease(r.storage, r.params))
     with pytest.raises(ValueError, match="needs a component and an arch"):
         r.setup_component(comp, arch)
 
@@ -613,7 +623,7 @@ def test_component_entry_points_refuse_an_empty_coordinate(comp: str, arch: str)
 def test_setup_copies_the_fields_it_is_given() -> None:
     """The caller's mapping, e.g. a module-level default, must not gain generated fields."""
     fields = {"Components": "main"}
-    Release(MagicMock(), _params()).setup(fields=fields)
+    RootRelease(MagicMock(), _params()).setup(fields=fields)
     assert fields == {"Components": "main"}
 
 
@@ -656,7 +666,7 @@ def _root_storage(files: dict[str, bytes]) -> MagicMock:
 
 def test_load_root_records_the_digests_of_every_root_file() -> None:
     """Sync binds each root copy to these bytes -> CRYPTO.md#verification-order."""
-    r = Release(_root_storage(_ROOT_FILES), _params())
+    r = RootRelease(_root_storage(_ROOT_FILES), _params())
     r.load()
 
     assert r.root_digests == {
@@ -677,7 +687,7 @@ def test_load_root_refuses_a_root_file_past_the_size_cap(monkeypatch: pytest.Mon
     storage = _root_storage(_ROOT_FILES)
 
     with pytest.raises(ReleaseReadException, match="InRelease is larger than"):
-        Release(storage, _params()).load()
+        RootRelease(storage, _params()).load()
 
 
 def test_load_component_refuses_a_release_larger_than_the_root_release_records() -> None:
@@ -713,7 +723,7 @@ def test_load_root_skips_a_detached_signature_without_its_release(
         "dists/bookworm/Release.gpg": junk,
         "dists/bookworm/InRelease": make_clearsigned(_RELEASE_BODY),
     }
-    r = Release(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
+    r = RootRelease(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
 
     with caplog.at_level(logging.WARNING):
         r.load()
@@ -727,7 +737,7 @@ def test_load_root_skips_a_detached_signature_without_its_release(
 def test_load_root_verifies_every_signed_form_it_mirrors() -> None:
     """An `InRelease` next to a detached `Release` is copied too, so it is verified too."""
     gpg = _accepting_gpg()
-    r = Release(_root_storage(_ROOT_FILES), _params(verify_gpg=True), gpg=gpg)
+    r = RootRelease(_root_storage(_ROOT_FILES), _params(verify_gpg=True), gpg=gpg)
     r.load()
 
     assert r.filename == "dists/bookworm/Release"
@@ -756,7 +766,7 @@ def test_load_root_verifies_every_signed_form_it_mirrors() -> None:
 )
 def test_load_root_refuses_signed_forms_that_differ(files: dict[str, bytes]) -> None:
     """Freshness reads one form while sync mirrors both, and apt prefers `InRelease`."""
-    r = Release(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
+    r = RootRelease(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
 
     with pytest.raises(ChecksumException, match="different content"):
         r.load()
@@ -775,7 +785,7 @@ def test_load_root_accepts_signed_forms_that_differ_only_where_gpg_does_not_sign
     release: bytes,
 ) -> None:
     files = {**_ROOT_FILES, "dists/bookworm/Release": release}
-    r = Release(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
+    r = RootRelease(_root_storage(files), _params(verify_gpg=True), gpg=_accepting_gpg())
 
     r.load()
 
@@ -783,7 +793,7 @@ def test_load_root_accepts_signed_forms_that_differ_only_where_gpg_does_not_sign
 def test_load_root_without_a_keyring_does_not_compare_the_signed_forms() -> None:
     """The sync target is not verified; refusing it would drop the Date it floors on."""
     files = {**_ROOT_FILES, "dists/bookworm/InRelease": make_clearsigned(b"Origin: other\n")}
-    r = Release(_root_storage(files), _params(verify_gpg=True))
+    r = RootRelease(_root_storage(files), _params(verify_gpg=True))
 
     r.load()
     assert r.fields["Origin"] == "detached"
@@ -801,7 +811,7 @@ def test_load_root_refuses_an_inrelease_next_to_a_detached_release_that_fails_ve
 
     gpg = MagicMock()
     gpg.verify.side_effect = verify
-    r = Release(_root_storage(_ROOT_FILES), _params(verify_gpg=True), gpg=gpg)
+    r = RootRelease(_root_storage(_ROOT_FILES), _params(verify_gpg=True), gpg=gpg)
 
     with pytest.raises(GPGVerifyException):
         r.load()
@@ -821,7 +831,7 @@ _INRELEASE = make_clearsigned(_INRELEASE_BODY)
 )
 def test_load_root_without_a_keyring_parses_the_inrelease_body(files: dict[str, bytes]) -> None:
     """A sync target loads without gpg, yet its Date still floors the source."""
-    r = Release(_root_storage(files), _params(verify_gpg=True), gpg=None)
+    r = RootRelease(_root_storage(files), _params(verify_gpg=True), gpg=None)
     r.load()
 
     assert r.filename == "dists/bookworm/InRelease"
@@ -837,7 +847,9 @@ def test_load_root_without_a_keyring_hashes_the_body_the_source_hashes() -> None
     """Both sides hash the signed body, so an unchanged source does not force indices."""
     import hashlib
 
-    r = Release(_root_storage({"dists/bookworm/InRelease": _INRELEASE}), _params(verify_gpg=True))
+    r = RootRelease(
+        _root_storage({"dists/bookworm/InRelease": _INRELEASE}), _params(verify_gpg=True)
+    )
     r.load()
 
     assert r.hash == hashlib.sha256(_INRELEASE_BODY).hexdigest()
@@ -848,13 +860,13 @@ def test_load_root_without_a_keyring_refuses_a_malformed_inrelease() -> None:
 
     storage = _root_storage({"dists/bookworm/InRelease": _INRELEASE + b"unsigned tail\n"})
     with pytest.raises(GPGVerifyException, match="after the signature"):
-        Release(storage, _params(verify_gpg=True)).load()
+        RootRelease(storage, _params(verify_gpg=True)).load()
 
 
 def test_load_root_refuses_an_unsigned_release_when_signatures_are_checked() -> None:
     """The repository exists, so the failure must not read as not-found."""
     storage = _root_storage({"dists/bookworm/Release": _RELEASE_BODY})
-    r = Release(storage, _params(verify_gpg=True), gpg=_accepting_gpg())
+    r = RootRelease(storage, _params(verify_gpg=True), gpg=_accepting_gpg())
 
     with pytest.raises(ReleaseReadException, match="signature file missing") as excinfo:
         r.load()
@@ -870,7 +882,7 @@ def test_load_root_reads_an_unsigned_release_when_signatures_are_not_checked(
     verify_gpg: bool, gpg: MagicMock | None
 ) -> None:
     storage = _root_storage({"dists/bookworm/Release": _RELEASE_BODY})
-    r = Release(storage, _params(verify_gpg=verify_gpg), gpg=gpg)
+    r = RootRelease(storage, _params(verify_gpg=verify_gpg), gpg=gpg)
 
     r.load()
     assert r.fields["Origin"] == "detached"
@@ -881,7 +893,7 @@ def test_load_root_reads_an_unsigned_release_when_signatures_are_not_checked(
 def test_load_root_reads_an_inrelease_body_unverified_with_verification_disabled() -> None:
     """`--skip-verify-gpg` reads an `InRelease`-only repository as apt's `trusted=yes` does."""
     gpg = MagicMock()
-    r = Release(_root_storage({"dists/bookworm/InRelease": _INRELEASE}), _params(), gpg=gpg)
+    r = RootRelease(_root_storage({"dists/bookworm/InRelease": _INRELEASE}), _params(), gpg=gpg)
 
     r.load()
     assert r.filename == "dists/bookworm/InRelease"
@@ -892,16 +904,15 @@ def test_load_root_reads_an_inrelease_body_unverified_with_verification_disabled
 def test_load_root_falls_back_to_latin_1_for_an_inrelease_body() -> None:
     """The signed body is decoded as a detached `Release` is, latin-1 fallback included."""
     inrelease = _INRELEASE.replace(b"Origin: inline", b"Origin: Caf\xe9")
-    r = Release(_root_storage({"dists/bookworm/InRelease": inrelease}), _params())
+    r = RootRelease(_root_storage({"dists/bookworm/InRelease": inrelease}), _params())
 
     r.load()
     assert r.fields["Origin"] == "Café"
 
 
 def test_reset_and_copy_carry_the_root_digests() -> None:
-    from copy import copy
 
-    r = Release(_root_storage(_ROOT_FILES), _params())
+    r = RootRelease(_root_storage(_ROOT_FILES), _params())
     r.load()
 
     assert copy(r).root_digests == r.root_digests
@@ -962,9 +973,9 @@ LATER_DATE = "Wed, 01 Jan 2031 00:00:00 UTC"
 NOW = datetime(2025, 1, 1, tzinfo=UTC)
 
 
-def _dated(fields: dict[str, str]) -> Release:
-    """A real Release with only header fields, as a loaded or unloaded repo holds them."""
-    release = Release(MagicMock(), _params())
+def _dated(fields: dict[str, str]) -> RootRelease:
+    """A real root Release with only header fields, as a loaded or unloaded repo holds them."""
+    release = RootRelease(MagicMock(), _params())
     release.fields = dict(fields)
     return release
 

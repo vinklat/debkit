@@ -28,7 +28,7 @@ from debkit.repo.params import (
     is_safe_name,
     is_valid_arch,
 )
-from debkit.repo.release import Release, ReleaseReadException
+from debkit.repo.release import Release, ReleaseReadException, RootRelease
 from debkit.repo.repo_diff import RepoDiff
 
 if TYPE_CHECKING:
@@ -89,7 +89,7 @@ class Repo:
         self.storage = storage
         self.params = params
         self.gpg = gpg
-        self.release = Release(storage, params, gpg=gpg, root=True)
+        self.release = RootRelease(storage, params, gpg=gpg)
         self.components: dict[str, Component] = {}
         self.modified = False
         # payloads reported as Release-owned. Building the package set again in one run, as a
@@ -795,9 +795,7 @@ def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
         Each payload path the dist's binary and source indices list -> the digests each index
         records, so a path two indices record differently keeps both.
     """
-    release = Release(
-        storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False), root=True
-    )
+    release = RootRelease(storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False))
     release.load()
     slots: dict[str, set[str]] = {}
     for key in release.digests:
