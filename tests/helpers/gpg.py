@@ -35,6 +35,11 @@ def make_gpg_home(home: Path, name: str, passphrase: str = "") -> Path:
     (home / "gpg-agent.conf").write_text(
         "allow-loopback-pinentry\ndefault-cache-ttl 0\nmax-cache-ttl 0\n"
     )
+    return add_signing_key(home, name, passphrase)
+
+
+def add_signing_key(home: Path, name: str, passphrase: str = "") -> Path:
+    """Generate another signing key for `name` in `home` and trust every key it holds."""
     _gpg(
         home,
         "--pinentry-mode",

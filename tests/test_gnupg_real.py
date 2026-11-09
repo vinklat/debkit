@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from helpers.gpg import KEYRING, make_gpg_home, requires_gpg, stop_gpg_agent
+from helpers.gpg import KEYRING, add_signing_key, make_gpg_home, requires_gpg, stop_gpg_agent
 from txstore import StorageFS
 
 from debkit.repo.gnupg import GnuPG, GPGVerifyException, cleartext_body
@@ -36,6 +36,7 @@ def homes() -> Iterator[dict[str, Path]]:
             "signer": make_gpg_home(Path(root) / "s", "signer"),
             "other": make_gpg_home(Path(root) / "o", "other"),
             "locked": make_gpg_home(Path(root) / "l", "locked", passphrase="pw"),
+            "two": add_signing_key(make_gpg_home(Path(root) / "t", "first"), "second"),
         }
         try:
             yield built
@@ -46,6 +47,28 @@ def homes() -> Iterator[dict[str, Path]]:
 
 def _gnupg(home: Path, passphrase: str | None = None) -> GnuPG:
     return GnuPG(str(home), KEYRING, passphrase)
+
+
+@pytest.mark.parametrize(
+    ("sign_key", "signer"),
+    [(None, "first"), ("second@example.invalid", "second")],
+    ids=["gpg-default", "named"],
+)
+def test_gnupg_signs_with_the_named_key(
+    homes: dict[str, Path], sign_key: str | None, signer: str
+) -> None:
+    """A home holding several secret keys signs with the one `--gnupg-sign-key` names."""
+    gpg = GnuPG(str(homes["two"]), KEYRING, None, sign_key)
+
+    signed = gpg.sign(_DATA).encode()
+
+    assert f"debkit {signer} " in gpg.gnupg.verify(signed).username
+
+
+def test_gnupg_signs_nothing_with_an_unknown_key(homes: dict[str, Path]) -> None:
+    gpg = GnuPG(str(homes["signer"]), KEYRING, None, "nobody@example.invalid")
+
+    assert gpg.sign(_DATA) == ""
 
 
 def test_gnupg_clearsigned_round_trip_returns_the_body(homes: dict[str, Path]) -> None:

@@ -33,6 +33,7 @@ in `argparser.py`, subcommand flags in the owning `Action*` module.
 | `--skip-verify-gpg` | `DEBKIT_SKIP_VERIFY_GPG` | off | Disables GPG verification and Release signing → [CRYPTO.md](CRYPTO.md#verification-switches) |
 | `--gnupg-home` | `DEBKIT_GNUPG_HOME` | `~/.gnupg` | GnuPG home directory, the trust root of every Release verification; a leading `~` is expanded → [CRYPTO.md](CRYPTO.md#gpg) |
 | `--gnupg-keyring` | `DEBKIT_GNUPG_KEYRING` | `trustedkeys.gpg` | Trusted keyring filename |
+| `--gnupg-sign-key` | `DEBKIT_GNUPG_SIGN_KEY` | none | Key that signs Release files: fingerprint, key ID, or user ID; unset leaves the choice to gpg → [CRYPTO.md](CRYPTO.md#gpg) |
 | `--history-keep` | `DEBKIT_HISTORY_KEEP` | `20` | Newest transactions never pruned; values → [VALIDATION.md](VALIDATION.md#history-retention) |
 | `--history-max-age` | `DEBKIT_HISTORY_MAX_AGE` | `90` | Days after which a transaction outside `--history-keep` is pruned; `0` disables pruning |
 

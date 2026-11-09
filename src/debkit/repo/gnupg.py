@@ -101,15 +101,21 @@ class GnuPG:
     Attributes:
         gpg: The GPG object.
         passphrase: The passphrase for the signing key; None when empty.
+        sign_key: The key that signs, a fingerprint, key ID, or user ID; None leaves the
+            choice to gpg.
     """
 
-    def __init__(self, home: str, keyring: str, passphrase: str | None) -> None:
+    def __init__(
+        self, home: str, keyring: str, passphrase: str | None, sign_key: str | None = None
+    ) -> None:
         """Open the keyring `keyring` in the GnuPG home `home`.
 
         Args:
             home: GnuPG home directory; a leading `~` is expanded, as a shell would.
             keyring: Keyring file, relative to `home`.
             passphrase: Passphrase of the signing key; empty or None sends none.
+            sign_key: The key that signs; empty or None leaves the choice to gpg
+                -> [CRYPTO.md](CRYPTO.md#gpg).
 
         Raises:
             GPGVerifyException: If the keyring cannot be opened or the gpg binary cannot be run.
@@ -124,6 +130,7 @@ class GnuPG:
         # An empty string would make python-gnupg pass `--passphrase-fd 0` without writing a
         # passphrase, so gpg reads the first line of the signed data as one and drops it.
         self.passphrase: str | None = passphrase or None
+        self.sign_key: str | None = sign_key or None
 
     def verify(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
         """Verifying GPG signature.
@@ -179,7 +186,12 @@ class GnuPG:
         else:
             logger.info("Generate GPG signed data.")
 
-        signed_data = self.gnupg.sign(data, detach=detach, passphrase=self.passphrase)
+        # python-gnupg's `keyid` is gpg's `--default-key`, which falls back to another key when
+        # the named one is unusable; `--local-user` signs with that key or with none
+        extra_args = ["--local-user", self.sign_key] if self.sign_key else None
+        signed_data = self.gnupg.sign(
+            data, detach=detach, passphrase=self.passphrase, extra_args=extra_args
+        )
         # a failed clearsign still prints the armor header and body, so the text alone does
         # not tell a signature; python-gnupg is true only once gpg reported one created
         if not signed_data:

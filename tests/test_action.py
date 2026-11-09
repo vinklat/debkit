@@ -184,10 +184,11 @@ def test_action_init_does_not_warn_with_verification_on(
                 gnupg_home="home",
                 gnupg_keyring="ring.gpg",
                 gnupg_passphrase="pw",
+                gnupg_sign_key="repo@example.invalid",
             )
         )
 
-    gnupg.assert_called_once_with("home", "ring.gpg", "pw")
+    gnupg.assert_called_once_with("home", "ring.gpg", "pw", "repo@example.invalid")
     assert action.gpg is gnupg.return_value
     assert "verification skipped" not in caplog.text
 

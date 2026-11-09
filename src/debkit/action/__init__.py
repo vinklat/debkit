@@ -302,7 +302,9 @@ class Action:
                 "Release files are neither verified nor signed"
             )
         else:
-            self.gpg = GnuPG(pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase)
+            self.gpg = GnuPG(
+                pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase, pars.gnupg_sign_key
+            )
 
         self._attach_repos(pars, create_path, archs, indices_exclude)
 

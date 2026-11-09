@@ -37,6 +37,7 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 | Root Release load in `READ_SIGNED_UNVERIFIED` or `OFF` | No signature file is required, and an `InRelease` it parses is read through `cleartext_body`, unverified; `READ_SIGNED_UNVERIFIED` parses `InRelease` over a `Release` without `Release.gpg`, as the verified source does. |
 | Root Release save | Writes the layout's root `Release` from `indices_path()` whichever form the load read, then signs it into `InRelease` and `Release.gpg` or removes both; a per-component Release is never signed. |
 | Root Release save in `READ_SIGNED_UNVERIFIED` | Nothing signs it, and an unsigned save would drop the signatures it was read with → `ReleaseWriteException` (Write), before anything is written. |
+| Signing key | `--gnupg-sign-key` names it; unset, gpg picks `default-key` from the home's `gpg.conf`, else the first key in the trusted keyring whose secret the home holds. A key gpg cannot use creates no signature, refused as below. |
 | `sign(data, detach=False)` | Returns the signature (inline or detached) used when writing Release metadata; empty when gpg reports none created, as on a wrong passphrase, even though a failed clearsign prints its armor, and `Release.save` refuses an empty one → `ReleaseWriteException` (Write). |
 | Keyring cannot be loaded | → `GPGVerifyException` (Read). |
 | The `gpg` binary cannot be run | python-gnupg raises `OSError` → `GPGVerifyException` (Read). |

@@ -40,14 +40,16 @@ gpg --homedir "$DEBKIT_GNUPG_HOME" --no-default-keyring --keyring trustedkeys.gp
 debkit --target-url "https://deb.debian.org/debian bookworm main" stats
 ```
 
-Build a signed local repository from a `.deb`: debkit signs with the key in that home and verifies
-what it reads back against its `trustedkeys.gpg`.
+Build a signed local repository from a `.deb`: debkit signs with the key `DEBKIT_GNUPG_SIGN_KEY`
+names and verifies what it reads back against its `trustedkeys.gpg`. The key below has no
+passphrase, which suits a local demo only; protect a real one and pass `DEBKIT_GNUPG_PASSPHRASE`.
 
 ```bash
+export DEBKIT_GNUPG_SIGN_KEY="repo@example.com"
 gpg --homedir "$DEBKIT_GNUPG_HOME" --batch --passphrase '' \
-    --quick-gen-key "Repo signing <repo@example.com>"
-gpg --homedir "$DEBKIT_GNUPG_HOME" --export | gpg --homedir "$DEBKIT_GNUPG_HOME" \
-    --no-default-keyring --keyring trustedkeys.gpg --import
+    --quick-gen-key "Repo signing <$DEBKIT_GNUPG_SIGN_KEY>"
+gpg --homedir "$DEBKIT_GNUPG_HOME" --export "$DEBKIT_GNUPG_SIGN_KEY" | \
+    gpg --homedir "$DEBKIT_GNUPG_HOME" --no-default-keyring --keyring trustedkeys.gpg --import
 debkit --target-url "/srv/repo bookworm main" \
     insert --incoming-url ./incoming --deb-filename hello_1.0_amd64.deb
 debkit --target-url "/srv/repo bookworm main" list

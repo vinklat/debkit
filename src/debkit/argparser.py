@@ -109,6 +109,13 @@ def add_common_args(parser: EnvArgumentParser) -> None:
         help="keyring whose keys are trusted for Release signatures",
         default=GNUPG_KEYRING_DEFAULT,
     )
+    parser.add_env_argument(
+        "--gnupg-sign-key",
+        env="DEBKIT_GNUPG_SIGN_KEY",
+        dest="gnupg_sign_key",
+        help="key that signs Release files: fingerprint, key ID, or user ID",
+        default=None,
+    )
     parser.add_env_variable(
         "DEBKIT_GNUPG_PASSPHRASE",
         dest="gnupg_passphrase",
