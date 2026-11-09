@@ -597,7 +597,7 @@ class Repo:
         purge = {file for file in existing_files - payloads - planned if file not in indices}
         return repair, purge
 
-    def consistency_lists(self) -> ConsistencyLists:
+    def consistency_lists(self, *, with_digests: bool = False) -> ConsistencyLists:
         """List what this repository's own storage lacks and what it holds unclaimed.
 
         Missing are the payloads and the parsed component indices the listing lacks:
@@ -605,6 +605,10 @@ class Repo:
         disagrees with a read cannot make them missing. Orphans are listed paths that
         neither the package set nor the index set holds, and no other dist sharing the root
         claims -> [CONFIG.md](CONFIG.md#check).
+
+        Args:
+            with_digests: Also collect the digests the other dists record, for a caller that
+                judges a corrupt payload. Defaults to False.
 
         Returns:
             Missing and orphan paths, sorted, and the shared root claims from the same
@@ -617,7 +621,9 @@ class Repo:
 
         indices = self._get_indices()
         missing, orphans = self._repair_and_purge(self._payload_files(), indices, existing_files)
-        shared = shared_root_claims(self.storage, self.params, existing_files)
+        shared = shared_root_claims(
+            self.storage, self.params, existing_files, with_digests=with_digests
+        )
         orphans = {file for file in orphans if shared.deletable(file)}
         parsed = {
             path for component in self.components.values() for path in component.get_indices_paths()
@@ -819,7 +825,9 @@ def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
     return claims
 
 
-def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str]) -> SharedRoot:
+def shared_root_claims(
+    storage: Storage, params: RepoParams, existing: set[str], *, with_digests: bool = False
+) -> SharedRoot:
     """Collect what the other dists of a componented target root claim.
 
     A Debian root holds many dists under `dists/<dist>/` sharing one `pool/`. Each other dist
@@ -830,6 +838,8 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
         storage: The target storage.
         params: The synced dist's parameters.
         existing: Paths the target listing returned.
+        with_digests: Also keep the digests each index of each other dist records, which only
+            `SharedRoot.corrupt_deletable` reads. Defaults to False.
 
     Returns:
         The claims; none for a flat layout, which has no `dists/` tree.
@@ -864,8 +874,9 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
             complete = False
             continue
         claimed.update(claims)
-        for path, records in claims.items():
-            recorded.setdefault(path, []).extend(records)
+        if with_digests:
+            for path, records in claims.items():
+                recorded.setdefault(path, []).extend(records)
 
     if dists:
         logger.info("Shared root: keeping what dists %s claim", ", ".join(dists))

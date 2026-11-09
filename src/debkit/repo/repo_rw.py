@@ -215,7 +215,7 @@ class RepoRW(Repo):
         Returns:
             The missing and orphan paths, and the failed and fixed counts.
         """
-        missing, orphans, shared = self.consistency_lists()
+        missing, orphans, shared = self.consistency_lists(with_digests=fix)
         payloads = sorted(self._payload_files())
         absent = set(missing)
         failed = 0

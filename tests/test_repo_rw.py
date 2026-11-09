@@ -16,6 +16,7 @@ from helpers.factories import make_package, make_params, make_storage_mock
 from helpers.trees import payload_path, write_dist
 from txstore import Storage, StorageException, StorageFS
 
+from debkit.repo import shared_root_claims
 from debkit.repo.component import Component
 from debkit.repo.params import RepoParams
 from debkit.repo.repo_rw import CheckReport, RepoRW
@@ -473,6 +474,19 @@ def test_check_fix_keeps_a_corrupt_payload_any_index_of_another_dist_vouches_for
 
     assert repo.check(fix=True) == CheckReport([], [], 1, 0)
     assert (tmp_path / _FOO).exists()
+
+
+def test_shared_root_claims_keep_digests_only_when_asked(tmp_path: Path) -> None:
+    """Sync and `remove` only ask whether a path is claimed, so they hold no digests."""
+    write_dist(tmp_path, "bookworm", {"bar": "1"})
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+    storage = StorageFS(str(tmp_path))
+    listing = set(storage.list())
+
+    assert shared_root_claims(storage, make_params(), listing).recorded == {}
+    recorded = shared_root_claims(storage, make_params(), listing, with_digests=True).recorded
+    assert list(recorded) == [_FOO]
+    assert recorded[_FOO][0]["SHA256"] == hashlib.sha256(b"deb 1").hexdigest()
 
 
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:
