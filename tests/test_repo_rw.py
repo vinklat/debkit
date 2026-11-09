@@ -633,3 +633,26 @@ def test_check_fix_records_each_verified_digest_as_metadata(tmp_path: Path) -> N
 
     assert sorted(path for path, _, _ in storage.metadata_writes) == sorted([_FOO, _BAR])
     assert all(digests["SHA256"] and acl is None for _, digests, acl in storage.metadata_writes)
+
+
+def test_shared_root_is_unknown_while_another_dist_lists_an_unsafe_component(
+    tmp_path: Path,
+) -> None:
+    """The other dist's payloads cannot be read, so nothing outside the own tree is deletable."""
+    write_dist(tmp_path, "bookworm", {"foo": "2"})
+    write_dist(tmp_path, "bullseye", {"bar": "1"}, indices={"../binary-amd64/Packages": None})
+
+    shared = RepoRW(StorageFS(str(tmp_path)), make_params()).shared_root()
+
+    assert not shared.complete
+    assert not shared.deletable(payload_path("baz", "1"))
+
+
+def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root() -> None:
+    """A flat layout has no `dists/` tree, so no other dist can claim anything."""
+    repo = RepoRW(make_storage_mock(list_raises=NotImplementedError), make_params(flat=True))
+
+    shared = repo.consistency_lists().shared
+
+    assert shared.complete
+    assert shared.prefix == ""

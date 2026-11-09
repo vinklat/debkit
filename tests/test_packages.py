@@ -700,3 +700,13 @@ def test_packages_len_counts_the_packages() -> None:
     assert len(pkgs) == 0
     pkgs.packages = {"x.deb": make_package("x.deb")}
     assert len(pkgs) == 1
+
+
+def test_find_packages_file_of_a_flat_layout_without_an_index_raises() -> None:
+    storage = make_storage_mock()
+    storage.exists.return_value = False
+    root = MagicMock(spec=Release)
+    root.digests = {}
+
+    with pytest.raises(PackagesNotFoundException, match="there is no indices file"):
+        Packages(storage, make_params(flat=True))._find_packages_file(root, "", "amd64")

@@ -389,3 +389,15 @@ def test_component_insert_pkg_refuses_an_arch_that_is_not_a_token(arch: str) -> 
         comp.insert_pkg(arch, make_package("pool/main/f/foo.deb"))
 
     assert arch not in comp.packages
+
+
+def test_component_load_refuses_a_release_without_an_architecture_field() -> None:
+    comp = Component(make_storage_mock(), make_params(), MagicMock(spec=Release), "main")
+    with patch("debkit.repo.component.Packages") as packages_cls:
+        packages = MagicMock()
+        packages.release.is_empty.return_value = False
+        packages.release.fields = {"Origin": "x"}
+        packages_cls.return_value = packages
+
+        with pytest.raises(ComponentException, match="no 'Architecture' field"):
+            comp.load(["amd64"])

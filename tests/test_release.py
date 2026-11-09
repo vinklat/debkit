@@ -1019,3 +1019,16 @@ def test_fresh_logs_and_skips_a_malformed_target_date(caplog: pytest.LogCaptureF
     with caplog.at_level(logging.WARNING):
         _dated({"Date": "Thu, 01 Jan 1970 00:00:00 UTC"}).check_fresh_against("yesterday", NOW)
     assert "not compared with the source" in caplog.text
+
+
+def test_load_component_refuses_a_file_past_the_cap_no_root_release_sizes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a size the checked root Release records, `MAX_RELEASE_BYTES` caps the read."""
+    monkeypatch.setattr(release_module, "MAX_RELEASE_BYTES", 4)
+    storage = MagicMock()
+    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
+    root = RootRelease(storage, _params())
+
+    with pytest.raises(ReleaseReadException, match="larger than"):
+        Release(storage, _params()).load_component("main", "amd64", root_release=root)
