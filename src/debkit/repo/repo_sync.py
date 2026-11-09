@@ -367,11 +367,7 @@ class RepoSync(Repo):
             logger.info("Copy (%d/%d): %s", progress[0], progress[1], file)
 
         try:
-            digests = self.storage.transfer(
-                file,
-                target_repo.storage,
-                path_dst=file,
-            )
+            digests = target_repo.transfer_from(self.storage, file, path_dst=file)
         except StorageNotFoundException as exc:
             if missing_ok:
                 logger.debug("%s listed in Release but missing in source. Skipped.", file)
@@ -384,22 +380,12 @@ class RepoSync(Repo):
 
         if self.params.verify_digests:
             if not self.verify_checksum(file, digests):
-                target_repo.storage.delete(file)
+                target_repo.delete(file)
                 raise ChecksumException(f"Content verify mismatch in {file}")
 
         target_repo.storage.add_metadata(file, digests)
 
         return True
-
-    def _delete_file(self, file: str, target_repo: RepoRW) -> None:
-        """Delete `file` from `target_repo`.
-
-        Args:
-            file: Object path to delete.
-            target_repo: Repository whose storage holds the file.
-        """
-        logger.info("Delete: %s", file)
-        target_repo.storage.delete(file)
 
     def sync(
         self,
@@ -451,4 +437,4 @@ class RepoSync(Repo):
 
         # delete objects
         for name in delete_list:
-            self._delete_file(name, target_repo)
+            target_repo.delete(name)

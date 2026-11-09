@@ -232,7 +232,7 @@ class RepoRW(Repo):
                     logger.warning("Checksum verify failed: %s", file)
                     failed += 1
                     if fix and shared.corrupt_deletable(file, digests):
-                        self._delete(file)
+                        self.delete(file)
                         fixed += 1
                     elif fix:
                         logger.warning(
@@ -245,15 +245,15 @@ class RepoRW(Repo):
         if fix and purge_orphans:
             for file in orphans:
                 try:
-                    self._delete(file)
+                    self.delete(file)
                     fixed += 1
                 except StorageException as exc:
                     logger.error("Error deleting file: %s: %s", file, exc)
 
         return CheckReport(missing, orphans, failed, fixed)
 
-    def _delete(self, file: str) -> None:
-        """Delete `file` from this repository's storage.
+    def delete(self, file: str) -> None:
+        """Delete `file` from this repository's storage, logging it.
 
         Args:
             file: Object path to delete.
