@@ -118,6 +118,7 @@ older Release no longer lists.
 | `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off, before the pool object rule → [VALIDATION.md](VALIDATION.md#filename-safety); a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | Parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. |
+| `insert` trust in the incoming storage | Trusted like `--deb-filename` input: whoever can write it can publish, since an unpinned `.changes` only shows the upload is consistent with itself. Pin `--changes-sha256` from a channel the uploader cannot write; uploader signatures → [ROADMAP.md](ROADMAP.md#ideas). |
 | `insert` `.changes` with malformed armor | → `ChangesException` (Read). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure | `GPGVerifyException` (Read). |
