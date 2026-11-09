@@ -90,7 +90,6 @@ class Repo:
         gpg: The GnuPG object.
         release: The root Release file of repo.
         components: The components of the repo by its names
-        modified: True if the repo has been modified, False otherwise.
     """
 
     def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
@@ -106,7 +105,6 @@ class Repo:
         self.gpg = gpg
         self.release = RootRelease(storage, params, gpg=gpg)
         self.components: dict[str, Component] = {}
-        self.modified = False
         # payloads reported as Release-owned. Building the package set again in one run, as a
         # sync and its check do, reports each once
         self._owned_payloads_warned: set[str] = set()

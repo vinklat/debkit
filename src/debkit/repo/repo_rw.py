@@ -44,10 +44,10 @@ class CheckReport(NamedTuple):
 
 
 class RepoRW(Repo):
-    """Class that extens Repo with modificaton functionality.
+    """A `Repo` that inserts, removes, checks, and saves.
 
-    Attributes:
-        modified: Whether the repo has been modified.
+    Whether anything changed is the caller's diff against a snapshot; `save` writes only the
+    containers that changed, then the root Release that lists them.
     """
 
     def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
@@ -59,7 +59,6 @@ class RepoRW(Repo):
             gpg: Verifies and signs Release files. Defaults to None.
         """
         super().__init__(storage, params, gpg=gpg)
-        self.modified = False
 
     def setup(self, fields: dict[str, str] | None = None) -> None:
         """Setup the repository.
@@ -74,17 +73,13 @@ class RepoRW(Repo):
         if fields is not None and self.params.is_flat:
             fields = {key: value for key, value in fields.items() if key != "Components"}
         self.release.setup(fields=fields)
-        self.modified = True
 
     def save(self) -> bool:
         """Save the repository.
 
         Returns:
-            True if the repository was saved, False otherwise.
+            True if a component saved, False otherwise.
         """
-        if not self.modified:
-            return False
-
         saved: bool = False
         for component in self.components.values():
             saved = component.save() or saved
@@ -94,6 +89,8 @@ class RepoRW(Repo):
             # a flat Release lists no components; its single slot keeps whatever name it loaded
             if not self.params.is_flat:
                 self.release.fields["Components"] = " ".join(self.components)
+            # the fields just changed, and so did the index digests the components recorded
+            self.release.modified = True
             self.release.save()
 
         return saved
@@ -139,7 +136,6 @@ class RepoRW(Repo):
                 continue
             logger.info("Remove package: %s", filename)
             self.storage.delete(filename)
-        self.modified = True
         return True
 
     def insert_pkg(self, component_name: str, arch: str, package: Package) -> None:
@@ -165,7 +161,6 @@ class RepoRW(Repo):
             self.components[component_name] = component
 
         component.insert_pkg(arch, package)
-        self.modified = True
 
     def transfer_from(
         self, source_storage: Storage, path_src: str, path_dst: str | None = None

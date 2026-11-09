@@ -33,15 +33,32 @@ def _repo() -> tuple[RepoRW, MagicMock]:
     return repo, release
 
 
-def test_setup_marks_modified() -> None:
+def test_setup_starts_the_root_release() -> None:
     repo, release = _repo()
     repo.setup({"Origin": "x"})
     release.setup.assert_called_once()
-    assert repo.modified is True
 
 
-def test_save_no_op_when_unmodified() -> None:
-    assert _repo()[0].save() is False
+def test_save_writes_nothing_without_components() -> None:
+    repo, release = _repo()
+    assert repo.save() is False
+    release.save.assert_not_called()
+
+
+def test_save_rewrites_a_loaded_root_release_after_a_component_saved(tmp_path: Path) -> None:
+    """The root Release is marked where its fields change, not by a digest-update side effect."""
+    write_dist(tmp_path, "bookworm", {"foo": "1"})
+    storage = StorageFS(str(tmp_path))
+    repo = RepoRW(storage, RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False))
+    repo.update()
+    saved = MagicMock()
+    saved.save.return_value = True
+    repo.components = cast(dict[str, Component], {"main": saved})
+
+    assert repo.save() is True
+
+    assert b"Date:" in storage.get("dists/bookworm/Release")
+    assert repo.release.fields["Date"] != trees.DATE
 
 
 def test_save_stamps_and_writes_the_release_after_a_component_saved() -> None:
@@ -50,7 +67,6 @@ def test_save_stamps_and_writes_the_release_after_a_component_saved() -> None:
     saved.save.return_value = True
     untouched.save.return_value = False
     repo.components = cast(dict[str, Component], {"main": saved, "contrib": untouched})
-    repo.modified = True
 
     assert repo.save() is True
 
@@ -66,7 +82,6 @@ def test_save_leaves_the_release_when_no_component_saved() -> None:
     untouched = MagicMock()
     untouched.save.return_value = False
     repo.components = cast(dict[str, Component], {"main": untouched})
-    repo.modified = True
 
     assert repo.save() is False
 
@@ -79,7 +94,6 @@ def test_insert_pkg_creates_missing_component() -> None:
     pkg = make_package("pool/main/f/foo/foo.deb")
     repo.insert_pkg("main", "amd64", pkg)
     assert "main" in repo.components
-    assert repo.modified is True
 
 
 def test_remove_pkg_returns_false_when_no_match() -> None:
@@ -88,7 +102,6 @@ def test_remove_pkg_returns_false_when_no_match() -> None:
     comp.remove_pkg.return_value = set()
     repo.components = {"main": comp}
     assert repo.remove_pkg({"Package": re.compile("missing")}) is False
-    assert repo.modified is False
     cast(MagicMock, repo.storage).delete.assert_not_called()
 
 
@@ -99,7 +112,6 @@ def test_remove_pkg_deletes_each_payload_once_and_marks_modified() -> None:
     contrib.remove_pkg.return_value = {"pool/foo_all.deb", "pool/bar.deb"}
     repo.components = {"main": main, "contrib": contrib}
     assert repo.remove_pkg({"Package": re.compile("foo")}) is True
-    assert repo.modified is True
     assert cast(MagicMock, repo.storage).delete.call_args_list == [
         call("pool/bar.deb"),
         call("pool/foo_all.deb"),
@@ -172,7 +184,6 @@ def _removed_foo(tmp_path: Path) -> RepoRW:
     repo.update()
     assert repo.remove_pkg({"Package": re.compile("^foo$")}) is True
     assert repo.components["main"].packages["amd64"].packages == {}
-    assert repo.modified is True
     return repo
 
 

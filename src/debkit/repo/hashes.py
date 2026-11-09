@@ -67,13 +67,11 @@ class HexDigests:
 
     Attributes:
         digests: The checksums of files.
-        modified: Whether the release has been modified.
     """
 
     def __init__(self) -> None:
         """Initialize the HexDigests object."""
         self.digests: dict[str, dict[str, str]] = {}
-        self.modified = False
 
     def verify_digests(self, filename: str, incoming_digests: dict[str, str]) -> bool:
         """Verify checksum of a file.
@@ -116,4 +114,3 @@ class HexDigests:
             self.digests[filename] = {}
 
         self.digests[filename].update(incoming_digests)
-        self.modified = True

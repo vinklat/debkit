@@ -273,7 +273,6 @@ def make_repo_rw(
     listed_indices: list[IndexEntry] | None = None,
     release_fields: dict[str, str] | None = None,
     component_indices: dict[str, list[str]] | None = None,
-    modified: bool = False,
 ) -> RepoRW:
     """Build a RepoRW (target side of sync) with pre-populated state."""
     p = params or RepoParams(
@@ -292,5 +291,4 @@ def make_repo_rw(
         release_fields=release_fields,
         component_indices=component_indices,
     )
-    repo.modified = modified
     return repo

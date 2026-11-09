@@ -154,6 +154,8 @@ class Release(HexDigests):
         found_indices_files: List of all found Release files.
         hashfuns: Available hexdigest algorithms in data.
         hash: Hexdigest of a file content (for changes detection).
+        modified: Whether `save` has anything to write: set by a setup, or by whoever changes
+            a loaded Release.
     """
 
     def __init__(self, storage: Storage, params: RepoParams) -> None:
@@ -326,9 +328,6 @@ class Release(HexDigests):
         if data:
             self.parse(data)
             self.hash = hashlib.sha256(data).hexdigest()
-        # parsing records the digest block through `update_digests`, yet a freshly loaded
-        # Release matches its storage until something changes it
-        self.modified = False
         if self.hashfuns:
             logger.debug("Available hexdigests: %s", self.hashfuns)
 
