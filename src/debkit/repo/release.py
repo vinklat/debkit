@@ -169,7 +169,11 @@ class Release(HexDigests):
         self.reset()
 
     def reset(self) -> None:
-        """Set everything a load or a setup fills to its empty value."""
+        """Set everything a load or a setup fills to its empty value.
+
+        `__init__` runs it too, so an override resets only its own fields and reads no state
+        its subclass sets after `super().__init__()`.
+        """
         self.modified = False
         self.fields: dict[str, str] = {}
         self.digests = {}
@@ -533,6 +537,8 @@ class RootRelease(Release):
         root_digests: Release key → digests of each root Release file as the last load fetched it.
     """
 
+    root_digests: dict[str, dict[str, str]]
+
     def __init__(self, storage: Storage, params: RepoParams, gpg: GnuPG | None = None) -> None:
         """Initialize RootRelease object.
 
@@ -547,7 +553,7 @@ class RootRelease(Release):
     def reset(self) -> None:
         """Reset RootRelease object to defaults, dropping the fetched root digests too."""
         super().reset()
-        self.root_digests: dict[str, dict[str, str]] = {}
+        self.root_digests = {}
 
     def _put(self) -> bytes:
         """Write the layout's root `Release`, then sign it or drop its stale signatures.
