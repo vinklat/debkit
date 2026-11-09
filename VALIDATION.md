@@ -182,6 +182,7 @@ Parsed by `Release.parse()` through the email parser and written by `Release.ser
 | -- | -- | -- |
 | Multi-line value | Continuation lines are kept, so a folded `Description` or a wrapped `Architectures` survives a rewrite. | — |
 | Encoding | Values are written verbatim as UTF-8; no MIME encoding, date reformatting, or rewrapping. | — |
+| Blank continuation | A continuation line of only spaces or tabs, which apt continues over but a deb822 reader ends the stanza at, is written as ` .`, the empty-line form. | — |
 
 ## Sources stanzas
 

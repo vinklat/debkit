@@ -94,6 +94,10 @@ class ReleaseFreshnessException(Exception):
 _RELEASE_DATE_ZONES = frozenset({"UTC", "GMT", "UT", "Z"})
 _NUMERIC_ZONE = re.compile(r"[+-]\d{4}")
 
+# a continuation line of only blanks: apt continues the value over it, but a deb822 reader
+# ends the stanza there, so it is written as the ` .` that stands for an empty line
+_BLANK_CONTINUATION = re.compile(r"^[ \t]+$", re.MULTILINE)
+
 
 def parse_release_date(value: str) -> datetime:
     """Parse a Release date field such as `Date` or `Valid-Until`.
@@ -567,13 +571,17 @@ class Release(HexDigests):
         """Serialize Release file data to headers format.
 
         Values are written verbatim, as `Package.serialize` writes a stanza: multi-line values
-        keep their continuation lines, non-ASCII text stays UTF-8, and nothing is rewrapped
+        keep their continuation lines, non-ASCII text stays UTF-8, and nothing is rewrapped;
+        only a blank continuation line becomes ` .`
         -> [VALIDATION.md](VALIDATION.md#release-fields).
 
         Returns:
             The serialized Release file fields.
         """
-        ret = Deb822(self.fields).dump().rstrip()
+        fields = {
+            field: _BLANK_CONTINUATION.sub(" .", value) for field, value in self.fields.items()
+        }
+        ret = Deb822(fields).dump().rstrip()
 
         if self.hashfuns:
             for hashfun in self.hashfuns:

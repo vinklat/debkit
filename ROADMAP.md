@@ -17,6 +17,7 @@ or the work is planned; drop it when it no longer applies.
 | -- | -- | -- |
 | Typed settings object passed to actions instead of the argparse `Namespace` | An action is called from Python rather than the CLI | [STRUCTURE.md](STRUCTURE.md#dependencies) |
 | Debian package `debkit` | txstore is packaged for Debian (txstore 0.2.0) | [SETUP.md](SETUP.md#dependency-policy) |
+| One deb822 stanza reader and writer for `Release`, `.changes`, and `Sources`, which still read through the email parser, with the repeated-field and blank-line rules as its parameters | A fourth stanza rule diverges between the email parser and `debian.deb822` | [VALIDATION.md](VALIDATION.md#release-fields) |
 | Mirror `by-hash/` indices | A mirror's clients rely on `Acquire-By-Hash` | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 | `ReleaseKey`/`StoragePath` NewTypes and a coordinate-aware `Packages` owning its component, arch, and codec | The next change to Release or Packages loading | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `IndexKind` value object owning the arch directory, index name, container class, and writability, replacing the `SOURCE_ARCH` comparisons | A second index kind is written, or 0.2.0 starts | [STRUCTURE.md](STRUCTURE.md#dependencies) |

@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from debian.deb822 import Deb822
 from helpers.factories import make_clearsigned
 from txstore import StorageFS, calc_digests
 
@@ -84,6 +85,24 @@ def test_serialize_writes_folded_and_non_ascii_values_verbatim() -> None:
     again.parse(out.encode())
     assert again.fields == r.fields
     assert again.digests == r.digests
+
+
+@pytest.mark.parametrize("blank", [" ", "\t", "  \t"], ids=["space", "tab", "mixed"])
+def test_serialize_writes_a_blank_continuation_line_as_a_dot(blank: str) -> None:
+    """A deb822 reader ended the stanza at the blank line and lost the hash blocks."""
+    blob = (
+        f"Origin: x\nDescription: line one\n{blank}\n line three\nSuite: s\n"
+        "SHA256:\n aa 1 main/binary-amd64/Packages\n"
+    ).encode()
+    r = Release(MagicMock(), _params())
+    r.parse(blob)
+
+    out = r.serialize()
+
+    assert "Description: line one\n .\n line three\n" in out
+    (stanza,) = Deb822.iter_paragraphs(out)
+    assert stanza["Suite"] == "s"
+    assert "SHA256" in stanza
 
 
 def test_serialize_twice_keeps_a_long_value_on_one_line() -> None:
