@@ -789,7 +789,7 @@ def test_consistency_lists_reports_only_what_a_parse_or_package_proves_missing()
     """The root Release files and a listed-only index are never missing, and nothing is probed."""
     src = _self_check_repo(["junk.deb"])
 
-    lists = src.consistency_lists()
+    lists = src.consistency_lists(src._payload_files())
     assert (lists.missing, lists.orphans) == ([_PARSED_INDEX, "p1.deb"], ["junk.deb"])
     _mock_storage(src).exists.assert_not_called()
 
@@ -797,7 +797,7 @@ def test_consistency_lists_reports_only_what_a_parse_or_package_proves_missing()
 def test_consistency_lists_keeps_every_held_index_and_payload() -> None:
     src = _self_check_repo(["p1.deb", _PARSED_INDEX, f"dists/bookworm/{_LISTED_ONLY}", *INDICES])
 
-    lists = src.consistency_lists()
+    lists = src.consistency_lists(src._payload_files())
     assert (lists.missing, lists.orphans) == ([], [])
 
 
@@ -805,7 +805,7 @@ def test_consistency_lists_proves_nothing_on_a_storage_that_cannot_list() -> Non
     src = _self_check_repo([])
     _mock_storage(src).list.side_effect = NotImplementedError
 
-    lists = src.consistency_lists()
+    lists = src.consistency_lists(src._payload_files())
     assert (lists.missing, lists.orphans) == ([], [])
     assert not lists.shared.deletable("pool/main/p/p1/p1_1_amd64.deb")
 

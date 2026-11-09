@@ -135,6 +135,30 @@ def test_remove_pkg_deletes_each_payload_once_and_marks_modified() -> None:
     ]
 
 
+def test_remove_pkg_deletes_through_the_repo_delete_seam(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: remove deleted through the storage, past the seam sync and check use."""
+    repo, _release = _repo()
+    comp = MagicMock()
+    comp.remove_pkg.return_value = {"pool/foo.deb"}
+    repo.components = {"main": comp}
+    delete = MagicMock()
+    monkeypatch.setattr(repo, "delete", delete)
+    assert repo.remove_pkg({"Package": re.compile("foo")}) is True
+    delete.assert_called_once_with("pool/foo.deb")
+
+
+@pytest.mark.parametrize(
+    ("list_raises", "expected"),
+    [(None, {"pool/a.deb"}), (NotImplementedError, None)],
+    ids=["listed", "unlistable"],
+)
+def test_held_paths_is_none_only_when_the_storage_cannot_list(
+    list_raises: type[BaseException] | None, expected: set[str] | None
+) -> None:
+    storage = make_storage_mock(list_result=["pool/a.deb"], list_raises=list_raises)
+    assert RepoRW(storage, make_params()).held_paths() == expected
+
+
 def test_remove_pkg_propagates_a_delete_failure() -> None:
     repo, _release = _repo()
     comp = MagicMock()
@@ -759,12 +783,12 @@ def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize(
-    ("fix", "purge_orphans", "deleted"),
-    [(False, True, False), (True, True, True), (True, False, False)],
+    ("verify_only", "fix", "deleted"),
+    [(False, False, False), (False, True, True), (True, True, False)],
     ids=["check", "check-fix", "verify-existing"],
 )
 def test_check_deletes_orphans_from_its_own_storage_only_with_fix(
-    tmp_path: Path, fix: bool, purge_orphans: bool, deleted: bool
+    tmp_path: Path, verify_only: bool, fix: bool, deleted: bool
 ) -> None:
     repo = _checked(tmp_path)
     orphan = tmp_path / "pool/main/z/zz/zz_1_amd64.deb"
@@ -772,7 +796,7 @@ def test_check_deletes_orphans_from_its_own_storage_only_with_fix(
     orphan.write_bytes(b"orphan")
     key = orphan.relative_to(tmp_path).as_posix()
 
-    report = repo.check(fix=fix, purge_orphans=purge_orphans)
+    report = repo.verify_payloads(fix=fix) if verify_only else repo.check(fix=fix)
 
     assert report == CheckReport([], [key], 0, 1 if deleted else 0)
     assert orphan.exists() is not deleted
@@ -939,7 +963,7 @@ def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root
     """A flat layout has no `dists/` tree, so no other dist can claim anything."""
     repo = RepoRW(make_storage_mock(list_raises=NotImplementedError), make_params(flat=True))
 
-    shared = repo.consistency_lists().shared
+    shared = repo.consistency_lists(set()).shared
 
     assert shared.complete
     assert shared.prefix == ""

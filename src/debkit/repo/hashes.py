@@ -9,17 +9,16 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from txstore import COMPARE_HASH_LIST, SUPPORT_HASH_LIST, compare_digests
+from txstore import COMPARE_HASH_LIST, compare_digests
 
 __all__ = [
     "CHECKSUMS_SHA256",
     "CHECKSUM_FIELDS",
-    "COMPARE_HASH_LIST",
-    "SUPPORT_HASH_LIST",
     "ChecksumException",
     "HexDigests",
     "has_sha",
     "parse_hash_block",
+    "parse_size",
 ]
 
 # A `Sources` or `.changes` hash-block field -> the algorithm its digests are in; a `Release`

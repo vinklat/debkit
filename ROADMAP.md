@@ -28,7 +28,7 @@ or the work is planned; drop it when it no longer applies.
 | Decode a `.zst` `control.tar` in process with `compression.zstd`, capped by `ZstdDecompressor.decompress(max_length=…)`, replacing the `zstd` subprocess and the `zstd` binary prerequisite | `requires-python` rises to 3.14, once Debian testing no longer ships Python 3.13 | [VALIDATION.md](VALIDATION.md#object-sizes) |
 | Signer fingerprint pinning per source | One keyring must serve several sources | [CRYPTO.md](CRYPTO.md#gpg) |
 | Opt-in uploader keyring (`--changes-keyring`) that `insert` verifies a clearsigned `.changes` against, separate from the keyring that verifies and signs Releases | An incoming storage is writable by anyone the operator does not trust to publish | [CRYPTO.md](CRYPTO.md#verification-failures) |
-| `Layout` value object (componented, flat, rootless flat) owning the index prefix, component slot, component Release, `Components` field, and pool-key rules, replacing the `is_flat`/`is_real_dist` branches | A new layout is added, or the `IndexKind` work starts | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
+| `Layout` value object (componented, flat, rootless flat) owning the index prefix, component slot, component Release, `Components` field, pool-key rules, and a flat layout's one index shared by every arch slot under the empty arch, replacing the `is_flat`/`is_real_dist` branches and the identity dedup in `Component.containers()` | A new layout is added, or the `IndexKind` work starts | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 
 ## Known deviations
 

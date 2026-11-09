@@ -343,6 +343,7 @@ path.
 | Empty string | No override is applied. | — |
 | Token | Lower-case letters, digits, and `-`, not starting with `-`, e.g. `amd64`, `hurd-i386`; a flag token is checked before any storage is opened. | Flag token → `ActionException` (Generic) |
 | Release token | A root Release `Architectures` or `Architecture` token follows the token rule. | Dropped and logged |
+| Per-arch Release | A component's `binary-<arch>/Release` or `source/Release` reads `Architecture` first, as Debian writes it there, and `Architectures` only when `Architecture` is absent; the slot's arch or `all` is listed. | Neither field → `ComponentException` (Read); mismatch → `ComponentException` (Read) |
 | No Release token | A root Release with neither `Architectures` nor a valid `Architecture` token selects the empty arch in a flat repo; a componented one selects each arch its digest block lists `<component>/binary-<arch>/Packages*` for, under the token rule, `all` skipped. | Bad token dropped and logged |
 | No architecture | A strict load, the `sync` source, that selects no architecture loads nothing, so a sync would purge the target. | → `RepoReadException` (Read) |
 | Upload token | Every `.changes` `Architecture` token and the `.deb` control `Architecture` follow the token rule, checked before the transfer. | → `ActionException` (Generic) |

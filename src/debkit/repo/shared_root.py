@@ -14,10 +14,11 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from txstore import StorageException, compare_digests
 
-from debkit.repo import INDEX_TAIL, Repo, RepoReadException
+from debkit.repo import Repo, RepoReadException
 from debkit.repo.component import ComponentException, IndexLoad
 from debkit.repo.gnupg import GPGVerifyException
 from debkit.repo.hashes import ChecksumException, has_sha
+from debkit.repo.index_selection import INDEX_TAIL, match_index_tail
 from debkit.repo.package import PackageException
 from debkit.repo.packages import PackagesException
 from debkit.repo.params import SOURCE_ARCH, RepoParams, is_safe_name
@@ -194,7 +195,7 @@ def _listed_slots(release: Release) -> dict[str, set[str]]:
     slots: dict[str, set[str]] = {}
     for key in release.digests:
         for comp in declared:
-            if key.startswith(f"{comp}/") and (tail := INDEX_TAIL.fullmatch(key[len(comp) + 1 :])):
+            if tail := match_index_tail(key, comp):
                 slots.setdefault(comp, set()).add(tail["arch"] or SOURCE_ARCH)
                 break
         else:

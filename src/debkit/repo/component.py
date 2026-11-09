@@ -188,7 +188,7 @@ class Component:
             kind = container_for(arch)
             packages = kind(self.storage, self.params)
             may_skip_unreadable = mode is IndexLoad.READ_ONLY or (
-                mode is IndexLoad.WRITABLE and kind is Sources
+                mode is IndexLoad.WRITABLE and not kind.WRITABLE
             )
 
             if not self.is_flat:
@@ -211,7 +211,9 @@ class Component:
                 logger.warning("Packages for %s failed: %s", arch, exc)
                 continue
 
-            # Release file validation check
+            # a per-arch Release names its own arch in `Architecture`, read first so a copied
+            # root `Architectures` cannot vouch for a misplaced file; the root Release reads
+            # the other way round -> [VALIDATION.md](VALIDATION.md#architectures)
             if not self.is_flat and not packages.release.is_empty():
                 if "Architecture" in packages.release.fields:
                     comp_arch_raw = packages.release.fields["Architecture"]

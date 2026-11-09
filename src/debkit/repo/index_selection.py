@@ -33,6 +33,26 @@ UNPARSED_INDEX_NAME_PREFIXES = ("Contents-udeb",)
 # Directory and file stem of the source indices, `source/Sources*`.
 SOURCE_INDEX_NAMES = (RepoParams.arch_dir(SOURCE_ARCH), RepoParams.index_name(SOURCE_ARCH))
 
+# a binary or source index key below its component, `binary-<arch>/Packages[.<ext>]` or
+# `source/Sources[.<ext>]`; a component may hold `/`, so the key is matched below a known one
+INDEX_TAIL = re.compile(r"(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?")
+
+
+def match_index_tail(key: str, component: str) -> re.Match[str] | None:
+    """Match a Release key as a binary or source index of `component`.
+
+    Args:
+        key: A Release key, relative to the dist.
+        component: A component name, which may hold `/`.
+
+    Returns:
+        The index tail match, whose `arch` group is None for `Sources`; None when the key is
+        no index of `component`.
+    """
+    if not key.startswith(f"{component}/"):
+        return None
+    return INDEX_TAIL.fullmatch(key[len(component) + 1 :])
+
 
 def _split_component(key: str, components: set[str] | None) -> tuple[str | None, str]:
     """Split a Release key into its component segment and the path below it.

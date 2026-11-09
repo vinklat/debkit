@@ -122,11 +122,9 @@ class RepoSync(Repo):
             The paths to copy, the paths to delete, and the copied index paths no load or parse
             proved the source publishes.
         """
-        try:
-            existing_files = set(target_repo.storage.list())
-            can_list = True
-        except NotImplementedError:
-            existing_files, can_list = set(), False
+        listed = target_repo.held_paths()
+        can_list = listed is not None
+        existing_files = listed if listed is not None else set()
 
         indices = self._get_indices()
 
@@ -345,7 +343,7 @@ class RepoSync(Repo):
         self,
         file: str,
         target_repo: RepoRW,
-        progress: tuple[int, int] | None = None,
+        progress: tuple[int, int],
         *,
         missing_ok: bool = False,
     ) -> bool:
@@ -356,7 +354,7 @@ class RepoSync(Repo):
         Args:
             file: The file to transfer.
             target_repo: The target repo to transfer to.
-            progress: Progress of transfer - current of total objects. Defaults to None.
+            progress: Progress of transfer - current of total objects.
             missing_ok: Skip the file when the source lacks it, as for an index nothing proved
                 published -> [VALIDATION.md](VALIDATION.md#index-selection).
 
@@ -367,10 +365,7 @@ class RepoSync(Repo):
             True when the file needs no retry: it was transferred, or `missing_ok` is set and the
             source lacks it. False otherwise.
         """
-        if progress is None:
-            logger.info("Copy: %s", file)
-        else:
-            logger.info("Copy (%d/%d): %s", progress[0], progress[1], file)
+        logger.info("Copy (%d/%d): %s", progress[0], progress[1], file)
 
         try:
             digests = target_repo.transfer_from(self.storage, file, path_dst=file)

@@ -182,6 +182,12 @@ def test_layers_never_import_upward(layer: str, forbidden: set[str]) -> None:
     assert offenders == []
 
 
+def test_repo_base_never_imports_the_modules_built_on_it() -> None:
+    tree = dict(_modules())["repo.__init__"]
+    imported = {_internal(imp.module) for imp in _imports(tree) if not imp.type_only}
+    assert imported.isdisjoint({"repo.repo_rw", "repo.repo_sync", "repo.shared_root"})
+
+
 def test_no_import_is_deferred() -> None:
     deferred = [
         f"{name}: {imp.module}"

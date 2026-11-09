@@ -6,7 +6,6 @@ Method load() loads the repository.
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -15,7 +14,7 @@ from txstore import StorageException, is_unsafe_path
 
 from debkit.repo.component import Component, IndexLoad
 from debkit.repo.hashes import parse_size
-from debkit.repo.index_selection import select_index_entry
+from debkit.repo.index_selection import match_index_tail, select_index_entry
 from debkit.repo.package import PackageException
 from debkit.repo.packages import diff_packages
 from debkit.repo.params import (
@@ -40,10 +39,6 @@ logger.addHandler(logging.NullHandler())
 
 # each component and arch slot -> its package map, by `Filename`, as `Repo.snapshot` takes it
 type RepoSnapshot = dict[tuple[str, str], dict[str, Package]]
-
-# a binary or source index key below its component, `binary-<arch>/Packages[.<ext>]` or
-# `source/Sources[.<ext>]`; a component may hold `/`, so the key is matched below a known one
-INDEX_TAIL = re.compile(r"(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?")
 
 
 @dataclass(frozen=True)
@@ -104,7 +99,8 @@ class Repo:
         self.release = RootRelease(storage, params, gpg=gpg)
         self.components: dict[str, Component] = {}
         # Release-token lines already logged. A sync reloads its source after each pass and
-        # builds the index set again, so each is logged once per repository
+        # builds the index set again, so each is logged once per repository; the selection is
+        # not cached at load, since a reload, `setup()`, and `save()` change the Release
         self._release_lines_logged: set[str] = set()
         # payloads reported as Release-owned. Building the package set again in one run, as a
         # sync and its check do, reports each once
@@ -223,11 +219,8 @@ class Repo:
         """
         archs: set[str] = set()
         for comp in components:
-            prefix = f"{comp}/"
             for key in self.release.digests:
-                if not key.startswith(prefix):
-                    continue
-                match = INDEX_TAIL.fullmatch(key[len(prefix) :])
+                match = match_index_tail(key, comp)
                 if match is None or match["arch"] is None:
                     continue
                 arch = match["arch"]
@@ -303,7 +296,7 @@ class Repo:
         try:
             self.release.load()
         except StorageException as exc:
-            raise RepoReadException(f"{exc}") from exc
+            raise RepoReadException(str(exc)) from exc
 
         if not self.params.is_flat and "Components" not in self.release.fields:
             self._log_once(
@@ -539,8 +532,6 @@ class Repo:
         # still apply to them.
         for component in self.components.values():
             for path in component.get_indices_paths():
-                if path in ret:
-                    continue
                 key = self.params.release_key(path)
                 if not selected(key):
                     continue

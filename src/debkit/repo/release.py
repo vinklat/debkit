@@ -11,12 +11,11 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from debian.deb822 import Deb822
-from txstore import StorageNotFoundException, calc_digests, compare_digests
+from txstore import SUPPORT_HASH_LIST, StorageNotFoundException, calc_digests, compare_digests
 
 from debkit.repo.compress import SizeLimitError, read_capped
 from debkit.repo.gnupg import canonical_text, cleartext_body
 from debkit.repo.hashes import (
-    SUPPORT_HASH_LIST,
     ChecksumException,
     HexDigests,
     parse_hash_block,

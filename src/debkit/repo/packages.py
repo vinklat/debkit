@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     NamedTuple,
 )
 
@@ -107,7 +108,10 @@ class Packages:
             writes: found by `load`, planned by `setup`.
         size: The number of packages.
         modified: Whether the Packages object has been modified.
+        WRITABLE: Whether a save may regenerate this kind of index.
     """
+
+    WRITABLE: ClassVar[bool] = True
 
     def __init__(self, storage: Storage, params: RepoParams) -> None:
         """Initialize a Packages object.
@@ -321,8 +325,8 @@ class Packages:
         root_release: RootRelease,
         comp: str,
         arch: str,
-    ) -> bool:
-        """Load 'Packages' indices file from repo.
+    ) -> None:
+        """Load 'Packages' indices file from repo; an empty one loads no package.
 
         Args:
             root_release: The root release object.
@@ -336,9 +340,6 @@ class Packages:
             PackagesException: The index is truncated, does not decode, is stored or decodes
                 past `MAX_INDICES_BYTES`, or is not UTF-8; a missing one raises the
                 `PackagesNotFoundException` subclass.
-
-        Returns:
-            True if the packages indices file is successfully loaded, False otherwise.
         """
         found, indices_path, decompress_fun = self._find_packages_file(root_release, comp, arch)
         # replaced, not appended: a repeated load, or one after `setup`, reads storage afresh
@@ -359,7 +360,7 @@ class Packages:
 
         if not enc_data:
             logger.info("No packages indices.")
-            return False
+            return
 
         try:
             raw = decompress_fun(enc_data, MAX_INDICES_BYTES)
@@ -382,7 +383,6 @@ class Packages:
             logger.info("Found %s packages in %s arch %s.", pkgs_total, comp, arch)
         else:
             logger.info("Found %s packages.", pkgs_total)
-        return True
 
     def save(self) -> dict[str, dict[str, str]] | None:
         """Write serialized content to every Packages indices file, each in its own codec.

@@ -127,6 +127,19 @@ def test_component_load_architecture_mismatch_raises() -> None:
             comp.load(["amd64"])
 
 
+def test_component_load_judges_a_per_arch_release_by_its_architecture_field_first() -> None:
+    """A copied root `Architectures` must not vouch for a per-arch Release of another arch."""
+    comp = _component()
+    with patch("debkit.repo.component.Packages") as PackagesCls:
+        pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
+        pkgs_mock.release.is_empty.return_value = False
+        pkgs_mock.release.fields = {"Architecture": "arm64", "Architectures": "amd64 arm64"}
+        pkgs_mock.__len__.return_value = 0
+        PackagesCls.return_value = pkgs_mock
+        with pytest.raises(ComponentException, match="architecture check mismatch"):
+            comp.load(["amd64"])
+
+
 def test_component_load_packages_failure_strict_raises() -> None:
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
@@ -193,6 +206,7 @@ def test_component_load_skips_an_unreadable_sources_index() -> None:
     """A `Sources` index is never written, so no save can replace it."""
     comp = _component()
     with patch("debkit.repo.component.Sources") as SourcesCls:
+        SourcesCls.WRITABLE = Sources.WRITABLE
         pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.load.side_effect = PackagesException("carries no SHA digest")
         SourcesCls.return_value = pkgs_mock

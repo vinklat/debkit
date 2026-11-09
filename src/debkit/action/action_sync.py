@@ -282,7 +282,7 @@ class ActionSync(Action):
         """
         logger.info("---------- Verify target repo packages...")
         # orphans are left to the sync's own purge
-        report = target.check(fix=True, purge_orphans=False)
+        report = target.verify_payloads(fix=True)
         if report.failed > report.fixed:
             logger.warning(
                 "%d target files failed verification and were not deleted",

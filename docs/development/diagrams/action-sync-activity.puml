@@ -16,7 +16,7 @@ partition "with maybe_transaction(target.storage)" {
   (taken before any reset);
   :target_before = target.snapshot();
   if (verify_existing?) then (yes)
-    :report = target.check(fix=True, purge_orphans=False)
+    :report = target.verify_payloads(fix=True)
     (missing payloads skipped, orphans left to the purge);
     note right
       deletions are staged in the transaction;

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import posixpath
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from txstore import is_unsafe_path
 
@@ -33,6 +33,8 @@ class Sources(Packages):
     The index itself is mirrored as an opaque object and is never regenerated, so
     this container refuses every mutation -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
     """
+
+    WRITABLE: ClassVar[bool] = False
 
     def _parse_indices(self, data: str) -> int:
         """Expand every stanza into one `Package` per payload file.

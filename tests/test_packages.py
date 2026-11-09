@@ -222,11 +222,11 @@ def test_packages_load_again_reads_the_same_files(tmp_path: Path, first: str) ->
         storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
     pkgs = Packages(storage, params)
     if first == "load":
-        assert pkgs.load(root, "main", "amd64") is True
+        pkgs.load(root, "main", "amd64")
     else:
         pkgs.setup("main", "amd64")
 
-    assert pkgs.load(root, "main", "amd64") is True
+    pkgs.load(root, "main", "amd64")
 
     assert pkgs.found_indices_paths == [
         "dists/bookworm/main/binary-amd64/Packages.gz",
@@ -385,7 +385,7 @@ def test_packages_setup_flat_source_arch_writes_at_the_dist_root() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_packages_load_empty_payload_with_matching_digest_returns_false(tmp_path: Path) -> None:
+def test_packages_load_empty_payload_with_matching_digest_loads_nothing(tmp_path: Path) -> None:
     """A legitimately empty index, its Release recording the digest of no bytes, loads nothing.
 
     The truncated case beside it shows the digest is checked before this short-circuit.
@@ -396,7 +396,9 @@ def test_packages_load_empty_payload_with_matching_digest_returns_false(tmp_path
     root.update_digests("main/binary-amd64/Packages", calc_digests(b""))
     storage.put("dists/bookworm/main/binary-amd64/Packages", b"")
 
-    assert Packages(storage, params).load(root, "main", "amd64") is False
+    pkgs = Packages(storage, params)
+    pkgs.load(root, "main", "amd64")
+    assert len(pkgs) == 0
 
 
 _INDEX_PATH = "dists/bookworm/main/binary-amd64/Packages.gz"
@@ -590,7 +592,7 @@ def test_packages_save_rewrites_the_uncompressed_index_the_release_lists(tmp_pat
         storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", data)
         root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(data))
     pkgs = Packages(storage, params)
-    assert pkgs.load(root, "main", "amd64") is True
+    pkgs.load(root, "main", "amd64")
 
     pkgs.insert(make_package("pool/main/b/bar/bar_1.0_amd64.deb", SHA256="aa"))
     ret = pkgs.save()
@@ -750,3 +752,22 @@ def test_find_packages_file_of_a_flat_layout_without_an_index_raises() -> None:
 
     with pytest.raises(PackagesNotFoundException, match="there is no indices file"):
         Packages(storage, make_params(flat=True))._find_packages_file(root, "", "amd64")
+
+
+def test_packages_load_of_a_flat_slot_logs_no_component_or_arch(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A flat Release without `Architectures` loads its one index under the empty arch."""
+    pkgs = _new_packages(params=make_params(verify_digests=False))
+    path = "dists/bookworm/Packages"
+    cast(MagicMock, pkgs.storage).get.return_value = make_packages_block("foo").encode()
+    found = ([path], path, codec_for("").decompress)
+
+    with (
+        patch.object(Packages, "_find_packages_file", return_value=found),
+        caplog.at_level(logging.INFO),
+    ):
+        pkgs.load(MagicMock(), "", "")
+
+    assert len(pkgs) == 1
+    assert "Found 1 packages." in caplog.messages

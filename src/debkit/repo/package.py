@@ -6,8 +6,7 @@ import posixpath
 from typing import Any
 
 from debian.deb822 import Deb822
-
-from debkit.repo.hashes import SUPPORT_HASH_LIST
+from txstore import SUPPORT_HASH_LIST
 
 MANDATORY_FIELDS = ["Package", "Filename", "Size"]
 

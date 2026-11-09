@@ -129,8 +129,7 @@ class RepoRW(Repo):
                     "Keep package: %s (another dist sharing the root may list it)", filename
                 )
                 continue
-            logger.info("Remove package: %s", filename)
-            self.storage.delete(filename)
+            self.delete(filename)
         return True
 
     def binary_archs(self) -> list[str]:
@@ -179,9 +178,7 @@ class RepoRW(Repo):
     ) -> dict[str, str]:
         """Transfer a file from an external storage into this repo's storage.
 
-        Backend-specific ACL handling is delegated to the destination
-        storage (e.g. ``StorageS3.default_acl``); this method does not
-        hard-code any ACL string.
+        The destination storage applies its own ACL -> txstore.
 
         Args:
             source_storage: The storage to read from.
@@ -262,7 +259,9 @@ class RepoRW(Repo):
         """
         return shared_root_claims(self.storage, self.params, existing, with_digests=with_digests)
 
-    def consistency_lists(self, *, with_digests: bool = False) -> ConsistencyLists:
+    def consistency_lists(
+        self, payloads: set[str], *, with_digests: bool = False
+    ) -> ConsistencyLists:
         """List what this repository's own storage lacks and what it holds unclaimed.
 
         Missing are the payloads and the parsed component indices the listing lacks:
@@ -272,6 +271,7 @@ class RepoRW(Repo):
         claims -> [CONFIG.md](CONFIG.md#check).
 
         Args:
+            payloads: The payload paths the indices list, from `_payload_files()`.
             with_digests: Also collect the digests the other dists record, for a caller that
                 judges a corrupt payload. Defaults to False.
 
@@ -279,13 +279,12 @@ class RepoRW(Repo):
             Missing and orphan paths, sorted, and the shared root claims from the same
             listing; both lists empty and the claims unknown when the storage cannot list.
         """
-        try:
-            existing_files = set(self.storage.list())
-        except NotImplementedError:
+        existing_files = self.held_paths()
+        if existing_files is None:
             return ConsistencyLists([], [], unlisted_shared_root(self.params))
 
         indices = self._get_indices()
-        missing, orphans = missing_and_unclaimed(self._payload_files(), indices, existing_files)
+        missing, orphans = missing_and_unclaimed(payloads, indices, existing_files)
         shared = self.shared_root(existing_files, with_digests=with_digests)
         orphans = {file for file in orphans if shared.deletable(file)}
         parsed = {
@@ -295,26 +294,44 @@ class RepoRW(Repo):
         missing |= (parsed & indices.keys()) - root_files - existing_files
         return ConsistencyLists(sorted(missing), sorted(orphans), shared)
 
-    def check(self, *, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
-        """Check the repository against its own indices.
+    def check(self, *, fix: bool = False) -> CheckReport:
+        """Check the repository against its own indices: verify its payloads, then purge.
 
-        Every payload the indices list is read back and verified; with `fix`, a corrupt one
-        is deleted, so a later sync or insert places it again, and so is every orphan, while a
-        valid one has the digests read back recorded as object metadata, which the sync's
-        held-payload skip reads -> [CONFIG.md](CONFIG.md#check). A corrupt payload whose bytes
-        another dist sharing the root records is kept for that dist, and so is every one while
-        another dist's payloads are unknown -> [VALIDATION.md](VALIDATION.md#index-selection).
+        With `fix`, every orphan is deleted after the payload verify, which deletes the corrupt
+        payloads -> [CONFIG.md](CONFIG.md#check).
 
         Args:
             fix: Delete corrupt payloads and orphans, and record each valid payload's
                 digests. Defaults to False.
-            purge_orphans: With `fix`, delete the orphans too. Defaults to True.
 
         Returns:
             The missing and orphan paths, and the failed and fixed counts.
         """
-        missing, orphans, shared = self.consistency_lists(with_digests=fix)
-        payloads = sorted(self._payload_files())
+        report = self.verify_payloads(fix=fix)
+        if not fix:
+            return report
+        return report._replace(fixed=report.fixed + self._purge(report.orphans))
+
+    def verify_payloads(self, *, fix: bool = False) -> CheckReport:
+        """Read back and verify every payload the indices list; orphans are only reported.
+
+        With `fix`, a corrupt payload is deleted, so a later sync or insert places it again,
+        while a valid one has the digests read back recorded as object metadata, which the
+        sync's held-payload skip reads -> [CONFIG.md](CONFIG.md#check). A corrupt payload whose
+        bytes another dist sharing the root records is kept for that dist, and so is every one
+        while another dist's payloads are unknown
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Args:
+            fix: Delete corrupt payloads, and record each valid payload's digests. Defaults
+                to False.
+
+        Returns:
+            The missing and orphan paths, and the failed and fixed counts.
+        """
+        payload_set = self._payload_files()
+        missing, orphans, shared = self.consistency_lists(payload_set, with_digests=fix)
+        payloads = sorted(payload_set)
         absent = set(missing)
         failed = 0
         fixed = 0
@@ -345,15 +362,37 @@ class RepoRW(Repo):
                 logger.error("Error checking file: %s: %s", file, exc)
                 failed += 1
 
-        if fix and purge_orphans:
-            for file in orphans:
-                try:
-                    self.delete(file)
-                    fixed += 1
-                except StorageException as exc:
-                    logger.error("Error deleting file: %s: %s", file, exc)
-
         return CheckReport(missing, orphans, failed, fixed)
+
+    def _purge(self, orphans: list[str]) -> int:
+        """Delete each orphan, logging the ones the backend refuses.
+
+        Args:
+            orphans: Listed paths no index claims and no other dist sharing the root claims.
+
+        Returns:
+            How many orphans were deleted.
+        """
+        fixed = 0
+        for file in orphans:
+            try:
+                self.delete(file)
+                fixed += 1
+            except StorageException as exc:
+                logger.error("Error deleting file: %s: %s", file, exc)
+        return fixed
+
+    def held_paths(self) -> set[str] | None:
+        """List the paths this repository's storage holds.
+
+        Returns:
+            Every listed path, or None when the storage cannot list, which proves nothing
+            missing and nothing orphaned.
+        """
+        try:
+            return set(self.storage.list())
+        except NotImplementedError:
+            return None
 
     def delete(self, file: str) -> None:
         """Delete `file` from this repository's storage, logging it.

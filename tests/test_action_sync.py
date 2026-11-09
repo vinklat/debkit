@@ -200,6 +200,31 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
     ]
 
 
+def test_sync_commits_quietly_when_the_last_pass_finds_nothing_to_copy(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An earlier pass may already have copied the bytes the source changed to mid-pass."""
+    txn = TxnStorageStub()
+    action = _make_action(storage=txn)
+    hashes = iter(f"hash{n}" for n in range(1, 100))
+
+    def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
+        _source(action).release.hash = next(hashes)
+
+    _source(action).load.side_effect = update
+    work = SyncPlan(["pkg.deb"], [], set())
+    _source(action).build_sync_lists.side_effect = [work] * (MAX_UPDATED_REPO_RETRIES - 1) + [
+        SyncPlan([], [], set())
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        action.sync()
+
+    assert _source(action).sync.call_count == MAX_UPDATED_REPO_RETRIES - 1
+    assert txn.committed
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
 def _dated_target_loads(action: ActionSync) -> None:
     """Give each target load a Release dated by its ordinal, `load1`, `load2`, …"""
     loads = iter(range(1, 10))
@@ -657,6 +682,8 @@ def test_sync_keeps_a_held_payload_already_holding_the_source_bytes(tmp_path: Pa
 
     assert "pool/main/f/foo/foo_3_amd64.deb" not in source.transferred
     assert held.read_bytes() == b"deb 3"
+    metadata = StorageFS(str(tmp_path / "tgt")).get_metadata("pool/main/f/foo/foo_3_amd64.deb")
+    assert metadata["SHA256"] == hashlib.sha256(b"deb 3").hexdigest()
     assert (tmp_path / "tgt" / "dists/bookworm/Release").read_bytes() == (
         tmp_path / "src" / "dists/bookworm/Release"
     ).read_bytes()
@@ -984,16 +1011,17 @@ def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction
     began_at_check: list[bool] = []
     _target(action).load.side_effect = lambda *_: began_at_load.append(txn.began)
 
-    def check(*, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
+    def verify_payloads(*, fix: bool = False) -> CheckReport:
         began_at_check.append(txn.began and not txn.committed)
         return CheckReport(["gone.deb"], ["junk"], 0, 0)
 
-    _target(action).check.side_effect = check
+    _target(action).verify_payloads.side_effect = verify_payloads
     action.sync()
 
     assert began_at_load == [True]
     assert began_at_check == [True]
-    _target(action).check.assert_called_once_with(fix=True, purge_orphans=False)
+    _target(action).verify_payloads.assert_called_once_with(fix=True)
+    _target(action).check.assert_not_called()
 
 
 def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
@@ -1002,7 +1030,7 @@ def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
     action = _make_action(storage=TxnStorageStub())
     action.verify_existing = True
 
-    _target(action).check.return_value = CheckReport([], [], 3, 1)
+    _target(action).verify_payloads.return_value = CheckReport([], [], 3, 1)
     with caplog.at_level(logging.WARNING):
         action.sync()
 

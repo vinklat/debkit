@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from debkit.repo.index_selection import select_index_entry
+from debkit.repo.index_selection import match_index_tail, select_index_entry
 
 
 @pytest.mark.parametrize(
@@ -257,3 +257,36 @@ def test_select_index_entry_flat_sources_index_follows_the_source_selection(
         )
         is selected
     )
+
+
+@pytest.mark.parametrize(
+    ("key", "component", "arch"),
+    [
+        ("main/binary-amd64/Packages.xz", "main", "amd64"),
+        ("updates/main/binary-arm64/Packages", "updates/main", "arm64"),
+        ("main/source/Sources.gz", "main", None),
+    ],
+    ids=["binary", "slash-component", "source"],
+)
+def test_match_index_tail_reads_the_arch_below_its_component(
+    key: str, component: str, arch: str | None
+) -> None:
+    match = match_index_tail(key, component)
+    assert match is not None
+    assert match["arch"] == arch
+
+
+@pytest.mark.parametrize(
+    ("key", "component"),
+    [
+        ("updates/main/binary-amd64/Packages", "main"),
+        ("main/debian-installer/binary-amd64/Packages", "main"),
+        ("main/i18n/Translation-en", "main"),
+        ("mainline/binary-amd64/Packages", "main"),
+    ],
+    ids=["other-head", "nested-dir", "not-an-index", "prefix-only"],
+)
+def test_match_index_tail_rejects_a_key_that_is_no_index_of_the_component(
+    key: str, component: str
+) -> None:
+    assert match_index_tail(key, component) is None

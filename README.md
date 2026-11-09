@@ -27,11 +27,11 @@ Released versions are published to [PyPI](https://pypi.org/project/debkit/). Pre
 Python floor, the GnuPG and `zstd` binaries, `fs://` extended attributes) →
 [SETUP.md](SETUP.md#prerequisites-and-install).
 
-debkit verifies every Release it reads from a repository it trusts (a `sync` source, an `insert`
-or `remove` target, the inspecting commands) against `~/.gnupg/trustedkeys.gpg` by default, the
-keyring gpgv reads → [CONFIG.md](CONFIG.md#global-flags); a `sync` target is read unverified →
-[CRYPTO.md](CRYPTO.md#gpg). The examples keep a dedicated home instead, named
-by `DEBKIT_GNUPG_HOME`; import the Debian archive keys into it before reading deb.debian.org. The
+debkit verifies every Release it reads from a repository it trusts (a `sync` source, an `insert` or
+`remove` target, the inspecting commands) against `~/.gnupg/trustedkeys.gpg` by default, the keyring
+gpgv reads → [CONFIG.md](CONFIG.md#global-flags); a `sync` target is read unverified →
+[CRYPTO.md](CRYPTO.md#gpg). The examples keep a dedicated home instead, named by
+`DEBKIT_GNUPG_HOME`; import the Debian archive keys into it before reading deb.debian.org. The
 keyring file comes from the `debian-archive-keyring` package on Debian and Ubuntu.
 
 ```bash

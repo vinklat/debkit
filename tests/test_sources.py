@@ -293,6 +293,6 @@ def test_sources_load_expands_the_index_it_finds() -> None:
     found = ([path], path, codec_for(".gz").decompress)
 
     with patch.object(Sources, "_find_packages_file", return_value=found):
-        assert src.load(root, "main", "source") is True
+        src.load(root, "main", "source")
 
     assert len(src) == 3

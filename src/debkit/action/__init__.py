@@ -84,7 +84,7 @@ def open_storage(pars: Namespace, url: str, create_path: bool = False) -> Storag
         )
     except ValueError as exc:
         # the URL may carry credentials -> [CONFIG.md](CONFIG.md#secrets)
-        raise RepoParamsException(f"{exc}") from exc
+        raise RepoParamsException(str(exc)) from exc
 
 
 def history_retention(pars: Namespace) -> HistoryRetention:
@@ -165,7 +165,7 @@ def attach_storage_repo(
     try:
         storage = open_storage(pars, repo_params.url, create_path=create_path)
     except StorageException as exc:
-        raise RepoReadException(f"{exc}") from exc
+        raise RepoReadException(str(exc)) from exc
     return storage, repo_params
 
 

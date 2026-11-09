@@ -22,7 +22,7 @@ Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
 note over ActionSync: run_floor = target.release.fields["Date"], before any reset\ntarget_before = target.snapshot()
 
 opt verify_existing
-  ActionSync -> Tgt: check(fix=True, purge_orphans=False)
+  ActionSync -> Tgt: verify_payloads(fix=True)
   Tgt -> TStor: list(); read, delete the failing payloads\n[staged in the transaction]
 end
 
