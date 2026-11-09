@@ -11,6 +11,7 @@ from typing import cast
 from unittest.mock import MagicMock, call
 
 import pytest
+from helpers import trees
 from helpers.factories import make_package, make_params, make_storage_mock
 from helpers.trees import payload_path, write_dist
 from txstore import Storage, StorageException, StorageFS
@@ -356,17 +357,39 @@ def test_check_counts_a_corrupt_payload_and_deletes_it_only_with_fix(
     assert (tmp_path / _BAR).exists()
 
 
-def test_check_fix_keeps_a_corrupt_payload_another_dist_lists(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+def test_check_fix_keeps_a_corrupt_payload_whose_bytes_another_dist_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The bytes this dist calls corrupt may be the ones the other dist's index records."""
+    """The bytes this dist calls corrupt are the ones the other dist's index records."""
+    repo = _checked(tmp_path)
+    monkeypatch.setattr(trees, "payload_bytes", lambda _version: b"trixie build")
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+
+    assert repo.check(fix=True) == CheckReport([], [], 1, 0)
+    assert (tmp_path / _FOO).read_bytes() == b"trixie build"
+    assert f"Keep: {_FOO}" in caplog.text
+
+
+def test_check_fix_deletes_a_corrupt_payload_no_other_dist_records(tmp_path: Path) -> None:
+    """Bytes every index calls corrupt are deleted, so a later sync or insert places them."""
     repo = _checked(tmp_path)
     write_dist(tmp_path, "trixie", {"foo": "1"})
     (tmp_path / _FOO).write_bytes(b"corrupt")
 
+    assert repo.check(fix=True) == CheckReport([], [], 1, 1)
+    assert not (tmp_path / _FOO).exists()
+
+
+def test_check_fix_keeps_a_corrupt_payload_while_another_dist_does_not_load(
+    tmp_path: Path,
+) -> None:
+    repo = _checked(tmp_path)
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+    (tmp_path / "dists/trixie/main/binary-amd64/Packages.gz").unlink()
+    (tmp_path / _FOO).write_bytes(b"corrupt")
+
     assert repo.check(fix=True) == CheckReport([], [], 1, 0)
     assert (tmp_path / _FOO).exists()
-    assert f"Keep: {_FOO}" in caplog.text
 
 
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:

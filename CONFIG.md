@@ -99,7 +99,7 @@ Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither o
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |
-| `--fix` | none | off | Delete corrupted files, except those another dist sharing the root claims |
+| `--fix` | none | off | Delete corrupted files, except those whose bytes another dist sharing the root records |
 
 Also accepts `--architectures` and `--indices-exclude` with the same variables and defaults as
 [Sync](#sync): a check builds its index and package sets the same way a sync does, so other values

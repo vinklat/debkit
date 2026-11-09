@@ -26,7 +26,7 @@ from debkit.action.action_pkg import ActionPkg
 from debkit.repo.component import ComponentException
 from debkit.repo.debfile import DebFileException
 from debkit.repo.hashes import ChecksumException
-from debkit.repo.params import pool_path
+from debkit.repo.params import RepoParams, pool_path
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 from debkit.repo.repo_rw import RepoRW
 
@@ -977,6 +977,25 @@ def test_insert_refuses_to_replace_a_pool_object_another_dist_lists(tmp_path: Pa
         _insert_deb(tmp_path, "bookworm", deb, _FOO_REBUILT)
 
     assert (tmp_path / "repo" / pool_path("main", "foo", deb)).read_bytes() == _FOO_V1
+
+
+def test_insert_repairs_a_corrupt_pool_object_after_check_fix(tmp_path: Path) -> None:
+    """No dist records the corrupt bytes, so `check --fix` deletes them and insert places them."""
+    deb = "foo_1.0_amd64.deb"
+    _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)
+    _insert_deb(tmp_path, "trixie", deb, _FOO_V1)
+    pooled = tmp_path / "repo" / pool_path("main", "foo", deb)
+    pooled.write_bytes(b"corrupt")
+    repo = RepoRW(
+        StorageFS(str(tmp_path / "repo")),
+        RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False),
+    )
+    repo.update()
+
+    assert repo.check(fix=True).fixed == 1
+    _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)
+
+    assert pooled.read_bytes() == _FOO_V1
 
 
 def test_insert_refuses_two_arch_builds_under_one_upload_name(tmp_path: Path) -> None:

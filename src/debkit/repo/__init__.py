@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Collection, Generator, Iterable
+from collections.abc import Collection, Generator, Iterable, Mapping
 from copy import copy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from txstore import StorageException, is_unsafe_path
+from txstore import StorageException, compare_digests, is_unsafe_path
 
 from debkit.repo.component import Component, ComponentException
 from debkit.repo.gnupg import GPGVerifyException
@@ -655,11 +655,13 @@ class SharedRoot(NamedTuple):
         claimed: Paths another dist holds: its `dists/<dist>/` tree and the payloads its indices
             list.
         complete: Whether every other dist loaded, so `claimed` holds all of its payloads.
+        recorded: Payload path -> the digests each other dist's index records for it.
     """
 
     prefix: str
     claimed: frozenset[str]
     complete: bool
+    recorded: Mapping[str, tuple[dict[str, str], ...]] = {}
 
     def deletable(self, path: str) -> bool:
         """Report whether a sync, `check --fix`, or `remove` may delete `path` from the root.
@@ -674,6 +676,24 @@ class SharedRoot(NamedTuple):
         if path in self.claimed:
             return False
         return self.complete or path.startswith(self.prefix)
+
+    def corrupt_deletable(self, path: str, digests: dict[str, str]) -> bool:
+        """Report whether a payload whose bytes fail the own indices may be deleted.
+
+        Another dist's index may record exactly these bytes, so they are kept for it; one that
+        records other bytes loses nothing, since the bytes are wrong for it too.
+
+        Args:
+            path: Storage path of the payload in the target root.
+            digests: The digests of the bytes the root holds at `path`.
+
+        Returns:
+            False while another dist's payloads are unknown, and when another dist records
+            `digests` for `path`.
+        """
+        if not self.complete and not path.startswith(self.prefix):
+            return False
+        return not any(compare_digests(record, digests) for record in self.recorded.get(path, ()))
 
 
 class ConsistencyLists(NamedTuple):
@@ -730,7 +750,7 @@ _LISTED_INDEX = re.compile(
 )
 
 
-def _claims_of(storage: Storage, dist: str) -> set[str]:
+def _claims_of(storage: Storage, dist: str) -> dict[str, dict[str, str]]:
     """Load another dist of the root and return the payloads its indices list.
 
     Exactly the indices its root Release lists are loaded, and each must load: one skipped
@@ -747,7 +767,7 @@ def _claims_of(storage: Storage, dist: str) -> set[str]:
         ComponentException: A listed index is missing or does not load.
 
     Returns:
-        The payload paths the dist's binary and source indices list.
+        Each payload path the dist's binary and source indices list -> the digests they record.
     """
     release = Release(
         storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False), root=True
@@ -758,7 +778,7 @@ def _claims_of(storage: Storage, dist: str) -> set[str]:
         if listed := _LISTED_INDEX.fullmatch(key):
             slots.setdefault(listed["comp"], set()).add(listed["arch"] or SOURCE_ARCH)
 
-    claims: set[str] = set()
+    claims: dict[str, dict[str, str]] = {}
     for comp, archs in sorted(slots.items()):
         if not is_safe_name(comp):
             raise RepoReadException(f"dist {dist} lists an unsafe component {comp!r}")
@@ -771,7 +791,7 @@ def _claims_of(storage: Storage, dist: str) -> set[str]:
         )
         repo = Repo(storage, params)
         repo.update(strict_arch=True)
-        claims.update(str(package) for package in repo.get_packages())
+        claims.update((str(package), package.get_digests()) for package in repo.get_packages())
     return claims
 
 
@@ -799,6 +819,7 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
     }
     dists = sorted({path.split("/")[1] for path in foreign if path.count("/") >= 2})
     claimed = set(foreign)
+    recorded: dict[str, list[dict[str, str]]] = {}
     complete = True
 
     for dist in dists:
@@ -807,7 +828,7 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
             complete = False
             continue
         try:
-            claimed.update(_claims_of(storage, dist))
+            claims = _claims_of(storage, dist)
         except _NOT_LOADED as exc:
             logger.warning(
                 "Dist %s shares the target root but did not load (%s); "
@@ -817,7 +838,16 @@ def shared_root_claims(storage: Storage, params: RepoParams, existing: set[str])
                 prefix,
             )
             complete = False
+            continue
+        claimed.update(claims)
+        for path, digests in claims.items():
+            recorded.setdefault(path, []).append(digests)
 
     if dists:
         logger.info("Shared root: keeping what dists %s claim", ", ".join(dists))
-    return SharedRoot(prefix, frozenset(claimed), complete)
+    return SharedRoot(
+        prefix,
+        frozenset(claimed),
+        complete,
+        {path: tuple(records) for path, records in recorded.items()},
+    )

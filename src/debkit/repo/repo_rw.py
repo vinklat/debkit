@@ -203,10 +203,10 @@ class RepoRW(Repo):
         """Check the repository against its own indices.
 
         Every payload the indices list is read back and verified; with `fix`, a corrupt one
-        is deleted, so a later sync copies it again, and so is every orphan
-        -> [CONFIG.md](CONFIG.md#check). A corrupt payload another dist sharing the root may
-        list is kept: its bytes may be what that dist's index records
-        -> [VALIDATION.md](VALIDATION.md#index-selection).
+        is deleted, so a later sync or insert places it again, and so is every orphan
+        -> [CONFIG.md](CONFIG.md#check). A corrupt payload whose bytes another dist sharing the
+        root records is kept for that dist, and so is every one while another dist's payloads
+        are unknown -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
             fix: Delete corrupt payloads and orphans. Defaults to False.
@@ -227,14 +227,17 @@ class RepoRW(Repo):
                 continue
 
             try:
-                if not self._verify_file(file, progress=(cnt, len(payloads)), fix=fix):
+                valid, digests = self._verify_file(file, progress=(cnt, len(payloads)), fix=fix)
+                if not valid:
                     logger.warning("Checksum verify failed: %s", file)
                     failed += 1
-                    if fix and shared.deletable(file):
+                    if fix and shared.corrupt_deletable(file, digests):
                         self._delete(file)
                         fixed += 1
                     elif fix:
-                        logger.warning("Keep: %s (another dist sharing the root may list it)", file)
+                        logger.warning(
+                            "Keep: %s (another dist sharing the root may record its bytes)", file
+                        )
             except StorageException as exc:
                 logger.error("Error checking file: %s: %s", file, exc)
                 failed += 1
@@ -258,7 +261,9 @@ class RepoRW(Repo):
         logger.info("Delete: %s", file)
         self.storage.delete(file)
 
-    def _verify_file(self, file: str, progress: tuple[int, int], fix: bool) -> bool:
+    def _verify_file(
+        self, file: str, progress: tuple[int, int], fix: bool
+    ) -> tuple[bool, dict[str, str]]:
         """Read a payload back and verify it against the indices.
 
         Args:
@@ -267,19 +272,19 @@ class RepoRW(Repo):
             fix: Record the digests as object metadata when the payload verifies.
 
         Returns:
-            True if the file is valid, False otherwise.
+            Whether the file is valid, and the digests of the bytes read back.
         """
         logger.info("Verify (%d/%d): %s", progress[0], progress[1], file)
 
         digests = self._read_digests(file)
 
         if self.params.verify_digests and not self.verify_checksum(file, digests):
-            return False
+            return False, digests
 
         if fix:
             self.storage.add_metadata(file, digests)
 
-        return True
+        return True, digests
 
     def _read_digests(self, path: str) -> dict[str, str]:
         """Read an object of this repo's storage through and return its digests.
