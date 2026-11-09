@@ -11,12 +11,24 @@ import re
 from txstore import COMPARE_HASH_LIST, SUPPORT_HASH_LIST, compare_digests
 
 __all__ = [
+    "CHECKSUMS_SHA256",
+    "CHECKSUM_FIELDS",
     "COMPARE_HASH_LIST",
     "SUPPORT_HASH_LIST",
     "ChecksumException",
     "HexDigests",
     "parse_hash_block",
 ]
+
+# A `Sources` or `.changes` hash-block field -> the algorithm its digests are in; a `Release`
+# names its hash fields after the algorithm itself -> [CRYPTO.md](CRYPTO.md#checksums)
+CHECKSUMS_SHA256 = "Checksums-Sha256"
+CHECKSUM_FIELDS = {
+    "Files": "MD5Sum",
+    "Checksums-Sha1": "SHA1",
+    CHECKSUMS_SHA256: "SHA256",
+    "Checksums-Sha512": "SHA512",
+}
 
 
 def parse_hash_block(text: str) -> list[tuple[str, str, str]]:

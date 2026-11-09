@@ -10,20 +10,12 @@ from typing import Any
 
 from txstore import is_unsafe_path
 
-from debkit.repo.hashes import COMPARE_HASH_LIST, parse_hash_block
+from debkit.repo.hashes import CHECKSUM_FIELDS, COMPARE_HASH_LIST, parse_hash_block
 from debkit.repo.package import FILENAME_FIELD_KEY, Package
 from debkit.repo.packages import Packages, PackagesException
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-# Sources hash-block field -> the digest key `Package.get_digests()` reads.
-HASH_FIELDS = {
-    "Files": "MD5Sum",
-    "Checksums-Sha1": "SHA1",
-    "Checksums-Sha256": "SHA256",
-    "Checksums-Sha512": "SHA512",
-}
 
 # Stanza fields copied onto every payload record of that stanza.
 STANZA_FIELDS = ("Package", "Version")
@@ -92,7 +84,7 @@ class Sources(Packages):
         stanza = {key: fields[key].strip() for key in STANZA_FIELDS if key in fields}
         records: dict[str, dict[str, Any]] = {}
 
-        for field, algorithm in HASH_FIELDS.items():
+        for field, algorithm in CHECKSUM_FIELDS.items():
             if field not in fields:
                 continue
 

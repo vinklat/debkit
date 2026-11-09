@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from txstore import StorageException, is_unsafe_path
 
 from debkit.repo.gnupg import CLEARSIGN_BEGIN, GPGVerifyException, cleartext_body
-from debkit.repo.hashes import ChecksumException, HexDigests, parse_hash_block
+from debkit.repo.hashes import CHECKSUMS_SHA256, ChecksumException, HexDigests, parse_hash_block
 from debkit.repo.params import SOURCE_ARCH
 
 if TYPE_CHECKING:
@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-SHA256KEY = "Checksums-Sha256"
 DEFAULT_ARCH = "amd64"
 
 
@@ -89,10 +88,10 @@ class Changes(HexDigests):
             raise ChangesException(f"repeated field: {', '.join(repeated)}")
         self.fields = dict(parsed.items())
 
-        if SHA256KEY not in self.fields:
+        if CHECKSUMS_SHA256 not in self.fields:
             raise ChangesException("No SHA256 checksums found")
 
-        for hashstr, size, filename in parse_hash_block(self.fields[SHA256KEY]):
+        for hashstr, size, filename in parse_hash_block(self.fields[CHECKSUMS_SHA256]):
             # a listed name is read from the incoming storage and names the pool key, so
             # it is a bare file name -> [VALIDATION.md](VALIDATION.md#filename-safety)
             if "/" in filename or is_unsafe_path(filename):
