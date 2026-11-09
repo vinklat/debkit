@@ -273,8 +273,8 @@ class Action:
     ):
         """Initialize repo objects and storages.
 
-        The repositories open inside the constructor through `_attach_repos`, so everything
-        that hook reads is set here first.
+        The repositories open last, through `_attach_repos`, after `gpg` is set; the
+        selection is passed to it rather than kept on the action.
 
         Args:
             pars: Parsed command line arguments.
@@ -283,9 +283,8 @@ class Action:
             indices_exclude: Index exclude globs every opened repository applies; None excludes
                 nothing.
         """
-        self._archs = archs
-        self._indices_exclude = indices_exclude
-        self.output: OutputType = getattr(pars, "output", OUTPUT_DEFAULT)
+        # every action subcommand registers `--output` -> [CONFIG.md](CONFIG.md#global-flags)
+        self.output: OutputType = pars.output
         self.gpg: GnuPG | None = None
         self.history_retention: HistoryRetention = history_retention(pars)
 
@@ -305,9 +304,15 @@ class Action:
         else:
             self.gpg = GnuPG(pars.gnupg_home, pars.gnupg_keyring, pars.gnupg_passphrase)
 
-        self._attach_repos(pars, create_path)
+        self._attach_repos(pars, create_path, archs, indices_exclude)
 
-    def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
+    def _attach_repos(
+        self,
+        pars: Namespace,
+        create_path: bool,
+        archs: list[str] | None,
+        indices_exclude: list[str] | None,
+    ) -> None:
         """Open the target repository with the selection, verified and signed with `gpg`.
 
         A subclass that opens more repositories overrides it.
@@ -315,6 +320,8 @@ class Action:
         Args:
             pars: Parsed command line arguments.
             create_path: Create the target path or bucket if True.
+            archs: The architectures to select; None selects the Release's.
+            indices_exclude: Index exclude globs; None excludes nothing.
         """
         # `--target-url` is required, so every action has a target
         logger.debug("Prepare target URL: %s", redact_url(pars.target_url))
@@ -322,8 +329,8 @@ class Action:
             pars,
             pars.target_url,
             create_path=create_path,
-            archs=self._archs,
-            indices_exclude=self._indices_exclude,
+            archs=archs,
+            indices_exclude=indices_exclude,
         )
         self.target_repo = RepoRW(storage, params, gpg=self.gpg)
 

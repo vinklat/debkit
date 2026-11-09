@@ -1034,6 +1034,9 @@ def _sync_pars(**flags: object) -> Namespace:
         "source_url": _SOURCE_URL,
         "architectures": "",
         "indices_exclude": "",
+        "verify_existing": False,
+        "indices_only": False,
+        "allow_release_rollback": False,
     }
     fields.update(flags)
     return storage_namespace(**fields)
@@ -1154,6 +1157,7 @@ def test_init_gives_the_check_target_the_gnupg() -> None:
         skip_verify_gpg=False,
         architectures="",
         indices_exclude="",
+        fix=False,
     )
 
     with patch("debkit.action.GnuPG") as gnupg:

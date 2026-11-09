@@ -101,11 +101,17 @@ class ActionSync(Action):
         super().__init__(
             pars, create_path=create_path, archs=archs, indices_exclude=indices_exclude
         )
-        self.verify_existing: bool = getattr(pars, "verify_existing", False)
-        self.indices_only: bool = getattr(pars, "indices_only", False)
-        self.allow_release_rollback: bool = getattr(pars, "allow_release_rollback", False)
+        self.verify_existing: bool = pars.verify_existing
+        self.indices_only: bool = pars.indices_only
+        self.allow_release_rollback: bool = pars.allow_release_rollback
 
-    def _attach_repos(self, pars: Namespace, create_path: bool) -> None:
+    def _attach_repos(
+        self,
+        pars: Namespace,
+        create_path: bool,
+        archs: list[str] | None,
+        indices_exclude: list[str] | None,
+    ) -> None:
         """Open the source, then the target, each with the selection applied.
 
         A sync overwrites the target, so the target gets no `GnuPG`: its Release is
@@ -114,10 +120,12 @@ class ActionSync(Action):
         Args:
             pars: Command line arguments from argparser.
             create_path: Create the target path or bucket if True.
+            archs: The architectures to select; None selects the Release's.
+            indices_exclude: Index exclude globs; None excludes nothing.
         """
         logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
         storage, params = attach_storage_repo(
-            pars, pars.source_url, archs=self._archs, indices_exclude=self._indices_exclude
+            pars, pars.source_url, archs=archs, indices_exclude=indices_exclude
         )
         self.source_repo = RepoSync(storage, params, gpg=self.gpg)
 
@@ -126,8 +134,8 @@ class ActionSync(Action):
             pars,
             pars.target_url,
             create_path=create_path,
-            archs=self._archs,
-            indices_exclude=self._indices_exclude,
+            archs=archs,
+            indices_exclude=indices_exclude,
         )
         self.target_repo = RepoRW(storage, params)
 
@@ -391,7 +399,7 @@ class ActionCheck(Action):
         super().__init__(
             pars, create_path=create_path, archs=archs, indices_exclude=indices_exclude
         )
-        self.fix: bool = getattr(pars, "fix", False)
+        self.fix: bool = pars.fix
 
     def check(self) -> bool:
         """Check debian repo for consistency.

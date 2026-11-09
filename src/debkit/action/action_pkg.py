@@ -53,6 +53,7 @@ class ActionPkg(Action):
             create_path: Create path or bucket if True.
         """
         super().__init__(pars, create_path=create_path)
+        # one action serves five subcommands, each registering only its own flags
         self.pkg_pattern: dict[str, re.Pattern[str]] | None = getattr(pars, "pkg_pattern", None)
         self.changes_filename: str | None = getattr(pars, "changes_filename", None)
         self.changes_sha256: str | None = getattr(pars, "changes_sha256", None)
