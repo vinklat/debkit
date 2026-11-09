@@ -484,8 +484,9 @@ def test_shared_root_claims_keep_digests_only_when_asked(tmp_path: Path) -> None
     storage = StorageFS(str(tmp_path))
     listing = set(storage.list())
 
-    assert shared_root_claims(storage, make_params(), listing).recorded == {}
+    assert shared_root_claims(storage, make_params(), listing).recorded is None
     recorded = shared_root_claims(storage, make_params(), listing, with_digests=True).recorded
+    assert recorded is not None
     assert list(recorded) == [_FOO]
     assert recorded[_FOO][0]["SHA256"] == hashlib.sha256(b"deb 1").hexdigest()
 
@@ -544,6 +545,18 @@ def test_listed_slots_reads_index_keys_below_each_component(
     slots = _listed_slots(release)
 
     assert slots == ({} if slot is None else {slot[0]: {slot[1]}})
+
+
+def test_corrupt_deletable_keeps_a_claimed_payload_without_collected_digests(
+    tmp_path: Path,
+) -> None:
+    """Without digests nothing can clear the bytes, so a claimed path is never deletable."""
+    write_dist(tmp_path, "bookworm", {"bar": "1"})
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+    storage = StorageFS(str(tmp_path))
+    shared = shared_root_claims(storage, make_params(), set(storage.list()))
+
+    assert not shared.corrupt_deletable(_FOO, {"SHA256": hashlib.sha256(b"deb 1").hexdigest()})
 
 
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:

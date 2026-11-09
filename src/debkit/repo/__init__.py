@@ -15,7 +15,7 @@ from txstore import StorageException, compare_digests, is_unsafe_path
 
 from debkit.repo.component import Component, ComponentException
 from debkit.repo.gnupg import GPGVerifyException
-from debkit.repo.hashes import ChecksumException
+from debkit.repo.hashes import COMPARE_HASH_LIST, ChecksumException
 from debkit.repo.index_selection import select_index_entry
 from debkit.repo.package import PackageException
 from debkit.repo.packages import Packages, PackagesException
@@ -664,13 +664,14 @@ class SharedRoot(NamedTuple):
         claimed: Paths another dist holds: its `dists/<dist>/` tree and the payloads its indices
             list.
         complete: Whether every other dist loaded, so `claimed` holds all of its payloads.
-        recorded: Payload path -> the digests every index of every other dist records for it.
+        recorded: Payload path -> the digests every index of every other dist records for it;
+            None when the digests were not collected.
     """
 
     prefix: str
     claimed: frozenset[str]
     complete: bool
-    recorded: Mapping[str, tuple[dict[str, str], ...]] = {}
+    recorded: Mapping[str, tuple[dict[str, str], ...]] | None = None
 
     def deletable(self, path: str) -> bool:
         """Report whether deleting `path` from the root leaves every other dist's claims intact.
@@ -700,16 +701,27 @@ class SharedRoot(NamedTuple):
 
         Returns:
             False while another dist's payloads are unknown, when a record of `path` carries no
-            SHA digest, and when one records `digests`.
+            SHA digest, and when one records `digests`; without collected digests, what
+            `deletable` says, which never deletes a claimed path.
         """
+        if self.recorded is None:
+            return self.deletable(path)
         if not self.complete:
             return False
         records = self.recorded.get(path, ())
-        # `compare_digests` matches only on a SHA digest, so a record without one never
-        # matches even itself
-        if any(not compare_digests(record, record) for record in records):
+        if not all(_has_sha(record) for record in records):
             return False
         return not any(compare_digests(record, digests) for record in records)
+
+
+def _has_sha(record: Mapping[str, str]) -> bool:
+    """Report whether a digest record holds an algorithm `compare_digests` matches on.
+
+    Returns:
+        True when the record carries a SHA digest; an MD5-only or empty one cannot tell bytes
+        apart -> [CRYPTO.md](CRYPTO.md#checksums).
+    """
+    return any(algorithm in record for algorithm in COMPARE_HASH_LIST)
 
 
 class ConsistencyLists(NamedTuple):
@@ -906,5 +918,5 @@ def shared_root_claims(
         prefix,
         frozenset(claimed),
         complete,
-        {path: tuple(records) for path, records in recorded.items()},
+        {path: tuple(records) for path, records in recorded.items()} if with_digests else None,
     )
