@@ -5,7 +5,7 @@ Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Prerequisites and install
 
-- Python 3.13 or newer, and a GnuPG binary on `PATH` for `python-gnupg` →
+- Python 3.13 or newer, and GnuPG 2.2.20 or newer on `PATH` for `python-gnupg` →
   [CRYPTO.md](CRYPTO.md#gpg). `fs://` metadata needs a filesystem with extended attributes.
 - A `zstd` binary on `PATH` to insert a `.deb` whose `control.tar` is zstd-compressed →
   [VALIDATION.md](VALIDATION.md#object-sizes).
@@ -142,7 +142,7 @@ either tool are read by the other.
 | Variables | Every variable gains the `DEBKIT_` prefix: `TARGET_URL` → `DEBKIT_TARGET_URL`, `S3_SECRET` → `DEBKIT_S3_SECRET`, and so on → [CONFIG.md](CONFIG.md). |
 | Switches | `--skip-verify 1` → `--skip-verify`; `--skip-verify-gpg false` → omit it or pass `--no-skip-verify-gpg`. The same holds for `--skip-verify-ssl` and `--allow-release-rollback`. |
 | Logging | `-l` gains `DEBKIT_LOG_LEVEL` and drops `TRACING`; `--log-format json` is new. |
-| Filesystem URLs | `fs://` takes an absolute path only: `fs://debian` → `debian` or `fs:///abs/debian`; the `sync --source-url` default is `.` → [VALIDATION.md](VALIDATION.md#storage-urls). |
+| Filesystem URLs | `fs://` takes an absolute path only: `fs://debian` → `debian` or `fs:///abs/debian` → [VALIDATION.md](VALIDATION.md#storage-urls). |
 | S3 bucket ACL | A created bucket no longer inherits `--s3-default-acl`; pass `--s3-bucket-acl` to set one. |
 | S3 credentials | Unset S3 credentials fall back to `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET`. |
 | `--history-max-age` | Now has an upper bound → [VALIDATION.md](VALIDATION.md#history-retention). |

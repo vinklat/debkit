@@ -16,7 +16,7 @@ from txstore import StorageFS, calc_digests
 
 from debkit.repo import release as release_module
 from debkit.repo.gnupg import cleartext_body
-from debkit.repo.hashes import ChecksumException
+from debkit.repo.hashes import ChecksumException, HexDigests
 from debkit.repo.params import RepoParams
 from debkit.repo.release import (
     ROOT_RELEASE_KEYS,
@@ -663,7 +663,10 @@ def test_setup_copies_the_fields_it_is_given() -> None:
 
 
 def test_load_component_release_verifies_against_its_flat_release_key() -> None:
-    """The verify key matches the key `Component.save` writes for a flat repo."""
+    """The verify key matches the key `Component.save` writes for a flat repo.
+
+    The root's digest table is all `load_component` reads, so a bare `HexDigests` stands in.
+    """
     data = b"Origin: x\n"
     storage = MagicMock()
     storage.exists.return_value = True
@@ -672,11 +675,11 @@ def test_load_component_release_verifies_against_its_flat_release_key() -> None:
 
     params = _flat_params()
     params.verify_digests = True
-    root_release = RootRelease(storage, _flat_params())
-    root_release.digests["binary-amd64/Release"] = calc_digests(data)
+    root_digests = HexDigests()
+    root_digests.digests["binary-amd64/Release"] = calc_digests(data)
 
     sub = Release(storage, params)
-    assert sub.load_component("main", "amd64", root_release=root_release) is True
+    assert sub.load_component("main", "amd64", root_release=root_digests) is True
 
 
 # ---------- Root Release files

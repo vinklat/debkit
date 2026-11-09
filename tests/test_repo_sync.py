@@ -1468,7 +1468,6 @@ def test_build_sync_lists_reset_target_recopies_every_held_index() -> None:
         listed=[packages, dep11],
     )
     tgt.release.content_sha256 = None
-    cast(MagicMock, tgt.release).is_loaded = False
 
     copy_list, _, _ = src.build_sync_lists(tgt)
 

@@ -17,7 +17,10 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from debkit.repo.gnupg import GPG_OPTIONS, GnuPG, GPGVerifyException, cleartext_body
+from debkit.repo.gnupg import GnuPG, GPGVerifyException, cleartext_body
+
+# spelled out, not imported, so dropping an option from the code fails the tests below
+_GPG_OPTIONS = ["--no-auto-key-retrieve", "--no-auto-key-locate", "--no-auto-key-import"]
 
 
 def _gnupg(passphrase: str | None = "pw") -> GnuPG:
@@ -47,7 +50,7 @@ def test_init_opens_the_given_home_and_keyring() -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
         _gnupg()
     gpg_cls.assert_called_once_with(
-        gnupghome=".gnupg", keyring="trustedkeys.gpg", options=GPG_OPTIONS, env=ANY
+        gnupghome=".gnupg", keyring="trustedkeys.gpg", options=_GPG_OPTIONS, env=ANY
     )
 
 
@@ -80,7 +83,7 @@ def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.Monkey
     with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
         GnuPG("~/.gnupg", "trustedkeys.gpg", None)
     gpg_cls.assert_called_once_with(
-        gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg", options=GPG_OPTIONS, env=ANY
+        gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg", options=_GPG_OPTIONS, env=ANY
     )
 
 
@@ -99,10 +102,12 @@ def test_verify_inrelease_returns_the_signed_body() -> None:
         b"Hash: SHA256\n\nOrigin: example\nCodename: bookworm\n\n"
         b"-----BEGIN PGP SIGNATURE-----\n...\n-----END PGP SIGNATURE-----\n"
     )
-    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=True)):
+    mock_gpg = _gpg_mock(verify_ok=True)
+    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=mock_gpg):
         gpg = _gnupg()
         out = gpg.verify(inrelease)
     assert out == b"Origin: example\nCodename: bookworm\n\n"
+    mock_gpg.verify.assert_called_once_with(inrelease, extra_args=["--no-options"])
 
 
 def test_verify_detached_cleans_tempfile_on_failure() -> None:
@@ -132,8 +137,10 @@ def test_verify_failure_logs_the_gpg_status_at_debug(caplog: pytest.LogCaptureFi
 
 
 def test_verify_detached_returns_the_data() -> None:
-    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=_gpg_mock(verify_ok=True)):
+    mock_gpg = _gpg_mock(verify_ok=True)
+    with patch("debkit.repo.gnupg.gnupg.GPG", return_value=mock_gpg):
         assert _gnupg().verify(b"data", detach_sign=b"sig") == b"data"
+    mock_gpg.verify_data.assert_called_once_with(ANY, b"data", extra_args=["--no-options"])
 
 
 def test_verify_detached_cleans_tempfile_when_verify_data_raises() -> None:

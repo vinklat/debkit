@@ -14,6 +14,9 @@ from debkit.argparser import (
     parse_cli,
 )
 
+# `sync` requires a source; the tests below that are about other flags pass one
+_SOURCE = ("--source-url", "fs:///src dist main")
+
 
 def test_build_parser_returns_parser() -> None:
     parser = build_parser()
@@ -110,6 +113,19 @@ def test_parse_cli_revert_command_dry_run_flag() -> None:
     assert ns.dry_run is True
 
 
+@pytest.mark.parametrize("env", [None, ""], ids=["unset", "empty"])
+def test_parse_cli_sync_requires_source_url(
+    env: str | None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression: the `.` default was not a deb source string, so it could never parse."""
+    if env is not None:
+        monkeypatch.setenv("DEBKIT_SOURCE_URL", env)
+    with pytest.raises(SystemExit) as excinfo:
+        parse_cli(["--target-url", "fs:///tmp dist main", "sync"])
+    assert excinfo.value.code == 2
+    assert "--source-url or DEBKIT_SOURCE_URL is required" in capsys.readouterr().err
+
+
 def test_parse_cli_sync_command() -> None:
     ns = parse_cli(
         [
@@ -127,14 +143,21 @@ def test_parse_cli_sync_command() -> None:
 
 def test_parse_cli_sync_indices_exclude_flag() -> None:
     ns = parse_cli(
-        ["--target-url", "fs:///tmp dist main", "sync", "--indices-exclude", "*/i18n/*,*/dep11/*"]
+        [
+            "--target-url",
+            "fs:///tmp dist main",
+            "sync",
+            *_SOURCE,
+            "--indices-exclude",
+            "*/i18n/*,*/dep11/*",
+        ]
     )
     assert ns.indices_exclude == "*/i18n/*,*/dep11/*"
 
 
 def test_parse_cli_sync_indices_exclude_env_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEBKIT_INDICES_EXCLUDE", "*/source/*")
-    ns = parse_cli(["--target-url", "fs:///tmp dist main", "sync"])
+    ns = parse_cli(["--target-url", "fs:///tmp dist main", "sync", *_SOURCE])
     assert ns.indices_exclude == "*/source/*"
 
 
@@ -176,6 +199,7 @@ def test_parse_cli_selection_env_fallback_is_shared(
     """
     monkeypatch.setenv("DEBKIT_ARCHITECTURES", "amd64,source")
     monkeypatch.setenv("DEBKIT_INDICES_EXCLUDE", "*/dep11/*")
+    monkeypatch.setenv("DEBKIT_SOURCE_URL", "fs:///src dist main")
 
     ns = parse_cli(["--target-url", "fs:///tmp dist main", command])
 
@@ -289,11 +313,17 @@ def test_parse_cli_skip_verify_rejects_an_unknown_env_value(
 
 def test_parse_cli_sync_allow_release_rollback(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
-        parse_cli(["--target-url", "fs:///tmp dist main", "sync"]).allow_release_rollback is False
+        parse_cli(["--target-url", "fs:///tmp dist main", "sync", *_SOURCE]).allow_release_rollback
+        is False
     )
     monkeypatch.setenv("DEBKIT_ALLOW_RELEASE_ROLLBACK", "1")
-    assert parse_cli(["--target-url", "fs:///tmp dist main", "sync"]).allow_release_rollback is True
-    ns = parse_cli(["--target-url", "fs:///tmp dist main", "sync", "--no-allow-release-rollback"])
+    assert (
+        parse_cli(["--target-url", "fs:///tmp dist main", "sync", *_SOURCE]).allow_release_rollback
+        is True
+    )
+    ns = parse_cli(
+        ["--target-url", "fs:///tmp dist main", "sync", *_SOURCE, "--no-allow-release-rollback"]
+    )
     assert ns.allow_release_rollback is False
 
 

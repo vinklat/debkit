@@ -63,6 +63,19 @@ def export_public_key(home: Path) -> bytes:
     return _gpg(home, "--armor", "--export")
 
 
+def import_keys(home: Path, keyring: str, keys: bytes) -> None:
+    """Import armored `keys` into the keyring file `keyring` of `home`."""
+    _gpg(home, "--no-default-keyring", "--keyring", keyring, "--import", data=keys)
+
+
+def sign_with_key_block(home: Path, data: bytes) -> bytes:
+    """Clearsign `data` with the key of `home`, embedding that key in the signature.
+
+    The gpg CLI exits non-zero when it creates no signature, so a failed sign fails here.
+    """
+    return _gpg(home, "--clearsign", "--include-key-block", data=data)
+
+
 def stop_gpg_agent(home: Path) -> None:
     """Stop the agent and dirmngr `home` started, so no process outlives the test session."""
     subprocess.run(

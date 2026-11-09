@@ -19,9 +19,12 @@ CLEARSIGN_BEGIN = "-----BEGIN PGP SIGNED MESSAGE-----"
 SIGNATURE_BEGIN = "-----BEGIN PGP SIGNATURE-----"
 SIGNATURE_END = "-----END PGP SIGNATURE-----"
 ARMOR_HEADER_RE = re.compile(r"[A-Za-z]+: ")
-# Only the trusted keyring authenticates: a home's gpg.conf may neither fetch a missing signer's
-# key nor import one the signature carries, and so trust it -> [CRYPTO.md](CRYPTO.md#gpg).
-GPG_OPTIONS = ["--no-auto-key-retrieve", "--no-auto-key-locate", "--no-auto-key-import"]
+# No gpg run fetches, locates, or imports a key, whatever a config file says; for verify this
+# backs up `VERIFY_ARGS`, which already skips gpg.conf -> [CRYPTO.md](CRYPTO.md#gpg).
+GPG_OPTIONS = ("--no-auto-key-retrieve", "--no-auto-key-locate", "--no-auto-key-import")
+# Verify reads no gpg.conf, whose `keyring` lines would add keys that authenticate; signing still
+# reads it for `default-key` -> [CRYPTO.md](CRYPTO.md#gpg).
+VERIFY_ARGS = ("--no-options",)
 
 
 class GPGVerifyException(Exception):
@@ -104,7 +107,7 @@ class GnuPG:
     """Object for GPG signatures operations.
 
     Attributes:
-        gpg: The GPG object.
+        gnupg: The python-gnupg `GPG` object.
         passphrase: The passphrase for the signing key; None when empty.
         sign_key: The key that signs, a fingerprint, key ID, or user ID; None leaves the
             choice to gpg.
@@ -158,7 +161,7 @@ class GnuPG:
         """
         if detach_sign is None:
             # data should be from InRelease
-            verified = self.gnupg.verify(data)
+            verified = self.gnupg.verify(data, extra_args=list(VERIFY_ARGS))
         else:
             # python-gnupg's `verify_data` reads the detached signature from a path, so it is
             # staged in a file closed before gpg opens it and removed when the context exits,
@@ -167,7 +170,7 @@ class GnuPG:
                 tmp.write(detach_sign)
                 tmp.close()
                 try:
-                    verified = self.gnupg.verify_data(tmp.name, data)
+                    verified = self.gnupg.verify_data(tmp.name, data, extra_args=list(VERIFY_ARGS))
                 except AttributeError as exc:
                     raise GPGVerifyException("GPG gnupg_home data error.") from exc
 

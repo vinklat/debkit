@@ -40,7 +40,9 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 | Root Release save in `READ_SIGNED_UNVERIFIED` | Nothing signs it, and an unsigned save would drop the signatures it was read with → `ReleaseWriteException` (Write), before anything is written. |
 | Signing key | `--gnupg-sign-key` names it; unset, gpg picks `default-key` from the home's `gpg.conf`, else the first key in the trusted keyring whose secret the home holds. A key gpg cannot use creates no signature, refused as below. |
 | `sign(data, detach=False)` | Returns the signature (inline or detached) used when writing Release metadata; empty when gpg reports none created, as on a wrong passphrase, even though a failed clearsign prints its armor, and `Release.save` refuses an empty one → `ReleaseWriteException` (Write). |
-| Key retrieval | gpg runs with `--no-auto-key-retrieve`, `--no-auto-key-locate`, and `--no-auto-key-import`, so a home's `gpg.conf` can neither fetch a missing signer's key nor import one the signature carries; only the trusted keyring authenticates. |
+| Key retrieval | gpg runs with `--no-auto-key-retrieve`, `--no-auto-key-locate`, and `--no-auto-key-import`, so no gpg run fetches, locates, or imports a key, whatever a config file says; for verify they back up `--no-options` below. |
+| Verify and `gpg.conf` | Verify runs with `--no-options`, so a `keyring` or `primary-keyring` line in the home's `gpg.conf` adds no key that authenticates; only the trusted keyring does. |
+| gpg version | `--no-auto-key-import` needs the GnuPG minimum → [SETUP.md](SETUP.md#prerequisites-and-install); an older gpg rejects it when `GnuPG` opens, before any verify or sign → `GPGVerifyException` (Read). |
 | Keyring cannot be loaded | → `GPGVerifyException` (Read). |
 | The `gpg` binary cannot be run | python-gnupg raises `OSError` → `GPGVerifyException` (Read). |
 | Invalid signature or malformed signed message | → `GPGVerifyException` (Read). |

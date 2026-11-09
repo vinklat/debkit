@@ -60,12 +60,13 @@ def _make_action(*, storage: object = None) -> ActionSync:
     action.indices_only = False
     action.allow_release_rollback = False
     action.history_retention = HistoryRetention(max_age_days=0)
+    action.source_url = "fs:///src"
+    action.target_url = "s3:///tgt"
 
     # autospecced, so a renamed `Repo*` method or a changed signature fails here as well;
     # the instance attributes `__init__` sets are set by hand
     source = create_autospec(RepoSync, instance=True)
     source.params = MagicMock(spec=make_params())
-    source.params.url = "fs:///src"
     source.params.verify_gpg = True
     source.release = MagicMock(spec=RootRelease(MagicMock(), make_params()))
     source.release.content_sha256 = "hash1"
@@ -79,7 +80,6 @@ def _make_action(*, storage: object = None) -> ActionSync:
 
     target = create_autospec(RepoRW, instance=True)
     target.params = MagicMock(spec=make_params())
-    target.params.url = "s3:///tgt"
     target.release = MagicMock(spec=RootRelease(MagicMock(), make_params()))
     target.storage = storage if storage is not None else MagicMock()
     action.target_repo = target
@@ -147,14 +147,14 @@ def test_sync_logs_the_repository_urls_without_their_credentials(
 ) -> None:
     """URL userinfo is a secret -> CONFIG.md#secrets."""
     action = _make_action(storage=TxnStorageStub())
-    _source(action).params.url = "https://u:s3cr3tpw@host/debian"
-    _target(action).params.url = "s3://k:s3cr3tpw@host/bucket"
+    action.source_url = "https://u:s3cr3tpw@host/debian bookworm main"
+    action.target_url = "s3://k:s3cr3tpw@host/bucket bookworm main"
 
     with caplog.at_level(logging.DEBUG):
         action.sync()
 
-    assert "Load source repo (https://***@host/debian)" in caplog.text
-    assert "Load target repo (s3://***@host/bucket)" in caplog.text
+    assert "Load source repo (https://***@host/debian bookworm main)" in caplog.text
+    assert "Load target repo (s3://***@host/bucket bookworm main)" in caplog.text
     assert all("s3cr3tpw" not in rec.getMessage() for rec in caplog.records)
 
 
@@ -345,6 +345,8 @@ def _fs_action(
     action.indices_only = False
     action.allow_release_rollback = False
     action.history_retention = HistoryRetention(max_age_days=0)
+    action.source_url = "fs:///source"
+    action.target_url = "fs:///target"
     action.source_repo = RepoSync(
         source_storage, RepoParams("bookworm", ["main"], ["amd64"]), gpg=gpg
     )

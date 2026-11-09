@@ -14,7 +14,7 @@ from argparse import Namespace
 from collections.abc import Iterable
 from functools import partial
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
 from txstore import Storage, StorageMetrics, StorageType
 
@@ -211,9 +211,11 @@ def _attach_state(
             reports none, as a repo whose parse discovered no index would.
     """
     # `spec=Release` so the ownership gate's isinstance check sees a Release
-    repo.release = MagicMock(spec=Release, name="Release")
-    repo.release.content_sha256 = release_hash or None
-    repo.release.is_loaded = bool(release_hash)
+    release = MagicMock(spec=Release, name="Release")
+    release.content_sha256 = release_hash or None
+    # derived, as the real property is, so a test that unloads it sets content_sha256 alone
+    type(release).is_loaded = PropertyMock(side_effect=lambda: release.content_sha256 is not None)
+    repo.release = release
     paths = indices_paths if indices_paths is not None else ["dists/bookworm/Release"]
     repo.release.get_indices_paths.side_effect = lambda: list(paths)
     repo.release.verify_digests.return_value = False

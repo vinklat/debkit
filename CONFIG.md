@@ -89,7 +89,7 @@ Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither o
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |
-| `--source-url` | `DEBKIT_SOURCE_URL` | `.` | Source storage URL or path → [VALIDATION.md](VALIDATION.md#storage-urls) |
+| `--source-url` | `DEBKIT_SOURCE_URL` | — | Source deb source string → [VALIDATION.md](VALIDATION.md#debian-source-strings) |
 | `--architectures` | `DEBKIT_ARCHITECTURES` | `amd64,arm64` | Comma-separated list; `source` selects source packages → [VALIDATION.md](VALIDATION.md#architectures) |
 | `--indices-exclude` | `DEBKIT_INDICES_EXCLUDE` | empty string | Comma-separated globs of Release-listed index paths to skip → [VALIDATION.md](VALIDATION.md#index-exclude-globs) |
 | `--allow-release-rollback` | `DEBKIT_ALLOW_RELEASE_ROLLBACK` | off | Skips the Release freshness checks → [CRYPTO.md](CRYPTO.md#release-freshness) |

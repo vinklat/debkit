@@ -115,7 +115,6 @@ class RepoParams:
         indices_exclude: Globs of Release-listed index paths to skip.
         verify_gpg: Whether to verify GPG signature of root Release file.
         verify_digests: Whether to verify hex digests like SHA256, SHA512,...
-        url: The URL of the repository.
         is_flat: Whether the repository is flat. Default: False (repo with components).
     """
 
@@ -145,7 +144,6 @@ class RepoParams:
         self.indices_exclude = indices_exclude
         self.verify_gpg = verify_gpg
         self.verify_digests = verify_digests
-        self.url: str | None = None
         self.is_flat = False
 
     def from_deb_source(self, deb_source: str | None) -> str:
@@ -155,7 +153,7 @@ class RepoParams:
             deb_source: The deb source string to extract attributes from; None is refused.
 
         Returns:
-            The source URL, also kept as `url`.
+            The source URL, which opens the storage.
 
         Raises:
             RepoParamsException: If the deb source string is invalid.
@@ -173,7 +171,6 @@ class RepoParams:
             )
 
         url, self.dist, *components = parts
-        self.url = url
         # a flat dist names a directory only when it is a real dist, which is alphanumeric
         for name in (self.dist, *components) if components else ():
             if not is_safe_name(name):

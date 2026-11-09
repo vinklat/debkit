@@ -2,8 +2,8 @@
 
 `tests/test_gnupg.py` mocks python-gnupg; these cases prove what only gpg decides: a signature
 covers every line of the data, a changed byte or an unknown signer fails, the passphrase reaches
-the key, a home's `gpg.conf` cannot fetch a signer's key, and the framing gpg accepts but debkit
-refuses is refused.
+the key, a home's `gpg.conf` cannot make gpg trust a signer outside the keyring, and the framing
+gpg accepts but debkit refuses is refused.
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ from helpers.gpg import (
     KEYRING,
     add_signing_key,
     export_public_key,
+    import_keys,
     make_gpg_home,
     requires_gpg,
+    sign_with_key_block,
     stop_gpg_agent,
 )
 from txstore import StorageFS
@@ -200,7 +202,7 @@ def test_gnupg_verify_refuses_two_concatenated_signed_messages(homes: dict[str, 
     gpg = _gnupg(homes["signer"])
     signed = gpg.sign(_DATA).encode()
 
-    with pytest.raises(GPGVerifyException):
+    with pytest.raises(GPGVerifyException, match=f"{_BAD_SIGNATURE}|unsigned data after"):
         gpg.verify(signed + signed)
 
 
@@ -239,27 +241,25 @@ def test_release_load_refuses_a_release_signed_outside_the_keyring(
         loaded.load()
 
 
-class _KeyServer(http.server.BaseHTTPRequestHandler):
-    """An HKP keyserver answering every lookup with one armored key."""
-
-    key = b""
-
-    def do_GET(self) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", "application/pgp-keys")
-        self.send_header("Content-Length", str(len(self.key)))
-        self.end_headers()
-        self.wfile.write(self.key)
-
-    def log_message(self, *args: object) -> None:
-        pass
-
-
 @pytest.fixture
 def key_server(homes: dict[str, Path]) -> Iterator[str]:
-    """A local keyserver serving the outsider's public key; yields its `hkp://` URL."""
-    handler = type("Handler", (_KeyServer,), {"key": export_public_key(homes["other"])})
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    """A local HKP keyserver serving the outsider's public key; yields its `hkp://` URL."""
+    key = export_public_key(homes["other"])
+
+    class KeyServer(http.server.BaseHTTPRequestHandler):
+        """Answers every lookup with the one armored key."""
+
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pgp-keys")
+            self.send_header("Content-Length", str(len(key)))
+            self.end_headers()
+            self.wfile.write(key)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), KeyServer)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -269,46 +269,58 @@ def key_server(homes: dict[str, Path]) -> Iterator[str]:
         server.server_close()
 
 
+def _assert_only_the_options_refuse(signed: bytes, gpg_conf: str, extra_keys: bytes = b"") -> None:
+    """`GnuPG` refuses `signed` in a fresh home with `gpg_conf`, where plain gpg verifies it.
+
+    The plain gpg run on the same keyring is the positive control: without debkit's options the
+    home does trust the signer, so the refusal is the options' doing, not an unreachable keyserver
+    or a bad message.
+    `extra_keys` go into the home's `extra.gpg`, a keyring only `gpg_conf` can name.
+    """
+    # a failed sign returns nothing, which would fail the verify below for the wrong reason
+    assert signed.startswith(b"-----BEGIN PGP SIGNED MESSAGE-----")
+    with tempfile.TemporaryDirectory(prefix="dkgpg") as root:
+        home = Path(root) / "h"
+        try:
+            make_gpg_home(home, "verifier")
+            if extra_keys:
+                import_keys(home, "extra.gpg", extra_keys)
+            (home / "gpg.conf").write_text(gpg_conf)
+            keyring = (home / KEYRING).read_bytes()
+
+            with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+                _gnupg(home).verify(signed)
+
+            assert (home / KEYRING).read_bytes() == keyring
+            probe = gnupg.GPG(gnupghome=str(home), keyring=KEYRING).verify(signed)
+            assert probe.valid, probe.stderr
+        finally:
+            stop_gpg_agent(home)
+
+
 def test_gnupg_verify_never_retrieves_a_missing_signer_key(
     homes: dict[str, Path], key_server: str
 ) -> None:
     """Regression: a home's `auto-key-retrieve` imported the signer's key and verified it."""
     signed = _gnupg(homes["other"]).sign(_DATA).encode()
-    assert signed.startswith(b"-----BEGIN PGP SIGNED MESSAGE-----")
-    with tempfile.TemporaryDirectory(prefix="dkgpg") as root:
-        home = make_gpg_home(Path(root) / "r", "retriever")
-        (home / "gpg.conf").write_text(f"keyserver {key_server}\nauto-key-retrieve\n")
-        try:
-            keyring = (home / KEYRING).read_bytes()
 
-            with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
-                _gnupg(home).verify(signed)
-
-            assert (home / KEYRING).read_bytes() == keyring
-            # the home does fetch the key for a gpg run without debkit's options, so the
-            # refusal above is the options' doing, not an unreachable keyserver
-            assert gnupg.GPG(gnupghome=str(home), keyring="probe.gpg").verify(signed)
-        finally:
-            stop_gpg_agent(home)
+    _assert_only_the_options_refuse(signed, f"keyserver {key_server}\nauto-key-retrieve\n")
 
 
 def test_gnupg_verify_never_imports_a_key_the_signature_carries(homes: dict[str, Path]) -> None:
     """Regression: a home's `auto-key-import` trusted a signer whose key the message embeds."""
-    signed = str(
-        _gnupg(homes["other"]).gnupg.sign(_DATA, extra_args=["--include-key-block"])
-    ).encode()
-    assert signed.startswith(b"-----BEGIN PGP SIGNED MESSAGE-----")
-    with tempfile.TemporaryDirectory(prefix="dkgpg") as root:
-        home = make_gpg_home(Path(root) / "i", "importer")
-        (home / "gpg.conf").write_text("auto-key-import\n")
-        try:
-            keyring = (home / KEYRING).read_bytes()
+    signed = sign_with_key_block(homes["other"], _DATA)
 
-            with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
-                _gnupg(home).verify(signed)
+    _assert_only_the_options_refuse(signed, "auto-key-import\n")
 
-            assert (home / KEYRING).read_bytes() == keyring
-            # the home does import the embedded key for a gpg run without debkit's options
-            assert gnupg.GPG(gnupghome=str(home), keyring="probe.gpg").verify(signed)
-        finally:
-            stop_gpg_agent(home)
+
+@pytest.mark.parametrize("option", ["keyring", "primary-keyring"])
+def test_gnupg_verify_ignores_a_keyring_the_home_gpg_conf_adds(
+    homes: dict[str, Path], option: str
+) -> None:
+    """Regression: a keyring a home's `gpg.conf` named authenticated its keys too."""
+    signed = _gnupg(homes["other"]).sign(_DATA).encode()
+
+    _assert_only_the_options_refuse(
+        signed, f"{option} extra.gpg\n", extra_keys=export_public_key(homes["other"])
+    )

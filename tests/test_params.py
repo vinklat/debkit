@@ -24,7 +24,6 @@ def test_componented_source_parses() -> None:
     assert p.from_deb_source("https://example.com/debian bookworm main contrib") == (
         "https://example.com/debian"
     )
-    assert p.url == "https://example.com/debian"
     assert p.dist == "bookworm"
     assert p.components == ["main", "contrib"]
     assert p.is_flat is False
@@ -33,8 +32,7 @@ def test_componented_source_parses() -> None:
 
 def test_flat_source_parses() -> None:
     p = RepoParams()
-    p.from_deb_source("https://example.com/debian /")
-    assert p.url == "https://example.com/debian"
+    assert p.from_deb_source("https://example.com/debian /") == "https://example.com/debian"
     assert p.dist == "/"
     assert p.components is None
     assert p.is_flat is True
@@ -62,9 +60,9 @@ def test_parse_logs_the_source_url_without_its_credentials(
     """URL userinfo is a secret -> CONFIG.md#secrets."""
     p = RepoParams()
     with caplog.at_level(logging.DEBUG, logger="debkit.repo.params"):
-        p.from_deb_source(f"https://u:{_SECRET}@host/debian bookworm main")
+        url = p.from_deb_source(f"https://u:{_SECRET}@host/debian bookworm main")
 
-    assert p.url == f"https://u:{_SECRET}@host/debian"
+    assert url == f"https://u:{_SECRET}@host/debian"
     assert "url=https://***@host/debian" in caplog.text
     assert all(_SECRET not in rec.getMessage() for rec in caplog.records)
 

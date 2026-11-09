@@ -90,6 +90,8 @@ class ActionSync(Action):
 
     Attributes:
         source_repo: The repository the sync reads.
+        source_url: The source deb source string; logged only through `redact_url`.
+        target_url: The target deb source string; logged only through `redact_url`.
     """
 
     source_repo: RepoSync
@@ -110,6 +112,8 @@ class ActionSync(Action):
         self.verify_existing: bool = pars.verify_existing
         self.indices_only: bool = pars.indices_only
         self.allow_release_rollback: bool = pars.allow_release_rollback
+        self.source_url: str = pars.source_url
+        self.target_url: str = pars.target_url
 
         # the source, then the target, each with the selection applied
         logger.debug("Prepare source URL: %s", redact_url(pars.source_url))
@@ -160,19 +164,14 @@ class ActionSync(Action):
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             # a peer may commit before `history_lock` is granted, so the target every pass
             # plans and floors against is read under it -> txstore locking rules
-            logger.info(
-                "---------- Load target repo (%s)...", redact_url(self.target_repo.params.url or "")
-            )
+            logger.info("---------- Load target repo (%s)...", redact_url(self.target_url))
             run_floor = self._load_target()
             # the report compares against the target as this run found it
             target_before = self.target_repo.snapshot()
             if self.verify_existing:
                 self._verify_existing(self.target_repo)
 
-            logger.info(
-                "---------- Load source repo (%s)...",
-                redact_url(self.source_repo.params.url or ""),
-            )
+            logger.info("---------- Load source repo (%s)...", redact_url(self.source_url))
             self.source_repo.load(IndexLoad.STRICT)
             self._check_fresh(run_floor)
             self._sync_until_settled(run_floor)
@@ -197,10 +196,10 @@ class ActionSync(Action):
         for _ in range(MAX_UPDATED_REPO_RETRIES - 1):
             if not self._sync_pass():
                 return
-            synced_hash = self.source_repo.release.content_sha256
+            synced_sha256 = self.source_repo.release.content_sha256
             logger.info("---------- Retrieve load to verify source repo changes...")
             self.source_repo.load(IndexLoad.STRICT)
-            if self.source_repo.release.content_sha256 == synced_hash:
+            if self.source_repo.release.content_sha256 == synced_sha256:
                 return
             logger.info("Source repo modified during synchronisation! Repeat sync...")
             # reads go through the transaction, so the target now describes the bytes the
@@ -330,9 +329,10 @@ class ActionSync(Action):
             "--source-url",
             env="DEBKIT_SOURCE_URL",
             dest="source_url",
-            help="source repository URL or filesystem path; schemes: "
-            f"{', '.join(get_supported_schemes())} (example: s3://endpoint/bucket/prefix)",
-            default=".",
+            help="source repository 'URL DIST [COMPONENT ...]'; URL is a filesystem path or uses "
+            f"one of the schemes {', '.join(get_supported_schemes())} "
+            "(example: 'https://deb.debian.org/debian bookworm main')",
+            required=True,
         )
 
         parser.add_env_argument(

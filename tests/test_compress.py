@@ -372,14 +372,15 @@ def test_zstd_decompress_real_decoder_round_trips() -> None:
 
 
 @requires_binary("zstd")
-@pytest.mark.parametrize(
-    "encoded",
-    [lambda: _zstd(_DATA)[:-8], lambda: b"not a zstd frame" * 4],
-    ids=["truncated", "garbage"],
-)
-def test_zstd_decompress_real_decoder_refuses_a_bad_frame(encoded: Callable[[], bytes]) -> None:
+def test_zstd_decompress_real_decoder_refuses_a_truncated_frame() -> None:
     with pytest.raises(CorruptStreamError, match="exited with status"):
-        zstd_decompress(encoded(), len(_DATA))
+        zstd_decompress(_zstd(_DATA)[:-8], len(_DATA))
+
+
+@requires_binary("zstd")
+def test_zstd_decompress_real_decoder_refuses_garbage() -> None:
+    with pytest.raises(CorruptStreamError, match="exited with status"):
+        zstd_decompress(b"not a zstd frame" * 4, len(_DATA))
 
 
 @requires_binary("zstd")
