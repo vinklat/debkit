@@ -39,10 +39,11 @@ storage → [STYLE.md](STYLE.md#layers).
 
 | Rule | Behavior |
 | -- | -- |
-| Scope | `insert`, `remove`, `sync`, and `check --fix` run their writes inside one `maybe_transaction`; `sync --verify-existing` deletes and records payload digests inside the sync's transaction. The read-only commands record nothing. |
+| Scope | `insert`, `remove`, `sync`, and `check --fix` run their writes inside one `maybe_transaction`; `sync --verify-existing` deletes inside the sync's transaction. The read-only commands record nothing. |
 | Load | Every write command reads its target inside the transaction, after `history_lock` is granted, so a peer's commit is never saved over from a stale read. |
 | Retention | `Action.__init__` builds `HistoryRetention.from_env(keep=..., max_age_days=...)` from `--history-keep` and `--history-max-age` and passes it to `maybe_transaction`, so a recorded write prunes expired history → [CONFIG.md](CONFIG.md#global-flags). |
 | Non-transactional target | An HTTP target runs the body without a transaction or history. |
+| Digest metadata | `RepoRW.record_digests` stores a payload's digests as its object metadata on every sync transfer, for a held payload read back as the source's bytes, and for each valid payload under `check --fix` and `sync --verify-existing`; a later sync skips a held payload whose metadata matches. |
 | Failure | The body's exception propagates after txstore discards the staged footmarks; a partial commit on an unreachable backend is repaired by re-running `sync --verify-existing`. |
 
 ## History commands
@@ -54,7 +55,7 @@ storage → [STYLE.md](STYLE.md#layers).
 | `log` | Lists `{id, timestamp}` records in file order; `-o json` prints the array as the history file stores it. |
 | `revert` | Reverts the latest recorded transaction; empty history → `ActionException` (Generic). `--dry-run` names it without reverting. |
 | `prune` | Applies the retention policy above; `--orphans` also reclaims footmarks of no recorded transaction; `--dry-run` reports the same paths without deleting. |
-| Storage failure | `StorageException`, including a malformed history file, is re-raised as `ActionException` (Generic). |
+| Storage failure | `StorageException`, including a malformed history file → `ActionException` (Generic). |
 
 ## Maintenance
 

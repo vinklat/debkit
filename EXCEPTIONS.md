@@ -9,7 +9,8 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 - Define an exception in the module that owns the failure. A txstore class is imported from its
   façade and grouped by `cli.py` like any domain class; its raising conditions are txstore's.
 - Preserve the original cause with `raise ... from exc` when wrapping.
-- Catch broad exceptions only at the CLI boundary; only `cli.py` groups exceptions and exits.
+- Catch broad exceptions only at the CLI boundary; only `cli.py` groups exceptions, and it exits →
+  [STYLE.md](STYLE.md#layers).
 - Contracts write failures as `condition → ExceptionClass (group)` using the groups below.
 
 ## Domain exceptions
@@ -32,7 +33,7 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | `RepoParamsException` | `repo/params.py` | Invalid deb source or params |
 | `GPGVerifyException` | `repo/gnupg.py` | GPG verification or keyring failure |
 | `ChecksumException` | `repo/hashes.py` | Digest mismatch or distrustful object |
-| `StorageException` | `txstore` | Backend failure; at construction, including a missing S3 credential, re-raised as `RepoReadException` for `--target-url` and `--source-url` → [STORAGE.md](STORAGE.md#construction) |
+| `StorageException` | `txstore` | Backend failure; its remapping at construction → [STORAGE.md](STORAGE.md#construction) |
 | `StorageNotFoundException` | `txstore` | Object missing on `get` / `get_stream`; subclass of `StorageException` |
 
 ## CLI exit groups
@@ -61,10 +62,10 @@ Exits outside the groups:
 
 | Condition | Result |
 | -- | -- |
-| `remove` matches no package | `RepoRW.remove_pkg` returns `False`; `ActionPkg.remove` raises `ActionException` (Generic). |
+| `remove` matches no package | `RepoRW.remove_pkg` returns `False` → `ActionException` (Generic). |
 | `insert` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: a new repository is set up; any other `ReleaseReadException` (Read) stops the run, so an existing repository is never set up again. |
 | `sync` or `check` target without a root `Release` or `InRelease` | `ReleaseNotFoundException` only: `sync` treats the target as empty, `check` reports it inconsistent; any other `ReleaseReadException` (Read) stops the run. |
-| Release file cannot be signed, or no `GnuPG` signs a root Release read with GPG verification on | `ReleaseWriteException` (Write). |
+| Release save that cannot be signed → [CRYPTO.md](CRYPTO.md#gpg) | `ReleaseWriteException` (Write). |
 | Release file cannot be put | `StorageException` (Generic). |
 | `log` / `revert` / `prune` failures | → [STORAGE.md](STORAGE.md#history-commands) |
 | A storage URL txstore refuses | → [VALIDATION.md](VALIDATION.md#storage-urls) |

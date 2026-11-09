@@ -25,7 +25,8 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 
 | Operation | Behavior |
 | -- | -- |
-| `cleartext_body(data)` | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else. Works on bytes, so the body keeps its encoding. |
+| `cleartext_body(data)` | The signed body of one cleartext message as gpg canonicalizes it, without checking the signature: trailing spaces, tabs, and CR stripped from every line, each line newline-terminated, armor headers dropped, dash-escaping undone. gpg authenticates nothing else. |
+| `cleartext_body` encoding | Works on bytes, so the body keeps its encoding. |
 | `canonical_text(data)` | `data` with the line canonicalization of `cleartext_body`, so a detached `Release` compares with an `InRelease` body. |
 | `verify(data)` | Inline `InRelease` verification; returns `cleartext_body(data)`. |
 | `verify(data, detach_sign)` | Detached `Release` + `Release.gpg` verification; returns `data`. The signature is staged in a `tempfile.NamedTemporaryFile` removed when its context exits, even when staging it fails, because `python-gnupg` needs a path on disk. |
@@ -113,10 +114,12 @@ what an older Release no longer lists.
 | Path | Failure |
 | -- | -- |
 | `sync` transfer digest mismatch | Target object deleted, then `ChecksumException` (Distrustful); the surrounding transaction discards every staged footmark → [STORAGE.md](STORAGE.md#transactions). |
-| `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed. An unfixed error exits `Repository is not consistent.` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
-| `sync --verify-existing` payload digest mismatch | Logged and deleted inside the sync's transaction; the sync copies it again. Nothing is raised. |
+| `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed unless another dist sharing the root may record its bytes → [VALIDATION.md](VALIDATION.md#index-selection). An unfixed error fails the check → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
+| `sync --verify-existing` payload digest mismatch | Logged and, under the same shared-root rule, deleted inside the sync's transaction, so the sync copies it again. |
+| `sync --verify-existing` kept payload | A corrupt payload the shared-root rule keeps is logged as not deleted; overwriting it follows the shared-root replace rule → [VALIDATION.md](VALIDATION.md#index-selection). |
 | `insert` `.changes` file | A `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
-| `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off, before the pool object rule → [VALIDATION.md](VALIDATION.md#filename-safety); a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
+| `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off, before the pool object rule → [VALIDATION.md](VALIDATION.md#filename-safety); a mismatch → `ChecksumException` (Distrustful). |
+| `insert --changes-filename` payload mismatch | The transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | Parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. |
 | `insert` trust in the incoming storage | Trusted like `--deb-filename` input: whoever can write it can publish, since an unpinned `.changes` only shows the upload is consistent with itself. Pin `--changes-sha256` from a channel the uploader cannot write; uploader signatures → [ROADMAP.md](ROADMAP.md#ideas). |

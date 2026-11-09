@@ -9,7 +9,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | -- | -- |
 | `src/debkit/__init__.py` | `__version__`, read from the installed distribution → [SETUP.md](SETUP.md#release). |
 | `src/debkit/__main__.py` | `python -m debkit` entry. |
-| `src/debkit/cli.py` | Entry point (`debkit` console script); the only `sys.exit` caller → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
+| `src/debkit/cli.py` | Entry point (`debkit` console script); exit groups → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups); the only `sys.exit` caller → [STYLE.md](STYLE.md#layers). |
 | `src/debkit/argparser.py` | `build_parser()`, `parse_cli()`, the global and S3 flags → [CONFIG.md](CONFIG.md). |
 | `src/debkit/argtypes.py` | CLI type converters for flags and their variables → [VALIDATION.md](VALIDATION.md#principles). |
 | `src/debkit/_options.py` | `EnvArgumentParser`: options that fall back to a `DEBKIT_*` variable, then a default → [CONFIG.md](CONFIG.md#resolution). |
@@ -34,7 +34,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/changes.py` | `.changes` parsing. |
 | `src/debkit/repo/stanza.py` | `parse_stanza()`: a single-paragraph control file read through the email parser → [VALIDATION.md](VALIDATION.md#blank-lines). |
 | `src/debkit/repo/debfile.py` | `.deb` introspection. |
-| `src/debkit/repo/compress.py` | Index codecs, whose decoders stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` and `zstd_decompress()` read and decode up to a size limit → [VALIDATION.md](VALIDATION.md#object-sizes). |
+| `src/debkit/repo/compress.py` | Index codecs that stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` and `zstd_decompress()` cap a read or decode → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | `src/debkit/repo/gnupg.py` | GPG sign/verify wrapper → [CRYPTO.md](CRYPTO.md#gpg). |
 | `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `parse_size()`, `has_sha()`, `HexDigests`, `ChecksumException`; re-exports txstore's algorithm-name lists → [CRYPTO.md](CRYPTO.md#checksums). |
 | `tests/` | Test suite → [TESTING.md](TESTING.md#file-layout). |

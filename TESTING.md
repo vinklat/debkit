@@ -67,11 +67,8 @@ not copied here.
 | Sync index Release skip | The Release-block skip with its metadata fallback → [VALIDATION.md](VALIDATION.md#index-selection) is asserted from both sides. |
 | Sync index recovery | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync. |
 | Sync shared root keep | On a real target root holding another dist, a sync and `check --fix` keep its tree and the payloads it lists → [VALIDATION.md](VALIDATION.md#index-selection). |
-| Sync shared root corrupt payload | `check --fix` deletes a corrupt payload only when no index of any other dist records its bytes and none records it without a SHA digest → [VALIDATION.md](VALIDATION.md#index-selection). |
-| Sync shared root payload replace | On a real target root where another dist pins other bytes at a held pool key, or does not load, the sync raises before any transfer and both dists' bytes and Releases stay → [VALIDATION.md](VALIDATION.md#index-selection). |
-| Sync shared root payload replace pass | The sync overwrites a held pool key another dist records with the source's bytes, and keeps without a copy one already holding the source's bytes while another dist does not load → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Sync shared root rules | The shared-root corrupt-payload, payload-replace (each refusal cause), held-bytes, and unknown rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted on a real target root, success and failure. |
 | Sync shared root purge | Only the own tree is purged while another dist's index is corrupt or missing, its only Release form is malformed, or its name is not safe → [VALIDATION.md](VALIDATION.md#index-selection). |
-| Shared root unknown | Another dist whose index read fails, whose Release holds an unreadable line, or whose stanza lacks `Filename` leaves the claims incomplete and is logged → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Insert pool object refusal | On a real root, an insert whose pool key another dist, or another arch's upload of the same file name, holds with different bytes is refused and leaves the held bytes → [VALIDATION.md](VALIDATION.md#filename-safety). |
 | Insert pool object pass | Identical bytes into another dist pass, and so does a re-insert after `check --fix` deleted a corrupt object no index records → [VALIDATION.md](VALIDATION.md#filename-safety). |
 | Remove shared root | On a real root holding another dist, `remove` keeps a payload it lists, deletes one only the own dist lists, and keeps every payload while its index is missing → [VALIDATION.md](VALIDATION.md#index-selection). |
@@ -106,6 +103,8 @@ surface rather than a single module:
 | `test_package.py` | Package contracts → [Package contracts](#package-contracts). |
 | `test_repo_package.py` | `repo/package.py`. |
 | `test_hashes.py` | `repo/hashes.py`: hash-block parsing and `HexDigests`. |
+| `test_repo_rw.py` | `repo/repo_rw.py`, and `repo/shared_root.py`, whose claims and reconciliation lists `RepoRW` exposes. |
+| `test_logging.py` | `_logging.py`, and `_escape.py` through the plain log lines. |
 | `test_action_history.py` | `log` / `revert` / `prune` wiring: brief and JSON output, dry run, guards. |
 | `test_check_docs.py` | Contract-doc checker, loaded from `scripts/check_docs.py` by path. |
 | `test_render_diagrams.py` | Diagram renderer and freshness check, loaded from `scripts/render_diagrams.py` by path. |

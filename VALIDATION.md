@@ -71,7 +71,9 @@ Built by `RepoParams.indices_path()` from the layout prefix, component, and inne
 | Flat component | A flat layout has one component slot: the first safe `Components` token, `/` when its Release names none; further tokens are dropped and logged. Insert joins it whatever `--component` says. |
 | Flat Components field | A new flat repository is set up without `Components`; a save never rewrites the field, so a loaded one is kept. |
 | Flat pool key | `--component` still names the pool key of a flat insert → [Filename safety](#filename-safety). |
-| Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. `stats` and `dump` report a flat arch slot as its arch and `all` packages, as a componented `binary-<arch>/` index lists them; a package with no `Architecture` is in every slot. |
+| Flat index | Every arch slot of a flat component shares one `Packages` container, and one `Sources` container, since the layout names one file whatever the arch; it is saved once. |
+| Flat index report | `stats` and `dump` report a flat arch slot as its arch and `all` packages, as a componented `binary-<arch>/` index lists them. |
+| Flat arch-less package | A package with no `Architecture` is in every flat arch slot. |
 | Flat payload plan | A flat sync copies its one index whole, so the package diff and the payload plan read the whole index whatever `--architectures` selects. |
 | Release key | `RepoParams.release_key()` inverts the layout prefix: it strips exactly what `indices_path()` prepends |
 
@@ -97,7 +99,9 @@ per entry by its transfer; the source is never probed.
 | Compression forms | Every compression of an index the Release lists is its own entry, uncompressed included; the rules above never prefer one form, so the mirror serves every form its signed Release names | — |
 | Unpublished entry | A selected path the source does not publish stays in the set, so it is never purged from the target | — |
 | Payload deletion | A payload dropped from one source index is deleted from the target only when no selected source index still lists it, so a shared `all` payload survives its removal from one architecture | — |
-| Shared root | A componented root may hold other dists beside the own one, sharing `pool/`: a sync, `check --fix`, or `remove` never deletes a path under another `dists/<dist>/`, nor a payload another dist's index lists, except a corrupt one under the next row; no source payload key lands under `dists/` → [Filename safety](#filename-safety) | — |
+| Shared root | A componented root may hold other dists beside the own one, sharing `pool/`: a sync, `check --fix`, or `remove` never deletes a path under another `dists/<dist>/` | — |
+| Shared root payload | A sync, `check --fix`, or `remove` never deletes a payload another dist's index lists, except a corrupt one under the corrupt-payload row | — |
+| Shared root payload key | No source payload key lands under `dists/` → [Filename safety](#filename-safety) | — |
 | Shared root payload replace | A sync overwrites a held payload whose stored digests differ from the source only when every index of every other dist that lists it records the source's bytes with a SHA digest; skipping the copy would leave the own Release naming bytes the target lacks | Another dist records other bytes, no SHA digest, or did not load → `RepoSyncException` (Sync), before any transfer |
 | Shared root held bytes | A held payload the replace rule refuses is read back first: bytes that are already the source's have their digests recorded and are kept without a copy, so a neighbour that does not load blocks only a real change | — |
 | Shared root corrupt payload | `check --fix` deletes a payload whose bytes fail the own indices unless a record of it in any index of another dist matches those bytes or carries no SHA digest, which cannot tell; bytes no index records serve no dist, so a later sync or insert places the payload again | — |

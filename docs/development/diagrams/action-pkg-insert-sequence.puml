@@ -17,7 +17,7 @@ opt --changes-filename
     ActionPkg -> ActionPkg: raise ActionException
   end
 end
-ActionPkg -> CM: __enter__(TStor)
+ActionPkg -> CM: __enter__(TStor, history_retention)\n[non-transactional TStor: the body runs alone, nothing below]
 CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
@@ -77,6 +77,7 @@ end
 ActionPkg -> CM: __exit__(None)
 CM -> TStor: transaction_commit()
 CM -> TStor: history.append(model)\n[only if the commit had changes]
+CM -> TStor: prune expired history under the lock\n[retention set; a failure is logged, not raised]
 CM -> TStor: history_lock release
 
 ActionPkg --> Caller: brief / json output

@@ -100,7 +100,7 @@ Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither o
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |
-| `--fix` | none | off | Delete corrupted and orphan files; what another dist sharing the root may need is kept → [VALIDATION.md](VALIDATION.md#index-selection). Record each valid payload's digests as its object metadata, which the sync's held-payload skip reads |
+| `--fix` | none | off | Delete corrupted and orphan files; what another dist sharing the root may need is kept → [VALIDATION.md](VALIDATION.md#index-selection); record each valid payload's digests → [STORAGE.md](STORAGE.md#transactions) |
 
 Also accepts `--architectures` and `--indices-exclude` with the same variables and defaults as
 [Sync](#sync): a check builds its index and package sets the same way a sync does, so other values
