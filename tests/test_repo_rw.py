@@ -422,6 +422,59 @@ def test_check_fix_keeps_a_corrupt_payload_while_another_dist_does_not_load(
     assert (tmp_path / _FOO).exists()
 
 
+def test_check_fix_keeps_a_corrupt_payload_a_second_other_dist_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`sid` loads before `trixie`, so a record the later dist replaced would delete it."""
+    repo = _checked(tmp_path)
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+    monkeypatch.setattr(trees, "payload_bytes", lambda _version: b"sid build")
+    write_dist(tmp_path, "sid", {"foo": "1"})
+
+    assert repo.check(fix=True) == CheckReport([], [], 1, 0)
+    assert (tmp_path / _FOO).read_bytes() == b"sid build"
+
+
+def _record(data: bytes, alg: str) -> str:
+    """A `Packages` stanza field recording `data` under `alg`, or no digest when `alg` is empty."""
+    if alg == "SHA256":
+        return f"SHA256: {hashlib.sha256(data).hexdigest()}\n"
+    if alg == "MD5sum":
+        return f"MD5sum: {hashlib.md5(data).hexdigest()}\n"
+    return ""
+
+
+@pytest.mark.parametrize(
+    ("main_bytes", "contrib_bytes", "contrib_alg"),
+    [
+        (b"deb 1", b"corrupt", "SHA256"),
+        (b"corrupt", b"deb 1", "SHA256"),
+        (b"deb 1", b"corrupt", ""),
+        (b"deb 1", b"corrupt", "MD5sum"),
+    ],
+    ids=["second-index-matches", "first-index-matches", "hashless", "md5-only"],
+)
+def test_check_fix_keeps_a_corrupt_payload_any_index_of_another_dist_vouches_for(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    main_bytes: bytes,
+    contrib_bytes: bytes,
+    contrib_alg: str,
+) -> None:
+    """Every index's record counts, and one without a SHA digest cannot clear the bytes."""
+    repo = _checked(tmp_path)
+    contrib = (
+        f"Package: foo\nVersion: 1\nArchitecture: amd64\nFilename: {_FOO}\n"
+        f"Size: {len(contrib_bytes)}\n{_record(contrib_bytes, contrib_alg)}"
+    ).encode()
+    monkeypatch.setattr(trees, "payload_bytes", lambda _version: main_bytes)
+    write_dist(tmp_path, "trixie", {"foo": "1"}, indices={"contrib/binary-amd64/Packages": contrib})
+    (tmp_path / _FOO).write_bytes(b"corrupt")
+
+    assert repo.check(fix=True) == CheckReport([], [], 1, 0)
+    assert (tmp_path / _FOO).exists()
+
+
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:
     storage = _FaultyFS(str(tmp_path), unreadable=_FOO)
     repo = _checked(tmp_path, storage)
