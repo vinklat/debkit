@@ -100,6 +100,14 @@ def test_sources_parse_record_carries_the_stanza_fields_and_every_digest() -> No
     assert dsc.get_digests() == {"MD5Sum": "1111111111111111", "SHA256": "aaaa"}
 
 
+def test_sources_parse_keeps_the_last_of_a_repeated_field() -> None:
+    """A sloppy mirror still syncs -> VALIDATION.md#repeated-fields."""
+    src = _new_sources()
+    src._parse_indices("Directory: pool/main/x/elsewhere\n" + _STANZA_4)
+
+    assert {path.rsplit("/", 1)[0] for path in src.packages} == {_DIR}
+
+
 def test_sources_parse_keys_a_shared_payload_once_and_counts_files() -> None:
     """Two versions sharing one orig tarball yield one record, and `size` counts files."""
     src = _new_sources()

@@ -170,6 +170,7 @@ def _removed_foo(tmp_path: Path) -> RepoRW:
     repo.update()
     assert repo.remove_pkg({"Package": re.compile("^foo$")}) is True
     assert repo.components["main"].packages["amd64"].packages == {}
+    assert repo.modified is True
     return repo
 
 
@@ -200,6 +201,35 @@ def test_remove_pkg_keeps_every_payload_while_another_dist_does_not_load(
 
     assert (tmp_path / payload_path("foo", "2")).exists()
     assert "Dist bullseye shares the target root but did not load" in caplog.text
+
+
+def test_shared_root_of_a_flat_layout_lists_nothing() -> None:
+    storage = make_storage_mock()
+    shared = RepoRW(storage, make_params(flat=True)).shared_root()
+
+    assert shared.complete
+    assert shared.deletable("pool/main/f/foo/foo_1_amd64.deb")
+    storage.list.assert_not_called()
+
+
+def test_shared_root_of_a_storage_that_cannot_list_keeps_all_but_the_own_tree() -> None:
+    repo = RepoRW(make_storage_mock(list_raises=NotImplementedError), make_params())
+
+    shared = repo.shared_root()
+
+    assert not shared.complete
+    assert not shared.deletable("pool/main/f/foo/foo_1_amd64.deb")
+    assert shared.deletable("dists/bookworm/main/binary-amd64/Packages.gz")
+
+
+def test_held_digests_reads_what_the_storage_holds(tmp_path: Path) -> None:
+    repo = RepoRW(StorageFS(str(tmp_path)), make_params())
+    (tmp_path / "held.deb").write_bytes(b"deb")
+
+    assert repo.held_digests("absent.deb") is None
+    held = repo.held_digests("held.deb")
+    assert held is not None
+    assert held["SHA256"] == hashlib.sha256(b"deb").hexdigest()
 
 
 _FLAT_INDEX = b"Package: upstream\nFilename: pool/u/upstream/upstream_1_amd64.deb\nSize: 1\n\n"
