@@ -339,14 +339,17 @@ def _compress(suffix: str, data: bytes) -> bytes:
     return codec_for(suffix).compress(data)
 
 
+# the compressed forms, each of which a small member can inflate from
 _SUFFIXES = [
     ".gz",
     ".xz",
+    ".bz2",
+    ".lzma",
     pytest.param(".zst", marks=requires_binary("zstd")),
 ]
 
 
-@pytest.mark.parametrize("suffix", _SUFFIXES)
+@pytest.mark.parametrize("suffix", ["", *_SUFFIXES])
 def test_init_reads_a_control_tar_in_each_dpkg_compression(tmp_path: Path, suffix: str) -> None:
     tar = _compress(suffix, _tar({"./control": _CONTROL}))
 
@@ -380,8 +383,23 @@ def test_init_refuses_a_control_tar_bomb_and_closes_the_stream(
     assert storage.all_closed()
 
 
-def test_init_refuses_a_control_tar_in_an_unknown_compression(tmp_path: Path) -> None:
-    storage = _storage(tmp_path, make_deb(control_tar=b"x", control_name="control.tar.lz4"))
+@pytest.mark.parametrize(
+    "deb",
+    [
+        make_deb(control_tar=b"x", control_name="control.tar.lz4"),
+        make_deb(control_name=None),
+    ],
+    ids=["unknown-compression-alone", "no-control-tar"],
+)
+def test_init_refuses_a_deb_without_a_control_tar_dpkg_reads(tmp_path: Path, deb: bytes) -> None:
+    """python-debian refuses it before debkit picks a member."""
+    with pytest.raises(DebFileException, match="missing required part"):
+        DebFile(_storage(tmp_path, deb), _PATH)
 
-    with pytest.raises(DebFileException, match="unknown compression|Invalid .deb"):
-        DebFile(storage, _PATH)
+
+def test_init_refuses_an_unknown_control_tar_ahead_of_a_known_one(tmp_path: Path) -> None:
+    """The first `control.tar*` member is read, so its compression must be one debkit decodes."""
+    deb = make_deb(before_control={"control.tar.lz4": b"x"})
+
+    with pytest.raises(DebFileException, match="unknown compression$"):
+        DebFile(_storage(tmp_path, deb), _PATH)

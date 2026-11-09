@@ -79,11 +79,9 @@ def _control_of(fp: IO[bytes], path: str) -> bytes | None:
         The ``control`` file content, or None when it is not a regular file.
     """
     deb = debfile.DebFile(fileobj=fp)  # type: ignore[arg-type]
-    part = next(
-        (member for member in deb.getmembers() if member.name.startswith("control.tar")), None
-    )
-    if part is None:
-        raise debfile.DebError("control.tar not found inside package")
+    # python-debian refuses a .deb without exactly one known `control.tar*` member, so one is
+    # always found; the first is read, and an unknown one placed ahead is refused below
+    part = next(member for member in deb.getmembers() if member.name.startswith("control.tar"))
     if part.size > MAX_CONTROL_BYTES:
         raise DebFileException(f"{part.name} of {path} is larger than {MAX_CONTROL_BYTES} bytes")
     decode = _CONTROL_DECODERS.get(part.name.removeprefix("control.tar"))

@@ -55,24 +55,23 @@ def make_tar_gz(members: dict[str, bytes]) -> bytes:
 def make_deb(
     control: bytes = b"Package: foo\nVersion: 1.0\nArchitecture: amd64\n",
     control_tar: bytes | None = None,
-    control_name: str = "control.tar.gz",
+    control_name: str | None = "control.tar.gz",
+    before_control: dict[str, bytes] | None = None,
 ) -> bytes:
     """Minimal real ``.deb``: an ar archive of ``debian-binary``, ``control.tar.gz``, and an
     empty ``data.tar.gz``.
 
     ``control.tar.gz`` holds *control*, unless *control_tar* replaces the whole member;
-    *control_name* renames that member, such as ``control.tar.xz`` for an xz *control_tar*.
+    *control_name* renames that member, such as ``control.tar.xz`` for an xz *control_tar*,
+    and None leaves it out. *before_control* adds members ahead of it, name to content.
     """
     if control_tar is None:
         control_tar = make_tar_gz({"./control": control})
-    return b"!<arch>\n" + b"".join(
-        _ar_member(name, data)
-        for name, data in (
-            ("debian-binary", b"2.0\n"),
-            (control_name, control_tar),
-            ("data.tar.gz", make_tar_gz({})),
-        )
-    )
+    members = [("debian-binary", b"2.0\n"), *(before_control or {}).items()]
+    if control_name is not None:
+        members.append((control_name, control_tar))
+    members.append(("data.tar.gz", make_tar_gz({})))
+    return b"!<arch>\n" + b"".join(_ar_member(name, data) for name, data in members)
 
 
 def make_clearsigned(body: bytes) -> bytes:
