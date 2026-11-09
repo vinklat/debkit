@@ -19,6 +19,7 @@ from debkit.repo.gnupg import cleartext_body
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import (
+    ROOT_RELEASE_KEYS,
     IndexEntry,
     Release,
     ReleaseFreshnessException,
@@ -667,6 +668,7 @@ def test_load_root_records_the_digests_of_every_root_file() -> None:
     r = RootRelease(_root_storage(_ROOT_FILES), _params())
     r.load()
 
+    assert set(r.root_digests) <= ROOT_RELEASE_KEYS
     assert r.root_digests == {
         "Release": calc_digests(_ROOT_FILES["dists/bookworm/Release"]),
         "Release.gpg": calc_digests(_ROOT_FILES["dists/bookworm/Release.gpg"]),

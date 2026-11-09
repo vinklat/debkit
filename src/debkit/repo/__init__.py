@@ -27,7 +27,7 @@ from debkit.repo.params import (
     is_safe_name,
     is_valid_arch,
 )
-from debkit.repo.release import Release, ReleaseReadException, RootRelease
+from debkit.repo.release import ROOT_RELEASE_KEYS, Release, ReleaseReadException, RootRelease
 from debkit.repo.repo_diff import RepoDiff
 
 if TYPE_CHECKING:
@@ -423,7 +423,7 @@ class Repo:
         # no digest block lists the root Release files, so each copy is bound to the bytes
         # the load fetched and verified, and no stanza may vouch for one
         # -> [CRYPTO.md](CRYPTO.md#verification-order)
-        if release_key in ["Release", "InRelease", "Release.gpg"]:
+        if release_key in ROOT_RELEASE_KEYS:
             return self.release.verify_root_digests(release_key, digests_incoming)
 
         # a package index is remote metadata, so a stanza naming a path the signed Release

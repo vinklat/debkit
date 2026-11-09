@@ -42,6 +42,10 @@ _CONTINUATION_FIELDS = frozenset({"Architectures", "Components"})
 # Largest Release file read when no signed Release records its size; it is read before its
 # signature is checked -> [VALIDATION.md](VALIDATION.md#object-sizes)
 MAX_RELEASE_BYTES = 16 * 1024 * 1024
+
+# Every root Release file a load fetches and records digests for; no index stanza may vouch
+# for one -> [CRYPTO.md](CRYPTO.md#verification-order)
+ROOT_RELEASE_KEYS = frozenset({"Release", "InRelease", "Release.gpg"})
 _HASH_BLOCK_FIELDS = frozenset(SUPPORT_HASH_LIST)
 
 
