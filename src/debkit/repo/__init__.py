@@ -250,6 +250,8 @@ class Repo:
             ChecksumException: A per-arch Release or index fails its digest, or the two signed
                 root forms differ.
             ComponentException: An architecture cannot be loaded and may not be skipped.
+            PackageException: An index stanza has no `Filename`.
+            StorageException: An index exists but its storage fails to read.
         """
         try:
             self.release.load()
@@ -759,8 +761,8 @@ def _unlisted_shared_root(params: RepoParams) -> SharedRoot:
     return SharedRoot(f"{params.indices_prefix}/", frozenset(), complete=False)
 
 
-# what a neighbour dist's load may raise; every one leaves that dist's payloads unknown, so
-# `Repo.update` and its Raises are the list to keep this in step with
+# what a neighbour dist's load may raise: `RootRelease.load`, the unsafe-component refusal in
+# `_claims_of`, and `Repo.update` and its Raises; every one leaves that dist's payloads unknown
 _NOT_LOADED = (
     RepoReadException,
     ReleaseReadException,
