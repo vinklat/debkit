@@ -8,6 +8,7 @@ import re
 from datetime import UTC, datetime
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
+from enum import Enum
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from debian.deb822 import Deb822
@@ -42,6 +43,23 @@ _CONTINUATION_FIELDS = frozenset({"Architectures", "Components"})
 # signature is checked -> [VALIDATION.md](VALIDATION.md#object-sizes)
 MAX_RELEASE_BYTES = 16 * 1024 * 1024
 _HASH_BLOCK_FIELDS = frozenset(SUPPORT_HASH_LIST)
+
+
+class SignatureMode(Enum):
+    """How a root Release treats its signatures -> [CRYPTO.md](CRYPTO.md#gpg).
+
+    Attributes:
+        VERIFY_AND_SIGN: GPG verification on with a `GnuPG`: a load verifies every
+            signature present and a save signs.
+        READ_SIGNED_UNVERIFIED: GPG verification on without a `GnuPG`, as the `sync`
+            target: a load reads the signed form unverified and a save is refused.
+        OFF: GPG verification off: a load reads either form unverified and a save writes
+            unsigned, removing the stale signatures.
+    """
+
+    VERIFY_AND_SIGN = "verify-and-sign"
+    READ_SIGNED_UNVERIFIED = "read-signed-unverified"
+    OFF = "off"
 
 
 class IndexEntry(NamedTuple):
@@ -352,7 +370,10 @@ class Release(HexDigests):
 
         # an unsigned Release reads as-is when no signature is checked
         # -> [CRYPTO.md](CRYPTO.md#verification-switches)
-        if self._checks_signatures() and not (release_gpg_path_exists or inrelease_path_exists):
+        mode = self.signature_mode
+        if mode is SignatureMode.VERIFY_AND_SIGN and not (
+            release_gpg_path_exists or inrelease_path_exists
+        ):
             raise ReleaseReadException(
                 f"GPG signature file missing: {release_gpg_path} or {inrelease_path}"
             )
@@ -370,7 +391,7 @@ class Release(HexDigests):
         # with verification on, a Release without its detached signature is read from InRelease
         # even when no GnuPG checks it here, as the sync target: the verified source reads the
         # same form, so both hash the same body -> [CRYPTO.md](CRYPTO.md#gpg)
-        prefers_signed_form = self.params.verify_gpg and not release_gpg_path_exists
+        prefers_signed_form = mode is not SignatureMode.OFF and not release_gpg_path_exists
         use_inrelease = inrelease_path_exists and (not release_path_exists or prefers_signed_form)
         return use_inrelease, inrelease_path if use_inrelease else release_path
 
@@ -387,24 +408,20 @@ class Release(HexDigests):
         if not comp or not arch:
             raise ValueError(f"component Release needs a component and an arch: {comp!r} {arch!r}")
 
-    def _checks_signatures(self) -> bool:
-        """Whether a root Release load verifies signatures.
+    @property
+    def signature_mode(self) -> SignatureMode:
+        """How a root load and save treat signatures, from the GPG switch and the `GnuPG`.
+
+        GPG verification also turns signing on -> [CRYPTO.md](CRYPTO.md#verification-switches).
 
         Returns:
-            True with GPG verification on and a `GnuPG` to verify with.
+            The mode; the one place `params.verify_gpg` and `gpg` are combined.
         """
-        return self.params.verify_gpg and self.gpg is not None
-
-    def _signs(self) -> bool:
-        """Whether a root Release save signs, rather than removing the old signatures.
-
-        The same switch as `_checks_signatures`: GPG verification also turns signing on
-        -> [CRYPTO.md](CRYPTO.md#verification-switches).
-
-        Returns:
-            True with GPG verification on and a `GnuPG` to sign with.
-        """
-        return self._checks_signatures()
+        if not self.params.verify_gpg:
+            return SignatureMode.OFF
+        if self.gpg is None:
+            return SignatureMode.READ_SIGNED_UNVERIFIED
+        return SignatureMode.VERIFY_AND_SIGN
 
     def _verify_gpg(self, data: bytes, detach_sign: bytes | None = None) -> bytes:
         """Verify GPG signature.
@@ -416,7 +433,7 @@ class Release(HexDigests):
         Returns:
             The verified data.
         """
-        # only reached when `_checks_signatures()` holds, so a missing GnuPG is a caller bug,
+        # only reached in `VERIFY_AND_SIGN`, so a missing GnuPG is a caller bug,
         # never an unverified load
         assert self.gpg is not None, "signature check without GnuPG"
 
@@ -454,7 +471,7 @@ class Release(HexDigests):
                 raise ReleaseReadException(f"{exc}.") from exc
         self.root_digests = {key: calc_digests(data) for key, data in raw.items()}
 
-        if self._checks_signatures():
+        if self.signature_mode is SignatureMode.VERIFY_AND_SIGN:
             if "InRelease" in raw:
                 raw["InRelease"] = self._verify_gpg(raw["InRelease"])
             if "Release" in raw and "Release.gpg" in raw:
@@ -608,7 +625,7 @@ class Release(HexDigests):
         """
         GPG_ERR_MSG = "GnuPG sign error (maybe wrong passphrase?)"
 
-        # only reached when `_signs()` holds, so a missing GnuPG is a caller bug
+        # only reached in `VERIFY_AND_SIGN`, so a missing GnuPG is a caller bug
         assert self.gpg is not None, "signing without GnuPG"
 
         signed_data = self.gpg.sign(enc_data).encode("utf-8")
@@ -652,6 +669,10 @@ class Release(HexDigests):
         -> [CRYPTO.md](CRYPTO.md#verification-switches). A per-component Release is never
         signed.
 
+        Raises:
+            ReleaseWriteException: A root Release in `READ_SIGNED_UNVERIFIED` has no `GnuPG`
+                to sign with, and saving unsigned would drop the signatures it was read with.
+
         Returns:
             The digests of the saved file, or None when nothing was written.
         """
@@ -661,6 +682,13 @@ class Release(HexDigests):
         if not self.modified:
             logger.debug("%s not modified.", self.filename)
             return None
+
+        mode = self.signature_mode
+        if self.is_root and mode is SignatureMode.READ_SIGNED_UNVERIFIED:
+            raise ReleaseWriteException(
+                "GPG verification is on but no GnuPG signs the root Release; "
+                "refusing to save it unsigned"
+            )
 
         if self.is_root:
             self.filename = self.params.indices_path("Release")
@@ -673,7 +701,7 @@ class Release(HexDigests):
 
         if not self.is_root:
             return digests
-        if self._signs():
+        if mode is SignatureMode.VERIFY_AND_SIGN:
             self._sign_gpg(enc_data)
         else:
             self._remove_root_signatures()

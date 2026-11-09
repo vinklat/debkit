@@ -33,8 +33,10 @@ Implemented by `GnuPG`, `cleartext_body`, and `canonical_text` in `repo/gnupg.py
 | Root Release load, GPG verification on | Verifies the inline and the detached form alike when both are present, since `sync` mirrors both. |
 | Root Release load, `Release.gpg` without `Release` | Signs nothing: skipped with a warning, so it is neither fetched nor mirrored. |
 | Root Release load, `InRelease` and `Release` both present | With GPG verification on, the `InRelease` body differs from `canonical_text` of the `Release` → `ChecksumException` (Distrustful): freshness reads one form, `sync` mirrors both, and apt prefers `InRelease`. |
-| Root Release load without `GnuPG` or with GPG verification off | The `sync` target or `--skip-verify-gpg`: no signature file is required, and an `InRelease` it parses is read through `cleartext_body`, unverified. |
+| Signature mode | `Release.signature_mode` is the one place the GPG switch and the `GnuPG` combine: `VERIFY_AND_SIGN` (switch on, `GnuPG` set), `READ_SIGNED_UNVERIFIED` (switch on, no `GnuPG`: the `sync` target), `OFF` (`--skip-verify-gpg`). |
+| Root Release load in `READ_SIGNED_UNVERIFIED` or `OFF` | No signature file is required, and an `InRelease` it parses is read through `cleartext_body`, unverified; `READ_SIGNED_UNVERIFIED` parses `InRelease` over a `Release` without `Release.gpg`, as the verified source does. |
 | Root Release save | Writes the layout's root `Release` from `indices_path()` whichever form the load read, then signs it into `InRelease` and `Release.gpg` or removes both; a per-component Release is never signed. |
+| Root Release save in `READ_SIGNED_UNVERIFIED` | Nothing signs it, and an unsigned save would drop the signatures it was read with → `ReleaseWriteException` (Write), before anything is written. |
 | `sign(data, detach=False)` | Returns the signature (inline or detached) used when writing Release metadata; empty when gpg reports none created, as on a wrong passphrase, even though a failed clearsign prints its armor, and `Release.save` refuses an empty one → `ReleaseWriteException` (Write). |
 | Keyring cannot be loaded | → `GPGVerifyException` (Read). |
 | The `gpg` binary cannot be run | python-gnupg raises `OSError` → `GPGVerifyException` (Read). |

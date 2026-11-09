@@ -25,6 +25,7 @@ from debkit.repo.release import (
     ReleaseNotFoundException,
     ReleaseReadException,
     ReleaseWriteException,
+    SignatureMode,
     parse_release_date,
 )
 
@@ -263,6 +264,41 @@ def test_save_unsigned_removes_the_stale_root_signatures(
     assert digests == calc_digests(b"Origin: new")
     assert r.found_indices_files == [f"{_ROOT}/Release"]
     assert sum("removed stale signature" in rec.message for rec in caplog.records) == 2
+
+
+def test_save_refuses_a_root_read_with_verification_on_and_no_gnupg(tmp_path: Path) -> None:
+    """The sync target's mode: an unsigned save would drop the signatures it read."""
+    storage = StorageFS(str(tmp_path))
+    for name in ("Release", "Release.gpg"):
+        storage.put(f"{_ROOT}/{name}", b"Origin: old\n")
+    r = Release(storage, _params(verify_gpg=True), gpg=None, root=True)
+    r.load()
+    r.fields["Origin"] = "new"
+    r.modified = True
+
+    with pytest.raises(ReleaseWriteException, match="refusing to save it unsigned"):
+        r.save()
+
+    assert storage.get(f"{_ROOT}/Release") == b"Origin: old\n"
+    assert storage.exists(f"{_ROOT}/Release.gpg")
+
+
+@pytest.mark.parametrize(
+    ("verify_gpg", "gpg", "mode"),
+    [
+        (True, MagicMock(), SignatureMode.VERIFY_AND_SIGN),
+        (True, None, SignatureMode.READ_SIGNED_UNVERIFIED),
+        (False, MagicMock(), SignatureMode.OFF),
+        (False, None, SignatureMode.OFF),
+    ],
+    ids=["verify", "sync-target", "skip-verify-gpg", "skip-verify"],
+)
+def test_signature_mode_combines_the_gpg_switch_and_the_gnupg(
+    verify_gpg: bool, gpg: MagicMock | None, mode: SignatureMode
+) -> None:
+    r = Release(MagicMock(), _params(verify_gpg=verify_gpg), gpg=gpg, root=True)
+
+    assert r.signature_mode is mode
 
 
 def test_save_unsigned_without_signatures_only_writes_the_release(
