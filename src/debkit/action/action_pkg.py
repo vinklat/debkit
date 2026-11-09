@@ -172,6 +172,26 @@ class ActionPkg(Action):
             if arch != SOURCE_ARCH and (arch or is_flat)
         ]
 
+    def _load_target_or_setup(self) -> Repo:
+        """Load the target, or set up a new one where it has no Release.
+
+        Called inside the command's transaction: a peer may commit before `history_lock`
+        is granted, so a target read before it would save over the peer's indices
+        -> [STORAGE.md](STORAGE.md#transactions).
+
+        Returns:
+            A copy of the target as loaded, for the command's diff.
+        """
+        try:
+            self.target_repo.update()
+        except ReleaseNotFoundException as exc:
+            # no repository - create new one; any other read failure must not reset an
+            # existing one
+            logger.debug("Target repository not found... (%s)", exc)
+
+            self.target_repo.setup(fields=DEFAULT_REPO_FIELDS)
+        return copy(self.target_repo)
+
     def _load_changes(self, incoming_storage: Storage, changes_filename: str) -> Changes:
         """Load and check a `.changes` upload, whose digests each listed `.deb` must match.
 
@@ -223,17 +243,6 @@ class ActionPkg(Action):
         if self.incoming_storage is None:
             raise ActionException("insert needs --incoming-url or DEBKIT_INCOMING_URL")
 
-        # load or setup target repository
-        try:
-            self.target_repo.update()
-        except ReleaseNotFoundException as exc:
-            # no repository - create new one; any other read failure must not reset an
-            # existing one
-            logger.debug("Target repository not found... (%s)", exc)
-
-            self.target_repo.setup(fields=DEFAULT_REPO_FIELDS)
-        prev_repo = copy(self.target_repo)
-
         # process deb files
         changes: Changes | None = None
         if self.changes_filename is not None:
@@ -246,9 +255,9 @@ class ActionPkg(Action):
                 raise ActionException(f"Invalid .deb filename: {self.deb_filename}")
             filenames = [self.deb_filename]
 
-        binary_archs = self._binary_archs()
-
         with maybe_transaction(self.target_repo.storage, self.history_retention):
+            prev_repo = self._load_target_or_setup()
+            binary_archs = self._binary_archs()
             for filename in filenames:
                 debfile_obj = DebFile(self.incoming_storage, filename, comp=self.component)
                 package = debfile_obj.get_package()
@@ -361,10 +370,11 @@ class ActionPkg(Action):
         # `--pkg-pattern` is required for `remove`, so argparse already refused a missing one
         assert self.pkg_pattern is not None, "remove without --pkg-pattern"
 
-        self.target_repo.update()
-        prev_repo = copy(self.target_repo)
-
         with maybe_transaction(self.target_repo.storage, self.history_retention):
+            # a peer may commit before `history_lock` is granted, so the target is read
+            # under it -> [STORAGE.md](STORAGE.md#transactions)
+            self.target_repo.update()
+            prev_repo = copy(self.target_repo)
             if not self.target_repo.remove_pkg(self.pkg_pattern):
                 raise ActionException("No packages matched the pattern.")
             ret_diff = self._save_if_changed(prev_repo)

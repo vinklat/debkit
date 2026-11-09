@@ -10,12 +10,6 @@ participant "maybe_transaction" as CM
 
 Caller -> ActionPkg: insert()
 
-ActionPkg -> Tgt: update()
-Tgt --> ActionPkg: ok / ReleaseNotFoundException
-opt ReleaseNotFoundException
-  ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)
-end
-
 opt --changes-filename
   ActionPkg -> Chg: load(changes_filename, sha256)
   Chg --> ActionPkg: archs, deb_files[]
@@ -23,14 +17,20 @@ opt --changes-filename
     ActionPkg -> ActionPkg: raise ActionException
   end
 end
-ActionPkg -> Tgt: get_archs()
-Tgt --> ActionPkg: archs
-ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]
-
 ActionPkg -> CM: __enter__(TStor)
 CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
+
+ActionPkg -> Tgt: update()\n[under the lock: a peer may have committed]
+Tgt --> ActionPkg: ok / ReleaseNotFoundException
+opt ReleaseNotFoundException
+  ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)
+end
+ActionPkg -> ActionPkg: prev_repo = copy(target)
+ActionPkg -> Tgt: get_archs()
+Tgt --> ActionPkg: archs
+ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]
 
 loop for filename in filenames
   ActionPkg -> Df: DebFile(Inc, filename, comp)

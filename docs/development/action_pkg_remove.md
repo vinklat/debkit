@@ -25,6 +25,9 @@ in [examples.md](../guides/examples.md#remove-packages).
   → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
+- The target is loaded and copied for the diff only after `history_lock` is granted, so a peer
+  that commits while this run waits is read, not saved over →
+  [STORAGE.md](../../STORAGE.md#transactions).
 - The argument parser turns `--pkg-pattern` into compiled regexes, so a malformed pattern exits 2
   before the target is read → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 - `Packages.remove` only drops matching entries from its in-memory index and returns their
@@ -44,7 +47,8 @@ in [examples.md](../guides/examples.md#remove-packages).
 ## Testing notes
 
 `tests/test_argtypes.py` covers pattern parsing, length, and compilation; `tests/test_action_pkg.py`
-covers the no-match `ActionException` and the transaction wiring; `tests/test_packages.py` covers
+covers the no-match `ActionException`, the transaction wiring, and a peer's removal committed while
+the run waited for the lock; `tests/test_packages.py` covers
 `Packages.remove()` and its filename-safety check; `tests/test_repo_rw.py` removes an `all` payload
 from a real `StorageFS` and keeps a payload another dist lists →
 [TESTING.md](../../TESTING.md#required-coverage).

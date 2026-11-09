@@ -1001,3 +1001,73 @@ def test_insert_of_identical_bytes_into_another_dist_shares_the_pool_object(
 
     assert (tmp_path / "repo" / pool_path("main", "foo", deb)).read_bytes() == _FOO_V1
     assert b"foo" in (tmp_path / "repo/dists/trixie/main/binary-amd64/Packages").read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# Concurrent writers: the target is read under the transaction lock
+# ---------------------------------------------------------------------------
+
+
+def _fs_action(tmp_path: Path, *argv: str) -> ActionPkg:
+    """Build an `ActionPkg` on the `bookworm main` dist of an `fs` root, through `parse_cli`."""
+    pars = parse_cli(
+        [*("--target-url", f"fs://{tmp_path / 'repo'} bookworm main", "--skip-verify-gpg"), *argv]
+    )
+    return ActionPkg(pars, create_path=True)
+
+
+def _fs_insert(tmp_path: Path, name: str) -> ActionPkg:
+    """Stage a `<name>_1.0_amd64.deb` upload and build the insert that would place it."""
+    incoming = tmp_path / "in"
+    incoming.mkdir(exist_ok=True)
+    deb = f"{name}_1.0_amd64.deb"
+    (incoming / deb).write_bytes(
+        make_deb(f"Package: {name}\nVersion: 1.0\nArchitecture: amd64\n".encode())
+    )
+    return _fs_action(
+        tmp_path, "insert", "--deb-filename", deb, "--incoming-url", f"fs://{incoming}"
+    )
+
+
+def _peer_commits_before_the_lock(monkeypatch: pytest.MonkeyPatch, peer: object) -> None:
+    """Run *peer* to completion as the next command waits for `history_lock`."""
+    waiting = [peer]
+
+    def transaction(storage: object, retention: object = None) -> object:
+        while waiting:
+            waiting.pop()()  # type: ignore[operator]
+        return maybe_transaction(storage, retention)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(action_pkg, "maybe_transaction", transaction)
+
+
+def _amd64_names(tmp_path: Path) -> set[str]:
+    """The `Package` names the `bookworm main` amd64 index lists."""
+    text = (tmp_path / "repo/dists/bookworm/main/binary-amd64/Packages").read_text()
+    return {line.split(": ", 1)[1] for line in text.splitlines() if line.startswith("Package: ")}
+
+
+def test_insert_keeps_a_package_a_peer_inserted_while_it_waited_for_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fs_insert(tmp_path, "base").insert()
+    inserting = _fs_insert(tmp_path, "foo")
+    _peer_commits_before_the_lock(monkeypatch, _fs_insert(tmp_path, "bar").insert)
+
+    inserting.insert()
+
+    assert _amd64_names(tmp_path) == {"base", "foo", "bar"}
+
+
+def test_remove_keeps_a_removal_a_peer_committed_while_it_waited_for_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("base", "foo", "bar"):
+        _fs_insert(tmp_path, name).insert()
+    removing = _fs_action(tmp_path, "remove", "--pkg-pattern", '{"Package": "^foo$"}')
+    peer = _fs_action(tmp_path, "remove", "--pkg-pattern", '{"Package": "^bar$"}')
+    _peer_commits_before_the_lock(monkeypatch, peer.remove)
+
+    removing.remove()
+
+    assert _amd64_names(tmp_path) == {"base"}

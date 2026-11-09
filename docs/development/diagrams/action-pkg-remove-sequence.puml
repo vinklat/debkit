@@ -12,13 +12,14 @@ note right
   a bad pattern exited 2 before this
 end note
 
-ActionPkg -> Tgt: update()
-Tgt --> ActionPkg: ok
-
 ActionPkg -> CM: __enter__(TStor)
 CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
+
+ActionPkg -> Tgt: update()\n[under the lock: a peer may have committed]
+Tgt --> ActionPkg: ok
+ActionPkg -> ActionPkg: prev_repo = copy(target)
 
 ActionPkg -> Tgt: remove_pkg(fields)
 Tgt -> Tgt: drop matches from every arch index

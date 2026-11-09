@@ -12,16 +12,6 @@ if (incoming_storage set?) then (no)
   stop
 endif
 
-partition "load or setup target" {
-  :target.update();
-  note right
-    ReleaseNotFoundException -> target.setup(fields=DEFAULT_REPO_FIELDS)
-    (creates an empty repo if none exists;
-    any other read failure propagates)
-  end note
-  :prev_repo = copy(target);
-}
-
 if (changes_filename provided?) then (yes)
   :changes = _load_changes(incoming_storage, changes_filename)
    [Changes.load(changes_filename, digest_expected=changes_sha256)];
@@ -38,10 +28,17 @@ else (no)
   endif
   :filenames = [deb_filename];
 endif
-:binary_archs = self._binary_archs();
-note right: get_archs() minus "source":\nthe mirrored Sources index is read-only
-
 partition "with maybe_transaction(target.storage)" {
+  :prev_repo = _load_target_or_setup()
+   [target.update(); copy(target)];
+  note right
+    read under history_lock: a peer may have committed;
+    ReleaseNotFoundException -> target.setup(fields=DEFAULT_REPO_FIELDS)
+    (creates an empty repo if none exists;
+    any other read failure propagates)
+  end note
+  :binary_archs = self._binary_archs();
+  note right: get_archs() minus "source":\nthe mirrored Sources index is read-only
   while (more filenames?) is (yes)
     :debfile = DebFile(incoming_storage, filename, comp);
     :package = debfile.get_package();

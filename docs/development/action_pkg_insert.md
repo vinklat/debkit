@@ -30,6 +30,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
+- The target is loaded and copied for the diff only after `history_lock` is granted, so a peer
+  that commits while this run waits is read, not saved over →
+  [STORAGE.md](../../STORAGE.md#transactions).
 - An unsafe `.changes` entry, `Package` or `Source` name, `Version`, or pool path is refused
   before any transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose
   transferred digests differ from its `.changes` entry is refused after it →
@@ -55,7 +58,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 wiring (begin/commit on success, discard on failure, no-op on a non-transactional storage);
 `tests/test_repo_rw.py` covers the index mutations; `tests/test_debfile.py` and
 `tests/test_changes.py` cover the upload-name refusals; `tests/test_action_pkg.py` refuses other
-bytes under a held pool key on a real `StorageFS` →
+bytes under a held pool key on a real `StorageFS` and keeps a peer's insert committed while the run
+waited for the lock →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts

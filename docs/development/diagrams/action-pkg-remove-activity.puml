@@ -5,11 +5,12 @@ note right
   (pkg_pattern_type); a bad pattern exits 2
 end note
 
-:target.update();
-:prev_repo = copy(target);
 :fields = pkg_pattern (field -> compiled regex);
 
 partition "with maybe_transaction(target.storage)" {
+  :target.update();
+  note right: read under history_lock:\na peer may have committed
+  :prev_repo = copy(target);
   if (target.remove_pkg(fields) matched?) then (no)
     :raise ActionException("No packages matched the pattern.");
   else (yes)
