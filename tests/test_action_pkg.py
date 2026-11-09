@@ -932,19 +932,27 @@ _FOO_V1 = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: amd64\n")
 _FOO_REBUILT = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: amd64\nDescription: rebuilt\n")
 
 
-def _insert_deb(tmp_path: Path, dist: str, deb: str, data: bytes) -> None:
-    """Insert *data* as *deb* into *dist* of an `fs` root under *tmp_path*, through `parse_cli`."""
+def _fs_action(tmp_path: Path, *argv: str, dist: str = "bookworm") -> ActionPkg:
+    """Build an `ActionPkg` on *dist* `main` of an `fs` root under *tmp_path*, via `parse_cli`."""
+    pars = parse_cli(
+        [*("--target-url", f"fs://{tmp_path / 'repo'} {dist} main", "--skip-verify-gpg"), *argv]
+    )
+    return ActionPkg(pars, create_path=True)
+
+
+def _staged_insert(tmp_path: Path, deb: str, data: bytes, dist: str = "bookworm") -> ActionPkg:
+    """Stage *data* as the *deb* upload and build the insert that would place it in *dist*."""
     incoming = tmp_path / "in"
     incoming.mkdir(exist_ok=True)
     (incoming / deb).write_bytes(data)
-    pars = parse_cli(
-        [
-            *("--target-url", f"fs://{tmp_path / 'repo'} {dist} main", "--skip-verify-gpg"),
-            *("insert", "--deb-filename", deb),
-            *("--incoming-url", f"fs://{incoming}"),
-        ]
+    return _fs_action(
+        tmp_path, "insert", "--deb-filename", deb, "--incoming-url", f"fs://{incoming}", dist=dist
     )
-    ActionPkg(pars, create_path=True).insert()
+
+
+def _insert_deb(tmp_path: Path, dist: str, deb: str, data: bytes) -> None:
+    """Insert *data* as *deb* into *dist* of an `fs` root under *tmp_path*, through `parse_cli`."""
+    _staged_insert(tmp_path, deb, data, dist).insert()
 
 
 def test_insert_refuses_to_replace_a_pool_object_another_dist_lists(tmp_path: Path) -> None:
@@ -1008,25 +1016,10 @@ def test_insert_of_identical_bytes_into_another_dist_shares_the_pool_object(
 # ---------------------------------------------------------------------------
 
 
-def _fs_action(tmp_path: Path, *argv: str) -> ActionPkg:
-    """Build an `ActionPkg` on the `bookworm main` dist of an `fs` root, through `parse_cli`."""
-    pars = parse_cli(
-        [*("--target-url", f"fs://{tmp_path / 'repo'} bookworm main", "--skip-verify-gpg"), *argv]
-    )
-    return ActionPkg(pars, create_path=True)
-
-
 def _fs_insert(tmp_path: Path, name: str) -> ActionPkg:
     """Stage a `<name>_1.0_amd64.deb` upload and build the insert that would place it."""
-    incoming = tmp_path / "in"
-    incoming.mkdir(exist_ok=True)
-    deb = f"{name}_1.0_amd64.deb"
-    (incoming / deb).write_bytes(
-        make_deb(f"Package: {name}\nVersion: 1.0\nArchitecture: amd64\n".encode())
-    )
-    return _fs_action(
-        tmp_path, "insert", "--deb-filename", deb, "--incoming-url", f"fs://{incoming}"
-    )
+    control = f"Package: {name}\nVersion: 1.0\nArchitecture: amd64\n"
+    return _staged_insert(tmp_path, f"{name}_1.0_amd64.deb", make_deb(control.encode()))
 
 
 def _peer_commits_before_the_lock(monkeypatch: pytest.MonkeyPatch, peer: object) -> None:
