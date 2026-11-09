@@ -7,21 +7,14 @@ touches the user's own.
 
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
+from helpers.binaries import requires_binary
 
 KEYRING = "trustedkeys.gpg"
 
-# Skipped where gpg is missing, but never in CI, so a CI job without gpg fails instead of
-# passing on skipped signature tests.
-requires_gpg = pytest.mark.skipif(
-    shutil.which("gpg") is None and not os.environ.get("CI"),
-    reason="needs the gpg binary",
-)
+requires_gpg = requires_binary("gpg")
 
 
 def _gpg(home: Path, *args: str, data: bytes | None = None) -> bytes:

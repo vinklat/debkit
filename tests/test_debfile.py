@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import lzma
-import shutil
 import subprocess
 import tarfile
 import zlib
@@ -13,6 +12,7 @@ from typing import IO
 from unittest.mock import MagicMock, patch
 
 import pytest
+from helpers.binaries import requires_binary
 from helpers.factories import make_deb, make_tar_gz
 from txstore import StorageFS
 
@@ -320,8 +320,6 @@ def test_get_package_files_a_real_deb_under_its_source_package(
 # control.tar decoded under a size limit
 # ---------------------------------------------------------------------------
 
-_HAS_ZSTD = shutil.which("zstd") is not None
-
 
 def _tar(members: dict[str, bytes]) -> bytes:
     buf = BytesIO()
@@ -344,7 +342,7 @@ def _compress(suffix: str, data: bytes) -> bytes:
 _SUFFIXES = [
     ".gz",
     ".xz",
-    pytest.param(".zst", marks=pytest.mark.skipif(not _HAS_ZSTD, reason="no zstd binary")),
+    pytest.param(".zst", marks=requires_binary("zstd")),
 ]
 
 

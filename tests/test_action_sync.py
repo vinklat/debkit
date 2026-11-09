@@ -629,7 +629,7 @@ def test_sync_to_s3_writes_objects_with_the_default_public_read_acl(
     `s3://` always means HTTPS, so the S3 storage `open_storage` asks for is built against the
     plain-HTTP moto endpoint from the settings debkit resolved → STORAGE.md#construction.
     """
-    boto3 = pytest.importorskip("boto3")
+    import boto3  # type: ignore[import-untyped]
     from txstore import StorageS3
     from txstore import make_storage as real_make_storage
 

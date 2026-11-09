@@ -9,7 +9,8 @@ import random
 import struct
 import tracemalloc
 import zlib
-from collections.abc import Buffer
+from collections.abc import Buffer, Callable
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,6 +24,7 @@ from debkit.repo.compress import (
     _bounded,
     codec_for,
     read_capped,
+    zstd_decompress,
 )
 
 _DATA = b"Package: foo\nVersion: 1.0\n" * 32
@@ -273,3 +275,58 @@ def test_read_capped_maps_a_read_fault_as_txstore_get_does() -> None:
     with pytest.raises(StorageException, match="Error reading p: disk gone"):
         read_capped(storage, "p", 10)
     assert storage.metrics.read_errors_total == 1
+
+
+# ---------------------------------------------------------------------------
+# zstd: the subprocess wrapper, driven by a stand-in `zstd` on PATH
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_zstd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
+    """Install a `zstd` shell script with the given body as the only binary on PATH."""
+
+    def install(body: str) -> None:
+        script = tmp_path / "bin" / "zstd"
+        script.parent.mkdir(exist_ok=True)
+        script.write_text(f"#!/bin/sh\n{body}\n")
+        script.chmod(0o755)
+        monkeypatch.setenv("PATH", str(script.parent))
+
+    return install
+
+
+def test_zstd_decompress_returns_what_the_decoder_writes(
+    fake_zstd: Callable[[str], None],
+) -> None:
+    fake_zstd("exec /bin/cat")
+
+    assert zstd_decompress(_DATA, len(_DATA)) == _DATA
+
+
+def test_zstd_decompress_refuses_a_stream_the_decoder_rejects(
+    fake_zstd: Callable[[str], None],
+) -> None:
+    fake_zstd("/bin/cat >/dev/null; exit 1")
+
+    with pytest.raises(CorruptStreamError, match="exited with status 1"):
+        zstd_decompress(_DATA, len(_DATA))
+
+
+def test_zstd_decompress_kills_a_decoder_writing_past_the_limit(
+    fake_zstd: Callable[[str], None],
+) -> None:
+    """The decoder never ends on its own, so only the kill at the cap returns."""
+    fake_zstd("exec /usr/bin/yes")
+
+    with pytest.raises(SizeLimitError, match="past 1024 bytes"):
+        zstd_decompress(_DATA, 1024)
+
+
+def test_zstd_decompress_refuses_when_no_decoder_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    with pytest.raises(CorruptStreamError, match="cannot run zstd"):
+        zstd_decompress(_DATA, len(_DATA))

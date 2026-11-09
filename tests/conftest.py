@@ -30,7 +30,7 @@ def moto_server() -> Iterator[str]:
         Endpoint URL (``http://127.0.0.1:<port>``) suitable for passing to
         ``StorageS3`` via its ``entrypoint`` argument.
     """
-    moto_server_module = pytest.importorskip("moto.server")
+    from moto import server as moto_server_module
 
     # Proxy env vars in the sandbox would otherwise force boto3 through
     # an outbound proxy and never reach the in-process server.
@@ -49,6 +49,8 @@ def moto_server() -> Iterator[str]:
 
     server = moto_server_module.ThreadedMotoServer(port=0, verbose=False)
     server.start()
+    # started, so the WSGI server exists
+    assert server._server is not None
     port = server._server.socket.getsockname()[1]
     try:
         yield f"http://127.0.0.1:{port}"

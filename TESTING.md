@@ -8,8 +8,9 @@ not copied here.
 
 - Run with `uv run pytest` → [SETUP.md](SETUP.md#test).
 - Keep tests isolated: no real network, no real cloud account, no real user GPG home; a throwaway
-  home from `tests/helpers/gpg.py` is allowed. Real-gpg tests skip without a gpg binary, except
-  under `CI`, where they fail instead. S3-backed tests use the session-scoped `moto_server` fixture;
+  home from `tests/helpers/gpg.py` is allowed. Tests that run the gpg or zstd binary carry
+  `requires_binary` from `tests/helpers/binaries.py`: they skip without it, except under `CI`, where
+  they fail instead. S3-backed tests use the session-scoped `moto_server` fixture;
   CLI and action tests use `fake_pars`, both from `tests/conftest.py`.
 - `tests/conftest.py` clears every `DEBKIT_*` and `TXSTORE_*` variable before each test; a test sets
   one with `monkeypatch.setenv`.
