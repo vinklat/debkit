@@ -13,11 +13,9 @@ from typing import TYPE_CHECKING, NamedTuple
 from txstore import (
     StorageException,
     StorageNotFoundException,
-    compare_digests,
-    normalize_digests,
 )
 
-from debkit.repo import IndexTarget, Repo, shared_root_claims
+from debkit.repo import IndexTarget, Repo, SharedRoot, shared_root_claims
 from debkit.repo.hashes import ChecksumException
 
 if TYPE_CHECKING:
@@ -61,6 +59,30 @@ class RepoSyncException(Exception):
     def __init__(self, message: str) -> None:
         """Initialize with error message."""
         super().__init__(f"Repo sync: {message}")
+
+
+def _refuse_shared_overwrites(shared: SharedRoot, replaced: dict[str, dict[str, str]]) -> None:
+    """Refuse a plan that overwrites a payload another dist of the shared root pins.
+
+    Skipping the copy instead would leave the own Release naming bytes the target does not
+    hold -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+    Args:
+        shared: The claims of the other dists, with the digests their indices record.
+        replaced: Each held payload the plan overwrites -> the digests the source records.
+
+    Raises:
+        RepoSyncException: If another dist records other bytes for a payload the plan
+            overwrites, records it without a SHA digest, or did not load.
+    """
+    refused = sorted(
+        path for path, digests in replaced.items() if not shared.replaceable(path, digests)
+    )
+    if refused:
+        raise RepoSyncException(
+            f"{len(refused)} held payload(s) would be overwritten with bytes another dist of "
+            f"the shared root does not record, or whose dists did not load: {', '.join(refused)}"
+        )
 
 
 class RepoSync(Repo):
@@ -151,16 +173,22 @@ class RepoSync(Repo):
             repair_files, purge_files = self._missing_and_unclaimed(
                 all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
             )
-        # another dist sharing the root keeps its tree and the payloads it lists; reading
-        # those claims loads every other dist, so only a pass that deletes reads them
-        if can_list and (purge_files or remove_pkg_files):
-            shared = shared_root_claims(target_repo.storage, target_repo.params, existing_files)
-            purge_files = {file for file in purge_files if shared.deletable(file)}
-            remove_pkg_files = {file for file in remove_pkg_files if shared.deletable(file)}
-
-        copy_pkg_files = self._reduce_copies(
+        copy_pkg_files, replaced = self._reduce_copies(
             diff.get_pkgs_to_copy(), copy_pkg_files, target_repo, existing_files
         )
+        # another dist sharing the root keeps its tree and the payloads it lists, and the bytes
+        # its indices pin; reading those claims loads every other dist, so only a pass that
+        # deletes or overwrites a held payload reads them
+        if can_list and (purge_files or remove_pkg_files or replaced):
+            shared = shared_root_claims(
+                target_repo.storage,
+                target_repo.params,
+                existing_files,
+                with_digests=bool(replaced),
+            )
+            purge_files = {file for file in purge_files if shared.deletable(file)}
+            remove_pkg_files = {file for file in remove_pkg_files if shared.deletable(file)}
+            _refuse_shared_overwrites(shared, replaced)
         # files a previous failed sync never got to delete
         remove_pkg_files &= existing_files
 
@@ -178,7 +206,7 @@ class RepoSync(Repo):
         copy_files: set[str],
         target_repo: RepoRW,
         existing_files: set[str],
-    ) -> set[str]:
+    ) -> tuple[set[str], dict[str, dict[str, str]]]:
         """Drop the payloads the target already holds unchanged, as a terminated sync leaves them.
 
         Args:
@@ -188,9 +216,11 @@ class RepoSync(Repo):
             existing_files: Paths the target listing returned.
 
         Returns:
-            `copy_files` without the payloads the target already holds.
+            `copy_files` without the payloads the target already holds, and each held payload
+            the copy overwrites -> the digests the source records for it.
         """
         ret = set(copy_files)
+        replaced: dict[str, dict[str, str]] = {}
         seen: dict[str, dict[str, str]] = {}
         for package in packages:
             pkg_name = str(package)
@@ -203,16 +233,16 @@ class RepoSync(Repo):
             seen[pkg_name] = package.get_digests()
             if pkg_name not in existing_files:
                 continue
-            if not self.params.verify_digests or self._digest_unchanged(
-                pkg_name, package.get_digests(), target_repo
-            ):
+            if not self.params.verify_digests or target_repo.holds(pkg_name, package.get_digests()):
                 ret.discard(pkg_name)
             else:
+                if pkg_name in ret:
+                    replaced[pkg_name] = package.get_digests()
                 logger.warning(
                     "%s have not valid checksums in target repo. It will be copied again.",
                     package,
                 )
-        return ret
+        return ret, replaced
 
     def _indices_to_copy(
         self,
@@ -246,56 +276,6 @@ class RepoSync(Repo):
             return []
         return self._reduce_indices(indices, target_repo, existing_files)
 
-    def _digest_unchanged(
-        self,
-        file: str,
-        digests: dict[str, str],
-        target_repo: RepoRW,
-    ) -> bool:
-        """Report whether the target already holds `file` with the expected digests.
-
-        The digest-skip decision shared by packages and indices; normalization and
-        comparison stay in txstore's digest helpers -> [CRYPTO.md](CRYPTO.md#implementation-rules).
-        The caller has already established that `file` exists in the target and that
-        digest verification is on.
-
-        Args:
-            file: object path, identical in both repositories.
-            digests: digests the source records for the object.
-            target_repo: The target repo to sync with.
-
-        Returns:
-            True when the target copy matches and need not be transferred.
-        """
-        return compare_digests(digests, normalize_digests(target_repo.storage.get_metadata(file)))
-
-    def _target_release_agrees(
-        self,
-        file: str,
-        digests: dict[str, str],
-        target_repo: RepoRW,
-    ) -> bool:
-        """Report whether both root Releases record the same digests for an index.
-
-        The target `Release` is already loaded and its hash compared in
-        `build_sync_lists`, so its digest block costs nothing, while
-        `Storage.get_metadata` is a round trip per key and a full Debian Release
-        lists hundreds of indices. Which entries agreement may settle is decided by
-        `_reduce_indices`.
-
-        Args:
-            file: object path, identical in both repositories.
-            digests: digests the source Release records for the index.
-            target_repo: The target repo to sync with.
-
-        Returns:
-            True when the target Release records matching digests for the key.
-        """
-        target_digests = target_repo.release.digests.get(target_repo.params.release_key(file))
-        if not target_digests:
-            return False
-        return compare_digests(digests, normalize_digests(target_digests))
-
     def _reduce_indices(
         self,
         indices: dict[str, IndexTarget],
@@ -322,9 +302,9 @@ class RepoSync(Repo):
             held = file in existing_files
 
             if held and target.digests and self.params.verify_digests and target_loaded:
-                if self._target_release_agrees(file, target.digests, target_repo):
+                if target_repo.release_agrees(file, target.digests):
                     continue
-                if self._digest_unchanged(file, target.digests, target_repo):
+                if target_repo.holds(file, target.digests):
                     continue
                 logger.debug(
                     "%s has different checksums in target repo. It will be copied again.", file
@@ -382,7 +362,7 @@ class RepoSync(Repo):
             target_repo.delete(file)
             raise ChecksumException(f"Content verify mismatch in {file}")
 
-        target_repo.storage.add_metadata(file, digests)
+        target_repo.record_digests(file, digests)
 
         return True
 

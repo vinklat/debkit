@@ -301,7 +301,7 @@ def test_get_archs_of_a_componented_repo_without_any_index_is_empty() -> None:
     assert list(repo.get_archs()) == []
 
 
-def test_update_drops_a_component_the_reloaded_release_no_longer_lists(
+def test_load_drops_a_component_the_reloaded_release_no_longer_lists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A reload replaces the components, so a sync pass never plans against a dropped one."""
@@ -310,12 +310,12 @@ def test_update_drops_a_component_the_reloaded_release_no_longer_lists(
     monkeypatch.setattr(repo.release, "load", lambda: True)
     monkeypatch.setattr(Component, "load", lambda self, archs, *_: 0)
 
-    repo.update()
+    repo.load()
 
     assert list(repo.components) == ["main"]
 
 
-def test_update_strict_refuses_a_release_selecting_no_architecture(
+def test_load_strict_refuses_a_release_selecting_no_architecture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A strict source load of nothing would let a sync plan every target object away."""
@@ -323,10 +323,10 @@ def test_update_strict_refuses_a_release_selecting_no_architecture(
     monkeypatch.setattr(repo.release, "load", lambda: True)
 
     with pytest.raises(RepoReadException, match="selects no architecture"):
-        repo.update(IndexLoad.STRICT)
+        repo.load(IndexLoad.STRICT)
 
 
-def test_update_resolves_the_architectures_once(
+def test_load_resolves_the_architectures_once(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Resolving them per component logged the Release-derived set once per component."""
@@ -343,10 +343,46 @@ def test_update_resolves_the_architectures_once(
     monkeypatch.setattr(Component, "load", load)
 
     with caplog.at_level(logging.INFO):
-        repo.update()
+        repo.load()
 
     assert loaded == [["amd64"], ["amd64"]]
     assert caplog.text.count("Release declares no Architectures") == 1
+
+
+def test_load_then_index_set_logs_each_release_token_warning_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A sync loads the repo and then builds its index set; each resolved the selection again
+    and logged the same unsafe-component and index-derived lines up to four times."""
+    repo = _repo(RepoParams("bookworm", None, None))
+    monkeypatch.setattr(repo.release, "load", lambda: True)
+    repo.release.fields = {"Components": "main ../evil"}
+    repo.release.digests = {"main/binary-amd64/Packages": dict(_DIGEST)}
+    monkeypatch.setattr(Component, "load", lambda *_: 0)
+
+    with caplog.at_level(logging.INFO):
+        repo.load()
+        indices = repo._get_indices()
+
+    assert "dists/bookworm/main/binary-amd64/Packages" in indices
+    assert caplog.text.count("is not a safe name") == 1
+    assert caplog.text.count("Release declares no Architectures") == 1
+
+
+def test_load_resolves_the_selection_again_for_a_reloaded_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reload may change the Release, so the cached selection must not outlive it."""
+    repo = _repo(RepoParams("bookworm", None, None))
+    monkeypatch.setattr(repo.release, "load", lambda: True)
+    monkeypatch.setattr(Component, "load", lambda *_: 0)
+    repo.release.fields = {"Components": "main", "Architectures": "amd64"}
+    repo.load()
+    repo.release.fields = {"Components": "main contrib", "Architectures": "arm64"}
+
+    repo.load()
+
+    assert (repo.selection.components, repo.selection.archs) == (("main", "contrib"), ("arm64",))
 
 
 # --- release precedence over a colliding package stanza -----------------------------------------

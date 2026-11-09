@@ -23,6 +23,8 @@ pytestmark = requires_gpg
 
 # Multi-line, like a Release: a passphrase read from the data would drop its first line.
 _DATA = b"Origin: debkit\nLabel: debkit\nSuite: bookworm\nDate: Sun, 08 Sep 2024 10:00:00 UTC\n"
+# the verify failure itself, not a keyring error or a gpg that cannot run
+_BAD_SIGNATURE = "GPG not valid signature"
 
 
 @pytest.fixture(scope="module")
@@ -86,23 +88,25 @@ def test_gnupg_detached_round_trip_covers_every_line(homes: dict[str, Path]) -> 
     signature = gpg.sign(_DATA, detach=True).encode()
 
     assert gpg.verify(_DATA, detach_sign=signature) == _DATA
-    with pytest.raises(GPGVerifyException):
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
         gpg.verify(_DATA.split(b"\n", 1)[1], detach_sign=signature)
 
 
 def test_gnupg_verify_refuses_a_tampered_clearsigned_body(homes: dict[str, Path]) -> None:
     gpg = _gnupg(homes["signer"])
     signed = gpg.sign(_DATA).encode()
+    assert gpg.verify(signed) == _DATA
 
-    with pytest.raises(GPGVerifyException):
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
         gpg.verify(signed.replace(b"Suite: bookworm", b"Suite: trixie"))
 
 
 def test_gnupg_verify_refuses_tampered_detached_data(homes: dict[str, Path]) -> None:
     gpg = _gnupg(homes["signer"])
     signature = gpg.sign(_DATA, detach=True).encode()
+    assert gpg.verify(_DATA, detach_sign=signature) == _DATA
 
-    with pytest.raises(GPGVerifyException):
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
         gpg.verify(_DATA + b"Extra: field\n", detach_sign=signature)
 
 
@@ -110,18 +114,23 @@ def test_gnupg_verify_refuses_a_clearsigned_message_from_outside_the_keyring(
     homes: dict[str, Path],
 ) -> None:
     signed = _gnupg(homes["other"]).sign(_DATA).encode()
+    # a failed sign returns nothing, which would fail the verify below for the wrong reason
+    assert signed.startswith(b"-----BEGIN PGP SIGNED MESSAGE-----")
+    gpg = _gnupg(homes["signer"])
 
-    with pytest.raises(GPGVerifyException):
-        _gnupg(homes["signer"]).verify(signed)
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(signed)
 
 
 def test_gnupg_verify_refuses_a_detached_signature_from_outside_the_keyring(
     homes: dict[str, Path],
 ) -> None:
     signature = _gnupg(homes["other"]).sign(_DATA, detach=True).encode()
+    assert signature.startswith(b"-----BEGIN PGP SIGNATURE-----")
+    gpg = _gnupg(homes["signer"])
 
-    with pytest.raises(GPGVerifyException):
-        _gnupg(homes["signer"]).verify(_DATA, detach_sign=signature)
+    with pytest.raises(GPGVerifyException, match=_BAD_SIGNATURE):
+        gpg.verify(_DATA, detach_sign=signature)
 
 
 def test_gnupg_sign_with_the_passphrase_unlocks_the_key(homes: dict[str, Path]) -> None:

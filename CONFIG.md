@@ -100,7 +100,7 @@ Insert takes exactly one of `--changes-filename` and `--deb-filename`; neither o
 
 | Flag | Variable | Default | Interpretation |
 | -- | -- | -- | -- |
-| `--fix` | none | off | Delete corrupted and orphan files; what another dist sharing the root may need is kept → [VALIDATION.md](VALIDATION.md#index-selection) |
+| `--fix` | none | off | Delete corrupted and orphan files; what another dist sharing the root may need is kept → [VALIDATION.md](VALIDATION.md#index-selection). Record each valid payload's digests as its object metadata, which the sync's held-payload skip reads |
 
 Also accepts `--architectures` and `--indices-exclude` with the same variables and defaults as
 [Sync](#sync): a check builds its index and package sets the same way a sync does, so other values
@@ -144,6 +144,8 @@ Uses `--target-url`, whose dist and component fields are optional and ignored; a
 - Secrets are variables only, never flags: a command-line value is visible to other local users.
 - `--help` names their variables but never shows a value.
 - Never print, log, or fixture a secret.
+- A child process, `zstd` or `gpg`, runs without any `DEBKIT_*` or `TXSTORE_*` variable: it reads
+  untrusted data and needs none of them; the passphrase reaches gpg on its input.
 - The S3 access key ID (`-u`, `DEBKIT_S3_ACCESS`, `TXSTORE_S3_ACCESS`) is an identifier, not a
   secret, but is never logged next to the secret.
 - Userinfo and query of a repository or storage URL are secrets: debkit logs and raises a URL only

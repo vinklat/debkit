@@ -9,6 +9,8 @@ import tempfile
 
 import gnupg
 
+from debkit._env import child_env
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -121,7 +123,9 @@ class GnuPG:
             GPGVerifyException: If the keyring cannot be opened or the gpg binary cannot be run.
         """
         try:
-            self.gnupg = gnupg.GPG(gnupghome=os.path.expanduser(home), keyring=keyring)
+            self.gnupg = gnupg.GPG(
+                gnupghome=os.path.expanduser(home), keyring=keyring, env=child_env()
+            )
         except ValueError as exc:
             raise GPGVerifyException(f"Keyring error. {exc}") from exc
         except OSError as exc:

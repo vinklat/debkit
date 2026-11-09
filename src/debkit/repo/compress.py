@@ -15,6 +15,8 @@ from typing import IO, TYPE_CHECKING, NamedTuple, Protocol
 
 from txstore import StorageException
 
+from debkit._env import child_env
+
 if TYPE_CHECKING:
     from txstore import Storage
 
@@ -231,6 +233,7 @@ def zstd_decompress(data: bytes, max_size: int) -> bytes:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            env=child_env(),
         )
     except OSError as exc:
         raise CorruptStreamError(f"cannot run zstd: {exc}") from exc

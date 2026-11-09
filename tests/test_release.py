@@ -166,7 +166,7 @@ def test_load_checksum_mismatch_raises() -> None:
     storage.exists.side_effect = lambda path: True
     storage.get.return_value = b"Origin: x\nSHA256:\n deadbeef 1 nested\n"
 
-    root_release = Release(storage, _params(verify_digests=True))
+    root_release = RootRelease(storage, _params(verify_digests=True))
     root_release.digests["x/Release"] = {"SHA256": "ffffff", "Size": "1"}
 
     sub = Release(storage, _params(verify_digests=True))
@@ -672,7 +672,7 @@ def test_load_component_release_verifies_against_its_flat_release_key() -> None:
 
     params = _flat_params()
     params.verify_digests = True
-    root_release = Release(storage, _flat_params())
+    root_release = RootRelease(storage, _flat_params())
     root_release.digests["binary-amd64/Release"] = calc_digests(data)
 
     sub = Release(storage, params)
@@ -734,7 +734,7 @@ def test_load_component_refuses_a_release_larger_than_the_root_release_records()
     storage.get_stream.side_effect = lambda path: io.BytesIO(data + b"padding")
     params = _flat_params()
     params.verify_digests = True
-    root_release = Release(storage, _flat_params())
+    root_release = RootRelease(storage, _flat_params())
     root_release.digests["binary-amd64/Release"] = calc_digests(data)
 
     with pytest.raises(ChecksumException, match="larger than the root Release records"):
@@ -1083,7 +1083,7 @@ def test_load_component_caps_a_release_whose_recorded_size_is_past_the_cap(
     storage.get_stream.side_effect = lambda path: io.BytesIO(data)
     params = _flat_params()
     params.verify_digests = True
-    root_release = Release(storage, _flat_params())
+    root_release = RootRelease(storage, _flat_params())
     root_release.digests["binary-amd64/Release"] = {**calc_digests(data), "Size": str(10**12)}
 
     with pytest.raises(ReleaseReadException, match="larger than"):

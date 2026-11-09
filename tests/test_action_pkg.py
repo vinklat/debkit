@@ -211,7 +211,7 @@ _PACKAGES = "dists/bookworm/main/binary-amd64/Packages.gz"
 def _amd64_filenames(storage: StorageFS) -> set[str]:
     """Package filenames a fresh read of the `fs` repository finds in `main` amd64."""
     repo = RepoRW(storage, make_params())
-    repo.update()
+    repo.load()
     return set(repo.components["main"].packages["amd64"].packages)
 
 
@@ -383,7 +383,7 @@ def test_insert_starts_the_index_of_an_arch_that_has_none(
     _insert_into_real_repo(tmp_path, mock_debfile_cls, "bar", arch="arm64")
 
     repo = RepoRW(storage, make_params())
-    repo.update()
+    repo.load()
     assert set(repo.components["main"].packages["arm64"].packages) == {
         "pool/main/b/bar/bar_1.0_arm64.deb"
     }
@@ -994,7 +994,7 @@ def test_insert_repairs_a_corrupt_pool_object_after_check_fix(tmp_path: Path) ->
         StorageFS(str(tmp_path / "repo")),
         RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False),
     )
-    repo.update()
+    repo.load()
 
     assert repo.check(fix=True).fixed == 1
     _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)

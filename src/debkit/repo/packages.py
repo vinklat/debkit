@@ -17,7 +17,7 @@ from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, cod
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.params import is_safe_name
-from debkit.repo.release import Release
+from debkit.repo.release import Release, RootRelease
 
 if TYPE_CHECKING:
     from txstore import Storage
@@ -124,11 +124,6 @@ class Packages:
         self.found_indices_paths: list[str] = []
         self.modified = False
 
-    @property
-    def size(self) -> int:
-        """Number of packages, derived on each read so no insert or removal leaves it stale."""
-        return len(self.packages)
-
     def _index_inner(self, arch: str, suffix: str = "") -> str:
         """Compose the Release-relative inner path of a package index.
 
@@ -207,7 +202,7 @@ class Packages:
                 continue
 
             self.packages[pkg_name] = package
-        return self.size
+        return len(self)
 
     def _serialize_indices(self) -> str:
         """Serialize the content of the Packages file to headers format.
@@ -218,7 +213,7 @@ class Packages:
         return "".join(package.serialize() for package in self.packages.values())
 
     def _find_packages_file(
-        self, root_release: Release, comp: str, arch: str
+        self, root_release: RootRelease, comp: str, arch: str
     ) -> tuple[list[str], str, Callable[[bytes, int], bytes]]:
         """Find the index files the Release lists and storage holds, and pick one to read.
 
@@ -268,7 +263,7 @@ class Packages:
             f"missing indices file for arch {arch} in component {comp}."
         )
 
-    def _read_indices(self, root_release: Release, path: str) -> bytes:
+    def _read_indices(self, root_release: RootRelease, path: str) -> bytes:
         """Read an index no larger than the Release records, before its digest is checked.
 
         Args:
@@ -302,7 +297,7 @@ class Packages:
             raise ChecksumException(f"Mismatch for {path}: {exc}.") from exc
 
     def _verify_indices_checksum(
-        self, root_release: Release, path: str, digests: dict[str, str]
+        self, root_release: RootRelease, path: str, digests: dict[str, str]
     ) -> bool:
         """Verify checksum of Packages file.
 
@@ -323,7 +318,7 @@ class Packages:
 
     def load(
         self,
-        root_release: Release,
+        root_release: RootRelease,
         comp: str,
         arch: str,
     ) -> bool:

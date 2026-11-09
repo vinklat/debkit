@@ -28,7 +28,7 @@ from debkit.repo.packages import (
     diff_packages,
 )
 from debkit.repo.params import RepoParams
-from debkit.repo.release import Release
+from debkit.repo.release import Release, RootRelease
 
 
 def _new_packages(storage: MagicMock | None = None, params: RepoParams | None = None) -> Packages:
@@ -215,7 +215,7 @@ def test_packages_load_again_reads_the_same_files(tmp_path: Path, first: str) ->
     raised `PackagesNotFoundException` and listed every index twice."""
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=False)
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     for suffix in (".gz", ""):
         stored = codec_for(suffix).compress(make_packages_block("foo").encode())
         root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(stored))
@@ -233,7 +233,7 @@ def test_packages_load_again_reads_the_same_files(tmp_path: Path, first: str) ->
         "dists/bookworm/main/binary-amd64/Packages",
     ]
     assert pkgs.used_indices_path == "dists/bookworm/main/binary-amd64/Packages.gz"
-    assert pkgs.size == 1
+    assert len(pkgs) == 1
 
 
 def test_packages_find_packages_file_raises_when_release_empty() -> None:
@@ -392,7 +392,7 @@ def test_packages_load_empty_payload_with_matching_digest_returns_false(tmp_path
     """
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=True)
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests("main/binary-amd64/Packages", calc_digests(b""))
     storage.put("dists/bookworm/main/binary-amd64/Packages", b"")
 
@@ -413,7 +413,7 @@ def test_packages_load_refuses_bytes_the_release_does_not_list(
     """Real Release digests against real stored bytes; nothing in the check is patched."""
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=True)
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     listed = gzip.compress(make_packages_block("foo").encode(), mtime=0)
     root.update_digests("main/binary-amd64/Packages.gz", calc_digests(listed))
     storage.put(_INDEX_PATH, stored)
@@ -430,7 +430,7 @@ def test_packages_load_refuses_an_index_larger_than_the_release_records(tmp_path
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=True)
     stored = make_packages_block("foo").encode()
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests("main/binary-amd64/Packages", calc_digests(stored))
     storage.put("dists/bookworm/main/binary-amd64/Packages", stored + b"\n" * 4096)
     pkgs = Packages(storage, params)
@@ -449,7 +449,7 @@ def test_packages_load_caps_an_unchecked_index_as_stored(
     storage.put(
         "dists/bookworm/main/binary-amd64/Packages", make_packages_block("foo").encode() * 4
     )
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests("main/binary-amd64/Packages", {"Size": "1"})
 
     with pytest.raises(PackagesException, match="Stored indices"):
@@ -465,7 +465,7 @@ def test_packages_load_caps_a_checked_index_recording_a_size_past_the_cap(
     params = make_params(verify_digests=True)
     stored = make_packages_block("foo").encode() * 4
     storage.put("dists/bookworm/main/binary-amd64/Packages", stored)
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests("main/binary-amd64/Packages", {**calc_digests(stored), "Size": "10" * 6})
     read: list[int] = []
 
@@ -490,7 +490,7 @@ def test_packages_load_refuses_an_index_past_the_size_cap(
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=True)
     stored = codec_for(suffix).compress(make_packages_block("foo").encode() * 64)
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(stored))
     storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
     pkgs = Packages(storage, params)
@@ -511,7 +511,7 @@ def test_packages_load_refuses_a_truncated_or_corrupt_index(
     params = make_params(verify_digests=True)
     whole = codec_for(suffix).compress(make_packages_block("foo").encode())
     stored = whole[: len(whole) // 2] if damage == "truncated" else b"not a compressed index"
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(stored))
     storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", stored)
     pkgs = Packages(storage, params)
@@ -529,7 +529,7 @@ def test_packages_load_refuses_an_index_that_is_not_utf_8(tmp_path: Path) -> Non
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=True)
     stored = gzip.compress(make_packages_block("foo").encode() + b"Maintainer: Jos\xe9\n")
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     root.update_digests("main/binary-amd64/Packages.gz", calc_digests(stored))
     storage.put(_INDEX_PATH, stored)
     pkgs = Packages(storage, params)
@@ -585,7 +585,7 @@ def test_packages_save_rewrites_the_uncompressed_index_the_release_lists(tmp_pat
     storage = StorageFS(str(tmp_path))
     params = make_params(verify_digests=True)
     plain = make_packages_block("foo").encode()
-    root = Release(storage, params)
+    root = RootRelease(storage, params)
     for suffix, data in (("", plain), (".gz", gzip.compress(plain))):
         storage.put(f"dists/bookworm/main/binary-amd64/Packages{suffix}", data)
         root.update_digests(f"main/binary-amd64/Packages{suffix}", calc_digests(data))
@@ -639,7 +639,7 @@ def test_packages_size_follows_a_removal_after_parse() -> None:
     pkgs = _new_packages()
     pkgs._parse_indices(make_packages_block("foo") + "\n" + make_packages_block("bar"))
     pkgs.remove({"Package": re.compile("^foo$")})
-    assert pkgs.size == 1
+    assert len(pkgs) == 1
 
 
 def test_packages_remove_rejects_traversal_filename() -> None:

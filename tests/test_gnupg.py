@@ -13,7 +13,7 @@ import logging
 import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -46,7 +46,19 @@ def test_init_keyring_failure_raises() -> None:
 def test_init_opens_the_given_home_and_keyring() -> None:
     with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
         _gnupg()
-    gpg_cls.assert_called_once_with(gnupghome=".gnupg", keyring="trustedkeys.gpg")
+    gpg_cls.assert_called_once_with(gnupghome=".gnupg", keyring="trustedkeys.gpg", env=ANY)
+
+
+def test_init_runs_gpg_without_debkit_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gpg verifies a mirror's data, so it never holds the passphrase or a storage secret."""
+    monkeypatch.setenv("DEBKIT_GNUPG_PASSPHRASE", "x")
+    monkeypatch.setenv("TXSTORE_S3_SECRET", "x")
+    with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
+        _gnupg()
+    env = gpg_cls.call_args.kwargs["env"]
+    assert "DEBKIT_GNUPG_PASSPHRASE" not in env
+    assert "TXSTORE_S3_SECRET" not in env
+    assert "PATH" in env
 
 
 def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,7 +66,9 @@ def test_init_expands_a_home_under_the_user_directory(monkeypatch: pytest.Monkey
     monkeypatch.setenv("HOME", "/home/builder")
     with patch("debkit.repo.gnupg.gnupg.GPG") as gpg_cls:
         GnuPG("~/.gnupg", "trustedkeys.gpg", None)
-    gpg_cls.assert_called_once_with(gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg")
+    gpg_cls.assert_called_once_with(
+        gnupghome="/home/builder/.gnupg", keyring="trustedkeys.gpg", env=ANY
+    )
 
 
 def test_init_missing_gpg_binary_raises() -> None:

@@ -68,6 +68,7 @@ not copied here.
 | Sync index recovery | The unpublished-entry, absent-entry, and unloaded-target rules → [VALIDATION.md](VALIDATION.md#index-selection) are each asserted, an absent index recovering with nothing else to sync. |
 | Sync shared root keep | On a real target root holding another dist, a sync and `check --fix` keep its tree and the payloads it lists → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Sync shared root corrupt payload | `check --fix` deletes a corrupt payload only when no index of any other dist records its bytes and none records it without a SHA digest → [VALIDATION.md](VALIDATION.md#index-selection). |
+| Sync shared root payload replace | On a real target root where another dist pins other bytes at a held pool key, the sync raises before any transfer and both dists' bytes and Releases stay → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Sync shared root purge | Only the own tree is purged while another dist's index is corrupt or missing, its only Release form is malformed, or its name is not safe → [VALIDATION.md](VALIDATION.md#index-selection). |
 | Insert pool object refusal | On a real root, an insert whose pool key another dist, or another arch's upload of the same file name, holds with different bytes is refused and leaves the held bytes → [VALIDATION.md](VALIDATION.md#filename-safety). |
 | Insert pool object pass | Identical bytes into another dist pass, and so does a re-insert after `check --fix` deleted a corrupt object no index records → [VALIDATION.md](VALIDATION.md#filename-safety). |

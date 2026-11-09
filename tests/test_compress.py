@@ -304,6 +304,17 @@ def test_zstd_decompress_returns_what_the_decoder_writes(
     assert zstd_decompress(_DATA, len(_DATA)) == _DATA
 
 
+def test_zstd_decompress_runs_the_decoder_without_debkit_variables(
+    fake_zstd: Callable[[str], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decoder reads an unverified upload, so it never holds a secret."""
+    monkeypatch.setenv("DEBKIT_GNUPG_PASSPHRASE", "x")
+    monkeypatch.setenv("TXSTORE_S3_SECRET", "x")
+    fake_zstd('[ -n "$DEBKIT_GNUPG_PASSPHRASE$TXSTORE_S3_SECRET" ] && exit 1; exec /bin/cat')
+
+    assert zstd_decompress(_DATA, len(_DATA)) == _DATA
+
+
 def test_zstd_decompress_refuses_a_stream_the_decoder_rejects(
     fake_zstd: Callable[[str], None],
 ) -> None:

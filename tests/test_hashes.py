@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from txstore import calc_digests
 
-from debkit.repo.hashes import HexDigests, parse_hash_block, parse_size
+from debkit.repo.hashes import HexDigests, has_sha, parse_hash_block, parse_size
 
 
 def test_verify_digests_refuses_an_md5_only_entry() -> None:
@@ -52,3 +52,24 @@ def test_parse_hash_block_empty_text_yields_nothing() -> None:
 )
 def test_parse_size_reads_only_ascii_digits(value: str, expected: int | None) -> None:
     assert parse_size(value) == expected
+
+
+# --- has_sha -------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        ({"MD5Sum": "a"}, False),
+        ({}, False),
+        ({"sha256": "a"}, False),
+        ({"SHA1": "a"}, True),
+        ({"SHA256": "a", "Size": 3}, True),
+        ({"MD5Sum": "a", "SHA512": "b"}, True),
+    ],
+    ids=["md5-only", "empty", "lowercase-key", "sha1", "sha256-with-size", "md5-and-sha512"],
+)
+def test_has_sha_needs_an_algorithm_comparison_keeps(
+    record: dict[str, object], expected: bool
+) -> None:
+    assert has_sha(record) is expected

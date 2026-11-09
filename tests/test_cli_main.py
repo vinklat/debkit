@@ -229,7 +229,10 @@ def test_main_exception_group_maps_to_exit(
         cli.main()
 
     assert excinfo.value.code == 1
-    assert exit_message in caplog.text
+    # the original exception and the group's exit message are two records, in that order
+    # -> EXCEPTIONS.md#cli-exit-groups
+    critical = [r.getMessage() for r in caplog.records if r.levelno == logging.CRITICAL]
+    assert critical == [str(exc), exit_message]
 
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
     if expected_warning is None:

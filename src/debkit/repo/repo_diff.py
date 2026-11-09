@@ -38,7 +38,7 @@ class RepoDiff:
                 ret[bucket].setdefault(component, {})[arch] = list(pkgs.values())
         return ret
 
-    def update(self, component: str, arch: str, pkgs_diff: PackagesDiff) -> None:
+    def record(self, component: str, arch: str, pkgs_diff: PackagesDiff) -> None:
         """Record how one slot changed.
 
         Args:
@@ -105,7 +105,7 @@ class RepoDiff:
     def is_empty(self) -> bool:
         """Check if RepoDiff is empty.
 
-        `update` records every component and arch it compared, so an unchanged slot holds
+        `record` stores every component and arch it compared, so an unchanged slot holds
         empty buckets and counts as empty.
 
         Returns:

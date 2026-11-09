@@ -20,7 +20,7 @@ from helpers.factories import (
     make_repo_sync,
     make_storage_mock,
 )
-from txstore import StorageException, StorageNotFoundException, StorageType
+from txstore import StorageException, StorageNotFoundException
 
 from debkit.repo import repo_sync as repo_sync_module
 from debkit.repo import shared_root_claims
@@ -30,7 +30,7 @@ from debkit.repo.packages import Packages
 from debkit.repo.params import RepoParams
 from debkit.repo.release import IndexEntry
 from debkit.repo.repo_rw import RepoRW
-from debkit.repo.repo_sync import RepoSync, RepoSyncException, SyncPlan
+from debkit.repo.repo_sync import TRANSFER_MAX_ERR_RETRIES, RepoSync, RepoSyncException, SyncPlan
 
 INDICES = ["dists/bookworm/Release", "dists/bookworm/main/binary-amd64/Packages"]
 FLAT_INDICES = ["bookworm/Release"]
@@ -227,27 +227,34 @@ def test_build_sync_lists_orphan_in_target_goes_to_delete_list() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tgt_list", "reads"),
-    [(["p1.deb", *INDICES], 0), (["p1.deb", "junk.deb", *INDICES], 1)],
-    ids=["nothing-to-delete", "orphan"],
+    ("tgt_list", "src_sha", "with_digests"),
+    [
+        (["p1.deb", *INDICES], "held", None),
+        (["p1.deb", "junk.deb", *INDICES], "held", False),
+        (["p1.deb", *INDICES], "republished", True),
+    ],
+    ids=["nothing-to-delete-or-overwrite", "orphan", "held-payload-overwrite"],
 )
-def test_build_sync_lists_reads_the_shared_root_claims_only_to_delete(
-    monkeypatch: pytest.MonkeyPatch, tgt_list: list[str], reads: int
+def test_build_sync_lists_reads_the_shared_root_claims_only_to_delete_or_overwrite(
+    monkeypatch: pytest.MonkeyPatch, tgt_list: list[str], src_sha: str, with_digests: bool | None
 ) -> None:
-    """The claims load every other dist, so a pass that deletes nothing skips them."""
-    p1 = make_package("p1.deb")
+    """The claims load every other dist, so a pass that neither deletes nor overwrites a held
+    payload skips them; only an overwrite needs the digests the other dists record."""
     src, tgt = _two_repos(
-        src_components={"main": {"amd64": [p1]}},
-        tgt_components={"main": {"amd64": [p1]}},
+        src_components={"main": {"amd64": [make_package("p1.deb", SHA256=src_sha)]}},
+        tgt_components={"main": {"amd64": [make_package("p1.deb", SHA256="held")]}},
         tgt_list=tgt_list,
-        same_hash=True,
+        tgt_metadata={"SHA256": "held"},
     )
     claims = MagicMock(wraps=shared_root_claims)
     monkeypatch.setattr(repo_sync_module, "shared_root_claims", claims)
 
     src.build_sync_lists(tgt)
 
-    assert claims.call_count == reads
+    if with_digests is None:
+        claims.assert_not_called()
+    else:
+        assert claims.call_args.kwargs["with_digests"] is with_digests
 
 
 def test_build_sync_lists_missing_index_forces_indices_copy() -> None:
@@ -376,15 +383,13 @@ def test_build_sync_lists_indices_only_plans_no_payloads(caplog: pytest.LogCaptu
         tgt_list=["p1.deb", *INDICES],
     )
     diff = MagicMock(wraps=src.diff)
-    digest_unchanged = MagicMock(wraps=src._digest_unchanged)
     src.diff = diff  # type: ignore[method-assign]
-    src._digest_unchanged = digest_unchanged  # type: ignore[method-assign]
 
     with caplog.at_level(logging.INFO):
         src.build_sync_lists(tgt, indices_only=True)
 
     diff.assert_not_called()
-    assert "p1.deb" not in [call.args[0] for call in digest_unchanged.call_args_list]
+    assert "p1.deb" not in [c.args[0] for c in _mock_storage(tgt).get_metadata.call_args_list]
     assert "packages" not in caplog.text
 
 
@@ -442,8 +447,10 @@ def test_build_sync_lists_duplicate_all_deb_inconsistent_digests_warns(
     )
 
     with caplog.at_level(logging.WARNING):
-        src.build_sync_lists(tgt)
+        copy_list, _, _ = src.build_sync_lists(tgt)
 
+    # the payload is still copied, once, whichever index's digests it then verifies against
+    assert copy_list.count("pool/main/c/ca-certs/ca-certs_1.0_all.deb") == 1
     assert any("inconsistent digests" in r.message for r in caplog.records)
 
 
@@ -694,47 +701,33 @@ def test_build_sync_lists_release_hash_change_forces_indices_without_package_dif
 # =========================================================================
 
 
-def _patch_transfer(repo: RepoSync, results: dict[str, bool | list[bool]] | bool) -> MagicMock:
-    """Replace _transfer_file with a mock driven by `results`.
-
-    `results` may be a dict of filename -> per-call results, or a single bool.
-    Multiple calls on the same filename consume the list in order.
-    """
-    state: dict[str, list[bool]] = {}
-    if isinstance(results, dict):
-        for k, v in results.items():
-            state[k] = v if isinstance(v, list) else [v]
-
-    def side_effect(file: str, *_a: object, **_k: object) -> bool:
-        if isinstance(results, bool):
-            return results
-        bucket = state.setdefault(file, [True])
-        if len(bucket) > 1:
-            return bucket.pop(0)
-        return bucket[0] if bucket else True
-
-    mock = MagicMock(side_effect=side_effect)
-    repo._transfer_file = mock  # type: ignore[method-assign]
-    return mock
-
-
-def test_sync_single_surviving_failure_raises() -> None:
-    """One object that never transfers fails the run; a partial target is not left behind."""
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
-    )
-    results: dict[str, bool | list[bool]] = {f"f{i}.deb": True for i in range(20)}
-    results["f7.deb"] = False
-    _patch_transfer(src, results)
-
-    with pytest.raises(RepoSyncException, match="^Repo sync: Max retries reached"):
-        src.sync(tgt, SyncPlan(list(results.keys()), [], set()))
-
-
 def _empty_repos() -> tuple[RepoSync, RepoRW]:
     return _two_repos(
         src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
     )
+
+
+def test_sync_single_surviving_failure_raises() -> None:
+    """One object that never transfers fails the run; a partial target is not left behind."""
+    src, tgt = _empty_repos()
+    src.verify_checksum = MagicMock(return_value=True)  # type: ignore[method-assign]
+    names = [f"f{i}.deb" for i in range(20)]
+
+    def transfer(path: str, *_args: object, **_kwargs: object) -> dict[str, str]:
+        if path == "f7.deb":
+            raise StorageException("down")
+        return {"SHA256": "x", "Size": "1"}
+
+    storage = _mock_storage(src)
+    storage.transfer.side_effect = transfer
+
+    with pytest.raises(RepoSyncException, match="^Repo sync: Max retries reached"):
+        src.sync(tgt, SyncPlan(names, ["old.deb"], set()))
+
+    attempts = [call.args[0] for call in storage.transfer.call_args_list]
+    assert attempts.count("f7.deb") == TRANSFER_MAX_ERR_RETRIES
+    assert attempts.count("f8.deb") == 1
+    _mock_storage(tgt).delete.assert_not_called()
 
 
 def test_sync_transient_storage_error_is_retried_and_deletes_run() -> None:
@@ -764,14 +757,12 @@ def test_sync_checksum_mismatch_is_not_retried_and_skips_the_deletes() -> None:
 
 
 def test_sync_empty_copy_list_with_deletes_only() -> None:
-    src, tgt = _two_repos(
-        src_components={"main": {"amd64": []}}, tgt_components={"main": {"amd64": []}}, tgt_list=[]
-    )
-    transfer = _patch_transfer(src, True)
+    src, tgt = _empty_repos()
 
     src.sync(tgt, SyncPlan([], ["a", "b"], set()))
-    transfer.assert_not_called()
-    assert _mock_storage(tgt).delete.call_count == 2
+
+    _mock_storage(src).transfer.assert_not_called()
+    assert [call.args[0] for call in _mock_storage(tgt).delete.call_args_list] == ["a", "b"]
 
 
 # =========================================================================
@@ -820,13 +811,12 @@ def test_consistency_lists_proves_nothing_on_a_storage_that_cannot_list() -> Non
 
 
 # =========================================================================
-# § 3d. _transfer_file
+# § 3d. object transfer, driven through `sync`
 # =========================================================================
 
 
 def _transfer_setup(
     *,
-    storage_type: StorageType = StorageType.fs,
     transfer_raises: type[BaseException] | None = None,
     verify_digests: bool = True,
 ) -> tuple[RepoSync, RepoRW]:
@@ -836,7 +826,7 @@ def _transfer_setup(
         tgt_list=[],
         verify_digests=verify_digests,
     )
-    tgt_storage = make_storage_mock(storage_type=storage_type)
+    tgt_storage = make_storage_mock()
     if transfer_raises is not None:
         _mock_storage(src).transfer.side_effect = transfer_raises("boom")
     tgt = make_repo_rw(
@@ -850,10 +840,10 @@ def _transfer_setup(
 
 
 @pytest.mark.parametrize("file", ["p1.deb", "dists/bookworm/Release"])
-def test_transfer_file_uses_final_path(file: str) -> None:
+def test_transfer_writes_the_final_path_and_records_its_digests(file: str) -> None:
     src, tgt = _transfer_setup()
 
-    assert src._transfer_file(file, tgt) is True
+    src.sync(tgt, SyncPlan([file], [], set()))
 
     src_storage = _mock_storage(src)
     src_storage.transfer.assert_called_once()
@@ -862,29 +852,31 @@ def test_transfer_file_uses_final_path(file: str) -> None:
     _mock_storage(tgt).add_metadata.assert_called_once_with(file, src_storage.transfer.return_value)
 
 
-def test_transfer_file_storage_exception_returns_false() -> None:
+def test_transfer_storage_exception_is_retried_then_fails_the_sync() -> None:
     src, tgt = _transfer_setup(transfer_raises=StorageException)
 
-    assert src._transfer_file("p1.deb", tgt) is False
+    with pytest.raises(RepoSyncException, match="Max retries reached"):
+        src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
 
+    assert _mock_storage(src).transfer.call_count == TRANSFER_MAX_ERR_RETRIES
     tgt_storage = _mock_storage(tgt)
     tgt_storage.delete.assert_not_called()
     tgt_storage.add_metadata.assert_not_called()
 
 
-def test_transfer_file_bad_digest_raises_and_cleans_up() -> None:
+def test_transfer_bad_digest_raises_and_cleans_up() -> None:
     src, tgt = _transfer_setup(verify_digests=True)
     src.verify_checksum = MagicMock(return_value=False)  # type: ignore[method-assign]
 
     with pytest.raises(ChecksumException):
-        src._transfer_file("p1.deb", tgt)
+        src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
 
     tgt_storage = _mock_storage(tgt)
     tgt_storage.delete.assert_called_once_with("p1.deb")
     tgt_storage.add_metadata.assert_not_called()
 
 
-def test_transfer_file_verifies_a_dep11_tarball_against_the_release_key() -> None:
+def test_transfer_verifies_a_dep11_tarball_against_the_release_key() -> None:
     """Regression: a `.tar.gz` index skipped the Release-key mapping, so its lookup
     missed, the transferred object was deleted and the sync aborted."""
     dep11 = _entry("main/dep11/icons-64x64.tar.gz")
@@ -899,31 +891,21 @@ def test_transfer_file_verifies_a_dep11_tarball_against_the_release_key() -> Non
         key == dep11.key and digests == dep11.digests
     )
 
-    assert src._transfer_file(dep11.path, tgt) is True
+    src.sync(tgt, SyncPlan([dep11.path], [], set()))
 
     tgt_storage = _mock_storage(tgt)
     tgt_storage.delete.assert_not_called()
     tgt_storage.add_metadata.assert_called_once_with(dep11.path, dep11.digests)
 
 
-def test_transfer_file_skips_checksum_when_verify_digests_off() -> None:
+def test_transfer_skips_checksum_when_verify_digests_off() -> None:
     src, tgt = _transfer_setup(verify_digests=False)
     src.verify_checksum = MagicMock(return_value=False)  # type: ignore[method-assign]
 
-    assert src._transfer_file("p1.deb", tgt) is True
+    src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
 
     src.verify_checksum.assert_not_called()
     _mock_storage(tgt).add_metadata.assert_called_once()
-
-
-def test_transfer_file_does_not_pass_acl_kwarg() -> None:
-    """ACL handling now lives in the storage layer (StorageS3.default_acl)."""
-    src, tgt = _transfer_setup(storage_type=StorageType.s3)
-
-    assert src._transfer_file("p1.deb", tgt) is True
-
-    kwargs = _mock_storage(src).transfer.call_args.kwargs
-    assert "acl" not in kwargs
 
 
 # --- exclude scope and purge ---------------------------------------------------------------------
@@ -1534,7 +1516,7 @@ def test_build_sync_lists_same_hash_without_digest_verification_copies_no_index(
     assert copy_list == []
 
 
-def test_target_release_agrees_uses_the_target_layout_key() -> None:
+def test_release_agrees_uses_the_target_layout_key() -> None:
     """The lookup keys the target's own Release by the target's layout.
 
     The two layouts differ, so the source's prefix would strip `bookworm/` and find
@@ -1551,9 +1533,9 @@ def test_target_release_agrees_uses_the_target_layout_key() -> None:
     )
     tgt.params.dist = "trixie"
 
-    assert src._target_release_agrees(flat.path, dict(flat.digests), tgt) is False
+    assert tgt.release_agrees(flat.path, dict(flat.digests)) is False
     moved = _entry("Packages.xz", prefix="trixie")
-    assert src._target_release_agrees(moved.path, dict(moved.digests), tgt) is True
+    assert tgt.release_agrees(moved.path, dict(moved.digests)) is True
 
 
 # --- source packages ----------------------------------------------------------------------------

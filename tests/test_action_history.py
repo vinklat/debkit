@@ -80,18 +80,26 @@ def test_log_accepts_bare_target_url(
 
     ActionHistory(pars).log()
 
-    out = capsys.readouterr().out
-    assert "1" in out
-    assert "2026-06-08" in out
+    assert capsys.readouterr().out.splitlines() == ["     1  2026-06-08T10:00:00Z"]
 
 
 def test_log_brief(pars: Namespace, storage: StorageFS, capsys: pytest.CaptureFixture[str]) -> None:
-    seed_history(storage, [{"id": 1, "timestamp": "2026-06-08T10:00:00Z"}])
+    """One line per transaction in file order: the id right-aligned, then its timestamp."""
+    seed_history(
+        storage,
+        [
+            {"id": 1, "timestamp": "2026-06-08T10:00:00Z"},
+            {"id": 12, "timestamp": "2026-06-09T10:00:00Z"},
+        ],
+    )
     pars.output = OutputType.brief
+
     ActionHistory(pars).log()
-    out = capsys.readouterr().out
-    assert "1" in out
-    assert "2026-06-08" in out
+
+    assert capsys.readouterr().out.splitlines() == [
+        "     1  2026-06-08T10:00:00Z",
+        "    12  2026-06-09T10:00:00Z",
+    ]
 
 
 def test_log_rejects_ansi_injection(pars: Namespace, repo_dir: Path) -> None:

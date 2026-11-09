@@ -19,7 +19,7 @@ from txstore import StorageException
 from debkit.repo.component import Component, ComponentException, IndexLoad, container_for
 from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
 from debkit.repo.params import SOURCE_ARCH, RepoParams
-from debkit.repo.release import Release
+from debkit.repo.release import Release, RootRelease
 from debkit.repo.sources import Sources
 
 
@@ -56,7 +56,7 @@ def test_component_load_non_flat_aggregates_size() -> None:
     with patch("debkit.repo.component.Packages") as PackagesCls:
         pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = True
-        pkgs_mock.size = 7
+        pkgs_mock.__len__.return_value = 7
         PackagesCls.return_value = pkgs_mock
         total = comp.load(["amd64"])
     assert total == 7
@@ -109,7 +109,7 @@ def test_component_load_architectures_field_multi_token_succeeds() -> None:
         pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = False
         pkgs_mock.release.fields = {"Architectures": "amd64 arm64 all"}
-        pkgs_mock.size = 1
+        pkgs_mock.__len__.return_value = 1
         PackagesCls.return_value = pkgs_mock
         total = comp.load(["amd64"])
     assert total == 1
@@ -121,7 +121,7 @@ def test_component_load_architecture_mismatch_raises() -> None:
         pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = False
         pkgs_mock.release.fields = {"Architectures": "i386"}
-        pkgs_mock.size = 0
+        pkgs_mock.__len__.return_value = 0
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="architecture check mismatch"):
             comp.load(["amd64"])
@@ -210,7 +210,7 @@ def test_component_load_source_arch_builds_a_sources_container() -> None:
         for cls in (PackagesCls, SourcesCls):
             mock = MagicMock()
             mock.release.is_empty.return_value = True
-            mock.size = 1
+            mock.__len__.return_value = 1
             cls.return_value = mock
         comp.load(["amd64", "source"])
 
@@ -226,7 +226,7 @@ def test_component_load_source_arch_accepts_an_architecture_source_release() -> 
         pkgs_mock = MagicMock(spec=Packages(make_storage_mock(), make_params()))
         pkgs_mock.release.is_empty.return_value = False
         pkgs_mock.release.fields = {"Architecture": "source"}
-        pkgs_mock.size = 2
+        pkgs_mock.__len__.return_value = 2
         SourcesCls.return_value = pkgs_mock
         assert comp.load(["source"]) == 2
 
@@ -419,7 +419,9 @@ def test_component_load_refuses_a_release_without_an_architecture_field() -> Non
 
 
 def _component_with(params: RepoParams, slots: dict[str, Packages]) -> Component:
-    component = Component(make_storage_mock(), params, Release(make_storage_mock(), params), "/")
+    component = Component(
+        make_storage_mock(), params, RootRelease(make_storage_mock(), params), "/"
+    )
     component.packages = slots
     return component
 

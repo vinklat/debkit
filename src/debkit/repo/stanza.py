@@ -24,7 +24,7 @@ class Stanza(NamedTuple):
 
 
 def parse_stanza(text: str) -> Stanza:
-    """Parse the first paragraph of a control file, a `.changes` or a `Release`.
+    """Parse the first paragraph of a `.changes`, a `Release`, or one `Sources` stanza.
 
     Debian Policy 5.1 ends a paragraph at an empty line. CRLF line ends are read as LF and
     leading empty lines are skipped; what a later paragraph or an unreadable line means is

@@ -356,7 +356,7 @@ class Release(HexDigests):
         if self.hashfuns:
             logger.debug("Available hexdigests: %s", self.hashfuns)
 
-    def load_component(self, comp: str, arch: str, root_release: Release) -> bool:
+    def load_component(self, comp: str, arch: str, root_release: RootRelease) -> bool:
         """Load the per-component Release of one architecture.
 
         Args:
@@ -763,6 +763,7 @@ class RootRelease(Release):
                 it holds an unreadable line.
             GPGVerifyException: A root Release signature fails, or an `InRelease` is malformed.
             ChecksumException: `Release` and `InRelease` carry different content.
+            StorageException: A root Release file exists but its storage fails to read.
         """
         use_inrelease, self.filename = self._find_root_files()
         self._parse_loaded(self._load_root_files(use_inrelease))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from debkit._env import env_bool, env_str
+from debkit._env import child_env, env_bool, env_str
 
 
 def test_env_str_reads_a_set_variable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,3 +42,15 @@ def test_env_bool_rejects_other_values(value: str, monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("DEBKIT_X", value)
     with pytest.raises(ValueError, match="expected a boolean"):
         env_bool("DEBKIT_X")
+
+
+def test_child_env_drops_debkit_and_txstore_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEBKIT_GNUPG_PASSPHRASE", "x")
+    monkeypatch.setenv("DEBKIT_TARGET_URL", "s3://user:pw@bucket")
+    monkeypatch.setenv("TXSTORE_S3_SECRET", "x")
+    monkeypatch.setenv("PATH", "/usr/bin")
+
+    env = child_env()
+
+    assert not [key for key in env if key.startswith(("DEBKIT_", "TXSTORE_"))]
+    assert env["PATH"] == "/usr/bin"

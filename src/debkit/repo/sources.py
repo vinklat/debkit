@@ -5,15 +5,15 @@ from __future__ import annotations
 import logging
 import posixpath
 import re
-from email.parser import Parser
 from typing import Any
 
 from txstore import is_unsafe_path
 
-from debkit.repo.hashes import CHECKSUM_FIELDS, COMPARE_HASH_LIST, parse_hash_block
+from debkit.repo.hashes import CHECKSUM_FIELDS, has_sha, parse_hash_block
 from debkit.repo.package import FILENAME_FIELD_KEY, Package
 from debkit.repo.packages import Packages, PackagesException
 from debkit.repo.params import is_safe_name
+from debkit.repo.stanza import parse_stanza
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -28,7 +28,7 @@ class Sources(Packages):
     A `Sources` stanza names several payload files under one `Directory`; each
     becomes a `Package` keyed by its `Filename`, so the sync diff, the purge and
     repair passes, and checksum verification consume source payloads exactly as they
-    consume binary ones. `size` counts payload files, not stanzas.
+    consume binary ones. `len()` counts payload files, not stanzas.
 
     The index itself is mirrored as an opaque object and is never regenerated, so
     this container refuses every mutation -> [VALIDATION.md](VALIDATION.md#sources-stanzas).
@@ -41,8 +41,9 @@ class Sources(Packages):
             data: Decoded `Sources` index.
 
         Raises:
-            PackagesException: If a stanza names no usable `Directory`, an unsafe file
-                name, disagreeing sizes, or a payload without a SHA digest.
+            PackagesException: If a stanza holds an unreadable line, names no usable
+                `Directory`, an unsafe file name, disagreeing sizes, or a payload without a SHA
+                digest.
 
         Returns:
             The number of payload files known after parsing.
@@ -55,7 +56,7 @@ class Sources(Packages):
                     logger.debug("%s is listed with differing digests across stanzas.", name)
                 self.packages[name] = package
 
-        return self.size
+        return len(self)
 
     def _expand_stanza(self, block: str) -> list[Package]:
         """Build one `Package` per file named by a single `Sources` stanza.
@@ -67,15 +68,19 @@ class Sources(Packages):
             block: One stanza, without its trailing blank line.
 
         Raises:
-            PackagesException: On a missing or unsafe `Directory`, one in the `dists/` tree
-                of a componented layout, a file name with a
-                path segment, a size that differs between hash blocks, or a payload
-                carrying no SHA digest.
+            PackagesException: On an unreadable line, a missing or unsafe `Directory`, one in
+                the `dists/` tree of a componented layout, a file name with a path segment, a
+                size that differs between hash blocks, or a payload carrying no SHA digest.
 
         Returns:
             One record per payload file, in first-seen order.
         """
-        fields = dict(Parser().parsestr(block).items())
+        parsed, _, unreadable = parse_stanza(block)
+        # the fields after an unreadable line would be missing, and with them payload files
+        # the sync would neither copy nor keep -> [VALIDATION.md](VALIDATION.md#blank-lines)
+        if unreadable:
+            raise PackagesException("unreadable line in Sources stanza: a field line needs a colon")
+        fields = dict(parsed.items())
 
         directory = posixpath.normpath(fields.get("Directory", "").strip())
         if not is_safe_name(directory):
@@ -112,7 +117,7 @@ class Sources(Packages):
             # a payload needs an algorithm comparison keeps: an MD5-only record would
             # compare unequal forever and be recopied on every sync
             # -> [CRYPTO.md](CRYPTO.md#checksums)
-            if not any(algorithm in record for algorithm in COMPARE_HASH_LIST):
+            if not has_sha(record):
                 raise PackagesException(f"{record[FILENAME_FIELD_KEY]} carries no SHA digest")
 
         return [Package(fields=record) for record in records.values()]

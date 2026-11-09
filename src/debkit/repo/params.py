@@ -37,9 +37,9 @@ FLAT_COMPONENT = "/"
 # -> [VALIDATION.md](VALIDATION.md#architectures).
 _ARCH_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*")
 
-# a real dist names a directory of a flat layout; the empty string matches
+# a real dist names a directory of a flat layout; the empty string names none
 # -> [VALIDATION.md](VALIDATION.md#distribution-names)
-_REAL_DIST = re.compile(r"[A-Za-z0-9]*")
+_REAL_DIST = re.compile(r"[A-Za-z0-9]+")
 
 
 def is_safe_name(name: str) -> bool:
@@ -250,9 +250,7 @@ class RepoParams:
             The full storage path.
         """
         if self.is_flat:
-            if self.is_real_dist() and self.dist:
-                return f"{self.dist}/{inner}"
-            return inner
+            return f"{self._flat_dir}/{inner}" if self._flat_dir else inner
 
         path_short = f"{comp}/{inner}" if comp else inner
         return f"{self.indices_prefix}/{path_short}" if self.indices_prefix else path_short
@@ -272,9 +270,7 @@ class RepoParams:
             Path relative to the layout prefix, as the Release lists it.
         """
         if self.is_flat:
-            if self.is_real_dist() and self.dist:
-                return remove_prefix_from_path(path, self.dist)
-            return path
+            return remove_prefix_from_path(path, self._flat_dir) if self._flat_dir else path
 
         if self.indices_prefix:
             return remove_prefix_from_path(path, self.indices_prefix)
@@ -305,12 +301,17 @@ class RepoParams:
         """
         return not self.is_flat and (path == "dists" or path.startswith("dists/"))
 
+    @property
+    def _flat_dir(self) -> str | None:
+        """The directory a flat layout's indices sit in: the dist when it is a real one."""
+        return self.dist if self.is_real_dist() else None
+
     def is_real_dist(self) -> bool:
         """Check if the distribution name is a real dist, one naming a flat layout's directory.
 
         Returns:
-            True when the dist is set and made of ASCII letters and digits only, the empty
-            string included; False for None or a name such as `/` or `./`
+            True when the dist is a non-empty run of ASCII letters and digits; False for None,
+            the empty string, or a name such as `/` or `./`
             -> [VALIDATION.md](VALIDATION.md#distribution-names).
         """
         return self.dist is not None and _REAL_DIST.fullmatch(self.dist) is not None

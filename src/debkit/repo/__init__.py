@@ -1,6 +1,6 @@
 """Base class containing Debian repository indices and data.
 
-Method update() loads the repository.
+Method load() loads the repository.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from txstore import StorageException, compare_digests, is_unsafe_path
 
 from debkit.repo.component import Component, ComponentException, IndexLoad
 from debkit.repo.gnupg import GPGVerifyException
-from debkit.repo.hashes import COMPARE_HASH_LIST, ChecksumException, parse_size
+from debkit.repo.hashes import ChecksumException, has_sha, parse_size
 from debkit.repo.index_selection import select_index_entry
 from debkit.repo.package import PackageException
 from debkit.repo.packages import PackagesException, diff_packages
@@ -105,6 +105,9 @@ class Repo:
         self.gpg = gpg
         self.release = RootRelease(storage, params, gpg=gpg)
         self.components: dict[str, Component] = {}
+        # resolved from the params and the root Release on first use, and again after the
+        # Release is loaded or set up, so a warning about a Release token is logged once
+        self._selection: _Selection | None = None
         # payloads reported as Release-owned. Building the package set again in one run, as a
         # sync and its check do, reports each once
         self._owned_payloads_warned: set[str] = set()
@@ -180,25 +183,55 @@ class Repo:
             yield from self.params.archs
             return
 
-        archs = list(self.release_archs())
-        if archs or "Architectures" in self.release.fields:
-            yield from archs
-        elif self.params.is_flat:
-            yield ""
-        else:
-            yield from self._listed_binary_archs()
+        yield from self._select_archs(list(self.release_archs()), self.get_components())
 
-    def _listed_binary_archs(self) -> list[str]:
+    @property
+    def selection(self) -> _Selection:
+        """The selected components and architectures, resolved once per loaded Release.
+
+        Returns:
+            What `get_components`, `get_archs`, and `release_archs` yield, each read once.
+        """
+        if self._selection is None:
+            components = tuple(self.get_components())
+            declared = list(self.release_archs())
+            archs = tuple(self._select_archs(declared, components))
+            self._selection = _Selection(components, archs, frozenset(archs) | set(declared))
+        return self._selection
+
+    def _select_archs(self, declared: list[str], components: Iterable[str]) -> list[str]:
+        """Pick the architectures from the selection, the Release tokens, or its indices.
+
+        Args:
+            declared: What `release_archs` yields.
+            components: The selected components, read only for a componented Release that
+                declares no architecture.
+
+        Returns:
+            The architecture names, in selection or Release order.
+        """
+        if isinstance(self.params.archs, list) and len(self.params.archs) > 0:
+            return list(self.params.archs)
+        if declared or "Architectures" in self.release.fields:
+            return declared
+        if self.params.is_flat:
+            return [""]
+        return self._listed_binary_archs(components)
+
+    def _listed_binary_archs(self, components: Iterable[str]) -> list[str]:
         """Get the binary architectures the root Release lists a `Packages` index for.
 
         Only the selected components count; a directory name that is not an architecture
         token, or `all`, is skipped like a Release token.
 
+        Args:
+            components: The selected components.
+
         Returns:
             Sorted architecture names, without duplicates.
         """
         archs: set[str] = set()
-        for comp in self.get_components():
+        for comp in components:
             prefix = f"{comp}/"
             for key in self.release.digests:
                 if not key.startswith(prefix):
@@ -243,7 +276,7 @@ class Repo:
                 continue
             yield arch
 
-    def update(self, mode: IndexLoad = IndexLoad.WRITABLE) -> None:
+    def load(self, mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         """Load Debian repository.
 
         This method does a similar thing to `apt-get update` command.
@@ -269,12 +302,13 @@ class Repo:
             self.release.load()
         except StorageException as exc:
             raise RepoReadException(f"{exc}") from exc
+        self._selection = None
 
         if not self.params.is_flat and "Components" not in self.release.fields:
             logger.warning("Components field not found in Release of non-flat repo.")
 
         # the arch set reads only the selection and the root Release, so it is resolved once
-        archs = list(self.get_archs())
+        archs = list(self.selection.archs)
         # a strict load that selects no architecture loads nothing, and a sync would plan
         # every target index and payload away -> [VALIDATION.md](VALIDATION.md#architectures)
         if mode is IndexLoad.STRICT and not archs:
@@ -285,7 +319,7 @@ class Repo:
         # a reload replaces the components: one the new Release drops must not survive
         self.components = {}
         pkgs_total = 0
-        for component_name in self.get_components():
+        for component_name in self.selection.components:
             component = Component(self.storage, self.params, self.release, component_name)
 
             pkgs_total += component.load(archs, mode)
@@ -374,7 +408,7 @@ class Repo:
         # always compared: equal Release bytes do not prove equal loaded packages, since a
         # load may skip an unreadable index -> [VALIDATION.md](VALIDATION.md#index-loading)
         for slot in sorted(newer.keys() | older.keys()):
-            diff.update(*slot, diff_packages(newer.get(slot, {}), older.get(slot, {})))
+            diff.record(*slot, diff_packages(newer.get(slot, {}), older.get(slot, {})))
 
         return diff
 
@@ -478,9 +512,10 @@ class Repo:
         """
         ret: dict[str, IndexTarget] = {}
 
-        components = None if self.params.is_flat else set(self.get_components())
-        archs = set(self.get_archs())
-        arch_universe = archs | set(self.release_archs())
+        selection = self.selection
+        components = None if self.params.is_flat else set(selection.components)
+        archs = set(selection.archs)
+        arch_universe = set(selection.arch_universe)
         excludes = self.params.indices_exclude or []
 
         def selected(key: str) -> bool:
@@ -661,6 +696,20 @@ class Repo:
         return shared_root_claims(self.storage, self.params, existing_files)
 
 
+class _Selection(NamedTuple):
+    """The components and architectures a repository selects from its root Release.
+
+    Attributes:
+        components: The selected components.
+        archs: The selected architectures.
+        arch_universe: Every architecture the selection or the Release names.
+    """
+
+    components: tuple[str, ...]
+    archs: tuple[str, ...]
+    arch_universe: frozenset[str]
+
+
 class SharedRoot(NamedTuple):
     """What the other dists of a shared target root claim.
 
@@ -716,19 +765,31 @@ class SharedRoot(NamedTuple):
         if not self.complete:
             return False
         records = self.recorded.get(path, ())
-        if not all(_has_sha(record) for record in records):
+        if not all(has_sha(record) for record in records):
             return False
         return not any(compare_digests(record, digests) for record in records)
 
+    def replaceable(self, path: str, digests: dict[str, str]) -> bool:
+        """Report whether a held payload may be overwritten with the bytes the own source records.
 
-def _has_sha(record: Mapping[str, str]) -> bool:
-    """Report whether a digest record holds an algorithm `compare_digests` matches on.
+        Another dist's index pinning other bytes at the same key would serve its clients a hash
+        mismatch once they change; a record with no SHA digest cannot tell, so it refuses too
+        -> [VALIDATION.md](VALIDATION.md#index-selection).
 
-    Returns:
-        True when the record carries a SHA digest; an MD5-only or empty one cannot tell bytes
-        apart -> [CRYPTO.md](CRYPTO.md#checksums).
-    """
-    return any(algorithm in record for algorithm in COMPARE_HASH_LIST)
+        Args:
+            path: Storage path of the payload in the target root.
+            digests: The digests the own source records for `path`.
+
+        Returns:
+            True when no other dist records `path`, or every record of it carries a SHA digest
+            matching `digests`; False while another dist's payloads are unknown.
+        """
+        if not self.complete:
+            return False
+        if self.recorded is None:
+            return path not in self.claimed
+        records = self.recorded.get(path, ())
+        return all(has_sha(record) and compare_digests(record, digests) for record in records)
 
 
 class ConsistencyLists(NamedTuple):
@@ -777,7 +838,7 @@ def _unlisted_shared_root(params: RepoParams) -> SharedRoot:
 
 
 # what a neighbour dist's load may raise: `RootRelease.load`, the unsafe-component refusal in
-# `_claims_of`, and `Repo.update` and its Raises; every one leaves that dist's payloads unknown
+# `_claims_of`, and `Repo.load` and its Raises; every one leaves that dist's payloads unknown
 _NOT_LOADED = (
     RepoReadException,
     ReleaseReadException,
@@ -857,7 +918,7 @@ def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
             verify_digests=False,
         )
         repo = Repo(storage, params)
-        repo.update(IndexLoad.STRICT)
+        repo.load(IndexLoad.STRICT)
         # every slot, not `get_packages`, which yields a path shared by two arch indices once
         for component in repo.components.values():
             for packages in component.packages.values():

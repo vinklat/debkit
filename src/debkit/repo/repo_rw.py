@@ -10,7 +10,7 @@ import re
 from email.utils import formatdate
 from typing import TYPE_CHECKING, NamedTuple
 
-from txstore import StorageException, StorageNull
+from txstore import StorageException, StorageNull, compare_digests, normalize_digests
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
@@ -61,6 +61,7 @@ class RepoRW(Repo):
         if fields is not None and self.params.is_flat:
             fields = {key: value for key, value in fields.items() if key != "Components"}
         self.release.setup(fields=fields)
+        self._selection = None
 
     def save(self) -> bool:
         """Save the repository.
@@ -139,7 +140,7 @@ class RepoRW(Repo):
         """
         return [
             arch
-            for arch in self.get_archs()
+            for arch in self.selection.archs
             if arch != SOURCE_ARCH and (arch or self.params.is_flat)
         ]
 
@@ -186,6 +187,42 @@ class RepoRW(Repo):
         """
         return source_storage.transfer(path_src, self.storage, path_dst=path_dst)
 
+    def holds(self, path: str, digests: dict[str, str]) -> bool:
+        """Report whether the stored metadata of `path` records `digests`.
+
+        The digest-skip decision shared by payloads and indices: one metadata round trip,
+        never a read of the object; normalization and comparison stay in txstore's digest
+        helpers -> [CRYPTO.md](CRYPTO.md#implementation-rules). The caller has already
+        established that `path` exists and that digest verification is on.
+
+        Args:
+            path: The object path.
+            digests: The digests another repository records for the object.
+
+        Returns:
+            True when the held copy matches and need not be transferred.
+        """
+        return compare_digests(digests, normalize_digests(self.storage.get_metadata(path)))
+
+    def release_agrees(self, path: str, digests: dict[str, str]) -> bool:
+        """Report whether this repository's loaded root Release records `digests` for an index.
+
+        The Release is already loaded, so its digest block costs nothing, while
+        `holds` is a round trip per key and a full Debian Release lists hundreds of
+        indices -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+        Args:
+            path: The index's storage path, identical in both repositories.
+            digests: The digests another repository's Release records for it.
+
+        Returns:
+            True when this Release records matching digests under its own layout's key.
+        """
+        held = self.release.digests.get(self.params.release_key(path))
+        if not held:
+            return False
+        return compare_digests(digests, normalize_digests(held))
+
     def held_digests(self, path: str) -> dict[str, str] | None:
         """Return the digests of the bytes this repo's storage holds at `path`, if any.
 
@@ -203,13 +240,15 @@ class RepoRW(Repo):
         """Check the repository against its own indices.
 
         Every payload the indices list is read back and verified; with `fix`, a corrupt one
-        is deleted, so a later sync or insert places it again, and so is every orphan
-        -> [CONFIG.md](CONFIG.md#check). A corrupt payload whose bytes another dist sharing the
-        root records is kept for that dist, and so is every one while another dist's payloads
-        are unknown -> [VALIDATION.md](VALIDATION.md#index-selection).
+        is deleted, so a later sync or insert places it again, and so is every orphan, while a
+        valid one has the digests read back recorded as object metadata, which the sync's
+        held-payload skip reads -> [CONFIG.md](CONFIG.md#check). A corrupt payload whose bytes
+        another dist sharing the root records is kept for that dist, and so is every one while
+        another dist's payloads are unknown -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
-            fix: Delete corrupt payloads and orphans. Defaults to False.
+            fix: Delete corrupt payloads and orphans, and record each valid payload's
+                digests. Defaults to False.
             purge_orphans: With `fix`, delete the orphans too. Defaults to True.
 
         Returns:
@@ -227,8 +266,10 @@ class RepoRW(Repo):
                 continue
 
             try:
-                valid, digests = self._verify_file(file, progress=(cnt, len(payloads)), fix=fix)
-                if not valid:
+                valid, digests = self._verify_file(file, progress=(cnt, len(payloads)))
+                if valid and fix:
+                    self.record_digests(file, digests)
+                elif not valid:
                     logger.warning("Checksum verify failed: %s", file)
                     failed += 1
                     if fix and shared.corrupt_deletable(file, digests):
@@ -261,15 +302,21 @@ class RepoRW(Repo):
         logger.info("Delete: %s", file)
         self.storage.delete(file)
 
-    def _verify_file(
-        self, file: str, progress: tuple[int, int], fix: bool
-    ) -> tuple[bool, dict[str, str]]:
-        """Read a payload back and verify it against the indices.
+    def record_digests(self, file: str, digests: dict[str, str]) -> None:
+        """Record `digests` as the object metadata of `file`, which the sync's skip reads.
+
+        Args:
+            file: Object path in this repository's storage.
+            digests: The digests of the bytes it holds.
+        """
+        self.storage.add_metadata(file, digests)
+
+    def _verify_file(self, file: str, progress: tuple[int, int]) -> tuple[bool, dict[str, str]]:
+        """Read a payload back and verify it against the indices; nothing is written.
 
         Args:
             file: The payload path.
             progress: Current and total payload counts, for the log.
-            fix: Record the digests as object metadata when the payload verifies.
 
         Returns:
             Whether the file is valid, and the digests of the bytes read back.
@@ -280,9 +327,6 @@ class RepoRW(Repo):
 
         if self.params.verify_digests and not self.verify_checksum(file, digests):
             return False, digests
-
-        if fix:
-            self.storage.add_metadata(file, digests)
 
         return True, digests
 

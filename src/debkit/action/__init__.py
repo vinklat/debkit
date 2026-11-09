@@ -169,20 +169,6 @@ def attach_storage_repo(
     return storage, repo_params
 
 
-def attach_storage_plain(pars: Namespace, url: str, create_path: bool = False) -> Storage:
-    """Build a `Storage` from a plain (non-deb-source) URL.
-
-    Args:
-        pars: Parsed CLI namespace.
-        url: Storage URL.
-        create_path: Create the destination bucket/directory if missing.
-
-    Returns:
-        A backend instance routed by the URL scheme.
-    """
-    return open_storage(pars, url, create_path=create_path)
-
-
 def attach_storage_root(pars: Namespace, url: str, create_path: bool = False) -> Storage:
     """Build a `Storage` from the URL field of a deb source, ignoring dist/components.
 
@@ -202,7 +188,7 @@ def attach_storage_root(pars: Namespace, url: str, create_path: bool = False) ->
     """
     if not url.strip():
         raise StorageException("Empty storage URL.")
-    return attach_storage_plain(pars, url.split()[0], create_path=create_path)
+    return open_storage(pars, url.split()[0], create_path=create_path)
 
 
 def open_target_repo(

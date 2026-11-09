@@ -39,9 +39,11 @@ def _split_component(key: str, components: set[str] | None) -> tuple[str | None,
 
     The component is a name the repository chose, so the structural rules read only
     the path below it: a component called `extra-armhf` or `installer-extras` says
-    nothing about the architecture or the shape of the indices under it. One split
-    feeds both the component membership test and those rules, so the two never
-    disagree on where a component ends -> [VALIDATION.md](VALIDATION.md#index-selection).
+    nothing about the architecture or the shape of the indices under it. Within this
+    selection, one split feeds both the component membership test and those rules, so the
+    two never disagree on where a component ends; the shared-root claims split against
+    another dist's declared components instead
+    -> [VALIDATION.md](VALIDATION.md#index-selection).
 
     A component may hold `/`, as `updates/main` does, so the key is matched against the
     selected components, the longest first; a key under none of them splits at its first

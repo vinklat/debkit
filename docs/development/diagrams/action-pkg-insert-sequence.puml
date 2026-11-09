@@ -22,7 +22,7 @@ CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
-ActionPkg -> Tgt: update()\n[under the lock: a peer may have committed]
+ActionPkg -> Tgt: load()\n[under the lock: a peer may have committed]
 Tgt --> ActionPkg: ok / ReleaseNotFoundException
 opt ReleaseNotFoundException
   ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)

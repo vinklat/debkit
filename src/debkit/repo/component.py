@@ -11,7 +11,7 @@ from txstore import StorageException
 
 from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
-from debkit.repo.release import Release
+from debkit.repo.release import RootRelease
 from debkit.repo.sources import Sources
 
 if TYPE_CHECKING:
@@ -80,7 +80,9 @@ class Component:
         is_flat: Read-only; delegates to ``params.is_flat``.
     """
 
-    def __init__(self, storage: Storage, params: RepoParams, release: Release, name: str) -> None:
+    def __init__(
+        self, storage: Storage, params: RepoParams, release: RootRelease, name: str
+    ) -> None:
         """Initialize a Component object.
 
         Args:
@@ -225,7 +227,7 @@ class Component:
                     raise ComponentException("architecture check mismatch.")
 
             self.packages[arch] = packages
-            npkgs += packages.size
+            npkgs += len(packages)
         return npkgs
 
     def save(self) -> bool:

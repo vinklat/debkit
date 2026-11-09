@@ -84,7 +84,7 @@ def test_non_string_input_raises() -> None:
     [
         ("bookworm", True),
         ("Bookworm123", True),
-        ("", True),  # documented behaviour: empty matches
+        ("", False),
         ("/", False),
         ("noble-updates", False),
         ("with space", False),
@@ -138,6 +138,8 @@ _LAYOUTS = [
     ("stable", True, None, "Packages.xz", ("stable/Packages.xz", "Packages.xz")),
     # flat-rootless, e.g. a "/" dist
     ("/", True, None, "Packages.xz", ("Packages.xz", "Packages.xz")),
+    # flat with an empty dist: no directory, not "/Packages.xz"
+    ("", True, None, "Packages.xz", ("Packages.xz", "Packages.xz")),
     # non-flat with empty indices_prefix — falls back to comp-relative
     (
         None,

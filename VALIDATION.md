@@ -49,7 +49,7 @@ Implemented by `RepoParams.is_real_dist()`.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Real dist | Matches `^[A-Za-z0-9]*$`; the empty string matches. | — |
+| Real dist | Matches `^[A-Za-z0-9]+$`; the empty string names no directory. | — |
 | Not real | Contains `/`, `-`, `_`, whitespace, or non-ASCII characters. | Treated as a path-like dist, not an error |
 
 ## Repository index paths
@@ -98,6 +98,7 @@ per entry by its transfer; the source is never probed.
 | Unpublished entry | A selected path the source does not publish stays in the set, so it is never purged from the target | — |
 | Payload deletion | A payload dropped from one source index is deleted from the target only when no selected source index still lists it, so a shared `all` payload survives its removal from one architecture | — |
 | Shared root | A componented root may hold other dists beside the own one, sharing `pool/`: a sync, `check --fix`, or `remove` never deletes a path under another `dists/<dist>/`, nor a payload another dist's index lists, except a corrupt one under the next row; no source payload key lands under `dists/` → [Filename safety](#filename-safety) | — |
+| Shared root payload replace | A sync overwrites a held payload whose bytes differ from the source only when every index of every other dist that lists it records the source's bytes with a SHA digest; skipping the copy would leave the own Release naming bytes the target lacks | Another dist records other bytes, no SHA digest, or did not load → `RepoSyncException` (Sync), before any transfer |
 | Shared root corrupt payload | `check --fix` deletes a payload whose bytes fail the own indices unless a record of it in any index of another dist matches those bytes or carries no SHA digest, which cannot tell; bytes no index records serve no dist, so a later sync or insert places the payload again | — |
 | Shared root claims | Each other dist loads exactly the binary and source indices its root Release lists, without signature or digest checks, since its claims and the digests each of its indices records only keep paths; a flat layout has no `dists/` tree, so the shared root rules do not apply | — |
 | Shared root components | A component may hold `/`, as `updates/main`: an index key is read below a component its root Release's `Components` field declares, the longest first; any other index key claims with its head before `binary-<arch>/` or `source/` as the component | — |
@@ -157,7 +158,7 @@ inherits, through the decoders in `repo/compress.py`.
 
 ## Index loading
 
-Implemented by `Component.load()` in `repo/component.py`, called through `Repo.update()` with an
+Implemented by `Component.load()` in `repo/component.py`, called through `Repo.load()` with an
 `IndexLoad` mode: `STRICT` for the `sync` source and shared-root claims, `WRITABLE` for `insert`,
 `remove`, and `check --fix`, `READ_ONLY` for the rest.
 
@@ -199,6 +200,7 @@ every file becomes one record keyed by `<directory>/<name>`.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
+| Unreadable line | A stanza holds no line that would hide the fields after it → [Blank lines](#blank-lines). | → `PackagesException` (Read) |
 | Directory | Present, not `.`, and passes the unsafe-key rule below. | → `PackagesException` (Read) |
 | File name | A bare name: no `/` segment, and the joined key passes the unsafe-key rule. | → `PackagesException` (Read) |
 | Size | Agrees across every hash block that lists the file. | → `PackagesException` (Read) |
@@ -254,16 +256,16 @@ Implemented by `Changes.parse()`, `Release.parse()`, and the `Sources` stanza ex
 
 ## Blank lines
 
-Implemented by `parse_stanza()` in `repo/stanza.py`, called by `Changes.parse()` and
-`Release.parse()`. Debian Policy 5.1 ends a paragraph at an empty line; a `.changes` and a `Release`
-hold one.
+Implemented by `parse_stanza()` in `repo/stanza.py`, called by `Changes.parse()`, `Release.parse()`,
+and `Sources._expand_stanza()`. Debian Policy 5.1 ends a paragraph at an empty line; a `.changes`
+and a `Release` hold one, and a `Sources` index is split into stanzas first.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Line ends | CRLF is read as LF. | — |
 | Leading and trailing empty lines | Ignored. | — |
 | Whitespace line | A line of only spaces or tabs continues the field before it, as apt reads it. | — |
-| Unreadable line | A line that is neither a field, a continuation, nor empty, such as one with no colon, a space before the colon, or a bare CR, would end the fields and hide the rest. A `Release` is checked after its unindented-continuation repair. | `.changes` → `ChangesException` (Read); `Release` → `ReleaseReadException` (Read) |
+| Unreadable line | A line that is neither a field, a continuation, nor empty, such as one with no colon, a space before the colon, or a bare CR, would end the fields and hide the rest. A `Release` is checked after its unindented-continuation repair. | `.changes` → `ChangesException` (Read); `Release` → `ReleaseReadException` (Read); `Sources` stanza → `PackagesException` (Read) |
 | `.changes` | One paragraph: no empty line between two fields, as its digests and architectures gate the insert. | → `ChangesException` (Read) |
 | `Release` | The first paragraph is read, as apt reads it, so freshness and the index set agree with its clients; a later one is ignored. | Logged as a warning |
 

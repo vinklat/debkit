@@ -7,6 +7,7 @@ is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 from txstore import COMPARE_HASH_LIST, SUPPORT_HASH_LIST, compare_digests
 
@@ -17,6 +18,7 @@ __all__ = [
     "SUPPORT_HASH_LIST",
     "ChecksumException",
     "HexDigests",
+    "has_sha",
     "parse_hash_block",
 ]
 
@@ -29,6 +31,19 @@ CHECKSUM_FIELDS = {
     CHECKSUMS_SHA256: "SHA256",
     "Checksums-Sha512": "SHA512",
 }
+
+
+def has_sha(record: Mapping[str, object]) -> bool:
+    """Report whether a digest record holds an algorithm `compare_digests` matches on.
+
+    Args:
+        record: Digest record keyed by algorithm name; other keys are ignored.
+
+    Returns:
+        True when the record carries a SHA digest; an MD5-only or empty one cannot tell bytes
+        apart -> [CRYPTO.md](CRYPTO.md#checksums).
+    """
+    return any(algorithm in record for algorithm in COMPARE_HASH_LIST)
 
 
 def parse_size(value: object) -> int | None:

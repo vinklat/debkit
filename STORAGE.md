@@ -39,7 +39,7 @@ storage → [STYLE.md](STYLE.md#layers).
 
 | Rule | Behavior |
 | -- | -- |
-| Scope | `insert`, `remove`, `sync`, and `check --fix` run their writes inside one `maybe_transaction`; `sync --verify-existing` deletes inside the sync's transaction. The read-only commands record nothing. |
+| Scope | `insert`, `remove`, `sync`, and `check --fix` run their writes inside one `maybe_transaction`; `sync --verify-existing` deletes and records payload digests inside the sync's transaction. The read-only commands record nothing. |
 | Load | Every write command reads its target inside the transaction, after `history_lock` is granted, so a peer's commit is never saved over from a stale read. |
 | Retention | `Action.__init__` builds `HistoryRetention.from_env(keep=..., max_age_days=...)` from `--history-keep` and `--history-max-age` and passes it to `maybe_transaction`, so a recorded write prunes expired history → [CONFIG.md](CONFIG.md#global-flags). |
 | Non-transactional target | An HTTP target runs the body without a transaction or history. |

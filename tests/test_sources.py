@@ -112,7 +112,7 @@ def test_sources_parse_keys_a_shared_payload_once_and_counts_files() -> None:
     src = _new_sources()
     src._parse_indices(_SOURCES)
 
-    assert src.size == 5
+    assert len(src) == 5
     assert len(src) == 5
 
 
@@ -180,6 +180,25 @@ def test_sources_parse_md5_only_payload_raises() -> None:
     stanza = f"Package: hello\nDirectory: {_DIR}\nFiles:\n 1111 1 hello.dsc\n"
 
     with pytest.raises(PackagesException, match="no SHA digest"):
+        src._parse_indices(stanza)
+
+
+@pytest.mark.parametrize(
+    "stanza",
+    [
+        f"Package: hello\nbroken line\nDirectory: {_DIR}\nChecksums-Sha256:\n aaaa 1 a.dsc\n",
+        f"Package: hello\nDirectory: {_DIR}\nbroken line\nChecksums-Sha256:\n aaaa 1 a.dsc\n",
+        f"Package: hello\nDirectory: {_DIR}\nChecksums-Sha256:\n aaaa 1 a.dsc\nbroken\n bbbb 2 b\n",
+        f"Package: hello\nDirectory : {_DIR}\nChecksums-Sha256:\n aaaa 1 a.dsc\n",
+    ],
+    ids=["before-directory", "before-checksums", "inside-hash-block", "space-before-colon"],
+)
+def test_sources_parse_unreadable_line_raises(stanza: str) -> None:
+    """A line the parser cannot read hides every field after it: the payloads those fields
+    name would neither be copied nor kept, so the stanza fails instead of shrinking."""
+    src = _new_sources()
+
+    with pytest.raises(PackagesException, match="unreadable line in Sources stanza"):
         src._parse_indices(stanza)
 
 
@@ -277,4 +296,4 @@ def test_sources_load_expands_the_index_it_finds() -> None:
     with patch.object(Sources, "_find_packages_file", return_value=found):
         assert src.load(root, "main", "source") is True
 
-    assert src.size == 3
+    assert len(src) == 3

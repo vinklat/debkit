@@ -173,7 +173,7 @@ class ActionSync(Action):
                 "---------- Load source repo (%s)...",
                 redact_url(self.source_repo.params.url or ""),
             )
-            self.source_repo.update(IndexLoad.STRICT)
+            self.source_repo.load(IndexLoad.STRICT)
             self._check_fresh(run_floor)
             self._sync_until_settled(run_floor)
 
@@ -199,7 +199,7 @@ class ActionSync(Action):
                 return
             synced_hash = self.source_repo.release.hash
             logger.info("---------- Retrieve load to verify source repo changes...")
-            self.source_repo.update(IndexLoad.STRICT)
+            self.source_repo.load(IndexLoad.STRICT)
             if self.source_repo.release.hash == synced_hash:
                 return
             logger.info("Source repo modified during synchronisation! Repeat sync...")
@@ -259,7 +259,7 @@ class ActionSync(Action):
             # the sync plans from the source and only copies indices, never writing one from
             # this load, so an unreadable target index is skipped
             # -> [VALIDATION.md](VALIDATION.md#index-loading)
-            self.target_repo.update(IndexLoad.READ_ONLY)
+            self.target_repo.load(IndexLoad.READ_ONLY)
         except ReleaseNotFoundException as exc:
             logger.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
@@ -297,7 +297,7 @@ class ActionSync(Action):
         subcommands read the same dests, env fallbacks and defaults from one
         registration: a check run with other values reports the difference as
         missing or orphan objects and `--fix` acts on it
-        -> [CONFIG.md](../../../CONFIG.md#check).
+        -> [CONFIG.md](CONFIG.md#check).
 
         Args:
             parser: The parser to add arguments to.
@@ -417,7 +417,7 @@ class ActionCheck(Action):
             try:
                 # `--fix` deletes what no loaded index claims, so it never skips one
                 # -> [VALIDATION.md](VALIDATION.md#index-loading)
-                self.target_repo.update(IndexLoad.WRITABLE if self.fix else IndexLoad.READ_ONLY)
+                self.target_repo.load(IndexLoad.WRITABLE if self.fix else IndexLoad.READ_ONLY)
             except ReleaseNotFoundException as exc:
                 logger.error("Target repo is empty: %s", exc)
                 return False

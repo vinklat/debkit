@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import re
 from datetime import UTC
 from email.utils import parsedate_to_datetime
@@ -16,7 +17,9 @@ from helpers.factories import make_package, make_params, make_storage_mock
 from helpers.trees import payload_path, write_dist
 from txstore import Storage, StorageException, StorageFS
 
-from debkit.repo import _listed_slots, shared_root_claims
+import debkit.repo as repo_package
+import debkit.repo.release as release_module
+from debkit.repo import _NOT_LOADED, Repo, SharedRoot, _claims_of, _listed_slots, shared_root_claims
 from debkit.repo.component import Component, IndexLoad
 from debkit.repo.params import RepoParams
 from debkit.repo.release import RootRelease
@@ -51,7 +54,7 @@ def test_save_rewrites_a_loaded_root_release_after_a_component_saved(tmp_path: P
     write_dist(tmp_path, "bookworm", {"foo": "1"})
     storage = StorageFS(str(tmp_path))
     repo = RepoRW(storage, RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False))
-    repo.update()
+    repo.load()
     saved = MagicMock()
     saved.save.return_value = True
     repo.components = cast(dict[str, Component], {"main": saved})
@@ -166,7 +169,7 @@ def test_remove_pkg_of_an_arch_all_payload_on_a_real_storage(tmp_path: Path) -> 
     built.save()
 
     repo = RepoRW(storage, make_params())
-    repo.update()
+    repo.load()
     assert not storage.in_transaction()
     assert repo.remove_pkg({"Package": re.compile("^hello$")}) is True
 
@@ -182,7 +185,7 @@ def _removed_foo(tmp_path: Path) -> RepoRW:
     repo = RepoRW(
         StorageFS(str(tmp_path)), RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False)
     )
-    repo.update()
+    repo.load()
     assert repo.remove_pkg({"Package": re.compile("^foo$")}) is True
     assert repo.components["main"].packages["amd64"].packages == {}
     return repo
@@ -253,7 +256,7 @@ def _flat_repo(root: Path) -> RepoRW:
     params = RepoParams(verify_gpg=False, verify_digests=False)
     params.from_deb_source(f"fs://{root} /")
     repo = RepoRW(StorageFS(str(root)), params)
-    repo.update()
+    repo.load()
     return repo
 
 
@@ -383,9 +386,9 @@ def test_flat_sync_of_an_arch_subset_copies_a_changed_payload_of_another_arch(
     _write_flat(src, [("a", "amd64", b"A1"), ("b", "i386", b"B2")])
     _write_flat(dst, [("a", "amd64", b"A1"), ("b", "i386", b"B1")])
     source = RepoSync(StorageFS(str(src)), _flat_params(src, ["amd64", "arm64"]))
-    source.update(IndexLoad.STRICT)
+    source.load(IndexLoad.STRICT)
     target = RepoRW(StorageFS(str(dst)), _flat_params(dst, ["amd64", "arm64"]))
-    target.update(IndexLoad.READ_ONLY)
+    target.load(IndexLoad.READ_ONLY)
 
     assert "pool/b_1_i386.deb" in source.build_sync_lists(target).copy
 
@@ -398,7 +401,7 @@ def test_flat_stats_report_an_arch_slot_by_its_arch_whatever_else_is_selected(
     selecting i386 too changed what the amd64 slot reported."""
     _write_flat(tmp_path, [("a", "amd64", b"A"), ("b", "i386", b"B"), ("c", "all", b"C")])
     repo = RepoRW(StorageFS(str(tmp_path)), _flat_params(tmp_path, archs))
-    repo.update(IndexLoad.READ_ONLY)
+    repo.load(IndexLoad.READ_ONLY)
 
     assert repo.stats()["/"]["amd64"]["packages_total"] == 2
 
@@ -465,7 +468,7 @@ def _checked(
     params = RepoParams("bookworm", ["main"], ["amd64"], verify_gpg=False)
     params.verify_digests = verify_digests
     repo = RepoRW(storage or StorageFS(str(tmp_path)), params)
-    repo.update()
+    repo.load()
     return repo
 
 
@@ -598,7 +601,7 @@ def test_check_fix_keeps_a_payload_another_dist_lists_under_any_component(
     repo = RepoRW(
         StorageFS(str(tmp_path)), RepoParams("trixie", ["main"], ["amd64"], verify_gpg=False)
     )
-    repo.update()
+    repo.load()
 
     repo.check(fix=True)
 
@@ -643,6 +646,29 @@ def test_listed_slots_reads_index_keys_below_each_component(
     assert slots == ({} if slot is None else {slot[0]: {slot[1]}})
 
 
+def _documented_raises(function: object) -> set[str]:
+    """The exception names a docstring's `Raises:` section lists."""
+    doc = inspect.getdoc(function) or ""
+    section = doc.split("Raises:", 1)[1].split("\n\n", 1)[0] if "Raises:" in doc else ""
+    return set(re.findall(r"^\s{4}(\w+):", section, flags=re.MULTILINE))
+
+
+def test_a_neighbour_dist_that_does_not_load_degrades_on_every_documented_raise() -> None:
+    """`_NOT_LOADED` is kept by hand: an exception the load path documents but the tuple
+    lacks would abort the sync of every other dist instead of keeping that dist's payloads."""
+    documented = (
+        _documented_raises(Repo.load)
+        | _documented_raises(_claims_of)
+        | _documented_raises(RootRelease.load)
+    )
+
+    namespace = vars(repo_package) | vars(release_module)
+    undegraded = {name for name in documented if not issubclass(namespace[name], _NOT_LOADED)}
+
+    assert documented
+    assert undegraded == set()
+
+
 def test_corrupt_deletable_keeps_a_claimed_payload_without_collected_digests(
     tmp_path: Path,
 ) -> None:
@@ -653,6 +679,37 @@ def test_corrupt_deletable_keeps_a_claimed_payload_without_collected_digests(
     shared = shared_root_claims(storage, make_params(), set(storage.list()))
 
     assert not shared.corrupt_deletable(_FOO, {"SHA256": hashlib.sha256(b"deb 1").hexdigest()})
+
+
+_NEW = {"SHA256": "11" * 32}
+_OLD = {"SHA256": "22" * 32}
+
+
+@pytest.mark.parametrize(
+    ("shared", "expected"),
+    [
+        (SharedRoot("dists/bookworm/", frozenset(), True, {}), True),
+        (SharedRoot("dists/bookworm/", frozenset({_FOO}), True, {_FOO: (_NEW, _NEW)}), True),
+        (SharedRoot("dists/bookworm/", frozenset({_FOO}), True, {_FOO: (_NEW, _OLD)}), False),
+        (SharedRoot("dists/bookworm/", frozenset({_FOO}), True, {_FOO: ({"MD5Sum": "x"},)}), False),
+        (SharedRoot("dists/bookworm/", frozenset(), False, {}), False),
+        (SharedRoot("dists/bookworm/", frozenset({_FOO}), True, None), False),
+        (SharedRoot("", frozenset(), True, None), True),
+    ],
+    ids=[
+        "unclaimed",
+        "every-record-agrees",
+        "one-record-pins-other-bytes",
+        "md5-only-record",
+        "incomplete",
+        "claimed-without-digests",
+        "flat",
+    ],
+)
+def test_replaceable_overwrites_only_bytes_no_other_dist_pins(
+    shared: SharedRoot, expected: bool
+) -> None:
+    assert shared.replaceable(_FOO, _NEW) is expected
 
 
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:
@@ -720,6 +777,16 @@ def test_check_fix_records_each_verified_digest_as_metadata(tmp_path: Path) -> N
     assert all(digests["SHA256"] and acl is None for _, digests, acl in storage.metadata_writes)
 
 
+def test_check_without_fix_writes_no_metadata(tmp_path: Path) -> None:
+    """Verification is read-only: only `--fix` records digests."""
+    storage = _FaultyFS(str(tmp_path))
+    repo = _checked(tmp_path, storage)
+
+    repo.check()
+
+    assert storage.metadata_writes == []
+
+
 def test_shared_root_is_unknown_while_another_dist_lists_an_unsafe_component(
     tmp_path: Path,
 ) -> None:
@@ -743,6 +810,17 @@ def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root
     assert shared.prefix == ""
 
 
+def test_binary_archs_reads_the_release_setup_just_wrote() -> None:
+    """Insert into a new repo sets up its Release without loading one, so `setup` drops a
+    selection resolved against the empty Release before it."""
+    repo = RepoRW(make_storage_mock(), make_params())
+    assert repo.binary_archs() == []
+
+    repo.setup({"Architectures": "amd64 arm64", "Components": "main"})
+
+    assert repo.binary_archs() == ["amd64", "arm64"]
+
+
 @pytest.mark.parametrize(
     ("archs", "flat", "expected"),
     [
@@ -754,11 +832,12 @@ def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root
     ids=["source-dropped", "source-only", "empty-arch-componented", "empty-arch-flat"],
 )
 def test_binary_archs_drops_the_source_arch_and_a_componented_empty_one(
-    monkeypatch: pytest.MonkeyPatch, archs: list[str], flat: bool, expected: list[str]
+    archs: list[str], flat: bool, expected: list[str]
 ) -> None:
     """A mirrored `Sources` index is read-only, and the empty arch names no `binary-<arch>/`
     directory, so only a flat repo inserts under it."""
-    repo = RepoRW(make_storage_mock(), make_params(flat=flat))
-    monkeypatch.setattr(repo, "get_archs", lambda: iter(archs))
+    params = make_params(flat=flat)
+    params.archs = archs
+    repo = RepoRW(make_storage_mock(), params)
 
     assert repo.binary_archs() == expected

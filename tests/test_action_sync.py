@@ -15,6 +15,7 @@ from typing import IO, Any, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
+from helpers import trees
 from helpers.factories import make_params
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history, storage_namespace
 from helpers.trees import write_dist
@@ -35,7 +36,7 @@ from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException, RootRelease
 from debkit.repo.repo_diff import RepoDiff
 from debkit.repo.repo_rw import CheckReport, RepoRW
-from debkit.repo.repo_sync import RepoSync, SyncPlan
+from debkit.repo.repo_sync import RepoSync, RepoSyncException, SyncPlan
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -165,12 +166,12 @@ def test_sync_reloads_the_target_before_a_later_pass() -> None:
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
-    _source(action).update.side_effect = update
+    _source(action).load.side_effect = update
 
     action.sync()
 
     assert _source(action).sync.call_count == 2
-    assert _target(action).update.call_count == 2
+    assert _target(action).load.call_count == 2
     assert _source(action).release.check_fresh_against.call_count == 3
 
 
@@ -184,14 +185,14 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
-    _source(action).update.side_effect = update
+    _source(action).load.side_effect = update
 
     with caplog.at_level(logging.WARNING):
         action.sync()
 
     assert _source(action).sync.call_count == MAX_UPDATED_REPO_RETRIES
     # the source is not read again after the last pass -> VALIDATION.md#index-selection
-    assert _source(action).update.call_count == MAX_UPDATED_REPO_RETRIES
+    assert _source(action).load.call_count == MAX_UPDATED_REPO_RETRIES
     assert txn.committed
     assert [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING] == [
         f"Source repo still changing after {MAX_UPDATED_REPO_RETRIES} passes; "
@@ -206,7 +207,7 @@ def _dated_target_loads(action: ActionSync) -> None:
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _target(action).release.fields = {"Date": f"load{next(loads)}"}
 
-    _target(action).update.side_effect = update
+    _target(action).load.side_effect = update
 
 
 def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
@@ -217,7 +218,7 @@ def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
-    _source(action).update.side_effect = update
+    _source(action).load.side_effect = update
     _dated_target_loads(action)
 
     action.sync()
@@ -266,7 +267,7 @@ def test_sync_allow_release_rollback_warns_once_across_passes(
     def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
-    _source(action).update.side_effect = update
+    _source(action).load.side_effect = update
 
     with caplog.at_level(logging.WARNING):
         action.sync()
@@ -453,6 +454,28 @@ def test_sync_keeps_another_dist_sharing_the_target_root(tmp_path: Path, fix: bo
         assert (tmp_path / "tgt" / path).exists(), path
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
     assert not orphan.exists()
+
+
+def test_sync_refuses_to_overwrite_a_payload_another_dist_pins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a held pool key whose bytes another dist records was overwritten with the
+    source's bytes, so that dist's clients got a hash mismatch."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
+    with monkeypatch.context() as m:
+        m.setattr(trees, "payload_bytes", lambda version: f"local rebuild {version}".encode())
+        _write_other_dist(tmp_path / "tgt", "bullseye", {"foo": "3"})
+    pinned = tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb"
+    own_release = tmp_path / "tgt" / "dists/bookworm/Release"
+    release_before = own_release.read_bytes()
+
+    with pytest.raises(RepoSyncException, match="another dist of the shared root"):
+        _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+
+    assert pinned.read_bytes() == b"local rebuild 3"
+    assert own_release.read_bytes() == release_before
+    assert (tmp_path / "tgt" / "pool/main/f/foo/foo_2_amd64.deb").exists()
 
 
 @pytest.mark.parametrize(
@@ -850,7 +873,7 @@ def test_sync_loads_the_target_inside_the_transaction() -> None:
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
     began_at_load: list[bool] = []
-    _target(action).update.side_effect = lambda *_: began_at_load.append(txn.began)
+    _target(action).load.side_effect = lambda *_: began_at_load.append(txn.began)
 
     action.sync()
 
@@ -860,7 +883,7 @@ def test_sync_loads_the_target_inside_the_transaction() -> None:
 def test_sync_treats_a_missing_target_as_empty() -> None:
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
-    _target(action).update.side_effect = ReleaseNotFoundException("File not found")
+    _target(action).load.side_effect = ReleaseNotFoundException("File not found")
 
     action.sync()
 
@@ -872,7 +895,7 @@ def test_sync_stops_on_a_target_it_cannot_read() -> None:
     """Only a missing Release means an empty target; any other read failure is not one."""
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
-    _target(action).update.side_effect = ReleaseReadException("GPG signature file missing")
+    _target(action).load.side_effect = ReleaseReadException("GPG signature file missing")
 
     with pytest.raises(ReleaseReadException):
         action.sync()
@@ -888,7 +911,7 @@ def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction
     action.verify_existing = True
     began_at_load: list[bool] = []
     began_at_check: list[bool] = []
-    _target(action).update.side_effect = lambda *_: began_at_load.append(txn.began)
+    _target(action).load.side_effect = lambda *_: began_at_load.append(txn.began)
 
     def check(*, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
         began_at_check.append(txn.began and not txn.committed)

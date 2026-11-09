@@ -26,7 +26,6 @@ from debkit.action import (
     RepoJSONEncoder,
     VerifyPolicy,
     add_output_cli_args,
-    attach_storage_plain,
     attach_storage_repo,
     attach_storage_root,
     dump_json,
@@ -236,20 +235,19 @@ def test_attach_storage_repo_fs() -> None:
 
 
 def test_attach_storage_repo_raises_on_empty_url() -> None:
-    with pytest.raises((RepoReadException, RepoParamsException)):
+    with pytest.raises(RepoParamsException, match="no dist/components fields"):
         attach_storage_repo(storage_namespace(), "    ")
 
 
-def test_attach_storage_plain_skips_deb_source_parsing() -> None:
-    pars = storage_namespace()
-    storage = attach_storage_plain(pars, url="http://example.com/incoming")
+def test_open_storage_skips_deb_source_parsing() -> None:
+    storage = open_storage(storage_namespace(), "http://example.com/incoming")
     assert isinstance(storage, StorageHTTP)
 
 
-def test_attach_storage_plain_raises_the_storage_construction_error() -> None:
+def test_open_storage_raises_the_storage_construction_error() -> None:
     """A plain URL keeps txstore's error, unwrapped → STORAGE.md#construction."""
     with pytest.raises(StorageException, match="Invalid HTTP URL"):
-        attach_storage_plain(storage_namespace(), "http:///no-host")
+        open_storage(storage_namespace(), "http:///no-host")
 
 
 def test_attach_storage_root_accepts_bare_url() -> None:

@@ -14,8 +14,8 @@ from debkit.action import (
     Action,
     ActionException,
     OutputType,
-    attach_storage_plain,
     dump_json,
+    open_storage,
     open_target_repo,
 )
 from debkit.argtypes import component_type, pkg_pattern_type
@@ -73,7 +73,7 @@ class ActionPkg(Action):
         super().__init__(pars)
         self.target_repo = open_target_repo(pars, gpg=self.gpg, create_path=create_path)
         self.incoming_storage: Storage | None = (
-            attach_storage_plain(pars, pars.incoming_url) if is_insert else None
+            open_storage(pars, pars.incoming_url) if is_insert else None
         )
 
     def _check_insert_source(self) -> None:
@@ -92,7 +92,7 @@ class ActionPkg(Action):
 
     def dump(self) -> None:
         """Dump repository to stdout."""
-        self.target_repo.update(IndexLoad.READ_ONLY)
+        self.target_repo.load(IndexLoad.READ_ONLY)
         logger.debug("%s", str(self._target_metrics))
         if self.output == OutputType.brief:
             self._print_brief_dump()
@@ -123,7 +123,7 @@ class ActionPkg(Action):
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
-        self.target_repo.update(IndexLoad.READ_ONLY)
+        self.target_repo.load(IndexLoad.READ_ONLY)
         stats = self.target_repo.stats()
 
         if self.output == OutputType.brief:
@@ -170,7 +170,7 @@ class ActionPkg(Action):
 
     def list_packages(self) -> None:
         """List packages in repository to stdout."""
-        self.target_repo.update(IndexLoad.READ_ONLY)
+        self.target_repo.load(IndexLoad.READ_ONLY)
 
         if self.output == OutputType.brief:
             print("\n".join(str(package) for package in self.target_repo.get_packages()))
@@ -189,7 +189,7 @@ class ActionPkg(Action):
             A snapshot of the target as loaded, for the command's diff.
         """
         try:
-            self.target_repo.update()
+            self.target_repo.load()
         except ReleaseNotFoundException as exc:
             # no repository - create new one; any other read failure must not reset an
             # existing one
@@ -371,7 +371,7 @@ class ActionPkg(Action):
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             # a peer may commit before `history_lock` is granted, so the target is read
             # under it -> [STORAGE.md](STORAGE.md#transactions)
-            self.target_repo.update()
+            self.target_repo.load()
             target_before = self.target_repo.snapshot()
             if not self.target_repo.remove_pkg(self.pkg_pattern):
                 raise ActionException("No removable packages matched the pattern.")

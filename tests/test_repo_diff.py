@@ -24,11 +24,11 @@ def test_repo_diff_is_empty_on_fresh_instance() -> None:
     assert diff.count_pkgs_to_remove() == 0
 
 
-def test_repo_diff_is_not_empty_after_single_update() -> None:
+def test_repo_diff_is_not_empty_after_single_record() -> None:
     diff = RepoDiff()
     added = _by_name(make_package("pool/main/a/a_1_amd64.deb"))
 
-    diff.update("main", "amd64", PackagesDiff(added=added, removed={}, updated={}, old_versions={}))
+    diff.record("main", "amd64", PackagesDiff(added=added, removed={}, updated={}, old_versions={}))
 
     assert diff.is_empty() is False
     dumped = diff.dump()
@@ -36,14 +36,14 @@ def test_repo_diff_is_not_empty_after_single_update() -> None:
     assert "amd64" in dumped["added"]["main"]
 
 
-def test_repo_diff_update_separates_four_buckets_per_component_arch() -> None:
+def test_repo_diff_record_separates_four_buckets_per_component_arch() -> None:
     diff = RepoDiff()
     added = _by_name(make_package("pool/main/a/a_1_amd64.deb"))
     removed = _by_name(make_package("pool/main/r/r_1_amd64.deb"))
     updated = _by_name(make_package("pool/main/u/u_2_amd64.deb"))
     old = _by_name(make_package("pool/main/u/u_1_amd64.deb"))
 
-    diff.update(
+    diff.record(
         "main",
         "amd64",
         PackagesDiff(added=added, removed=removed, updated=updated, old_versions=old),
@@ -70,7 +70,7 @@ def test_repo_diff_get_pkgs_to_copy_is_added_plus_updated_without_old_versions()
     upd = make_package("pool/main/u/u_2_amd64.deb")
     old = make_package("pool/main/u/u_1_amd64.deb")
 
-    diff.update(
+    diff.record(
         "main",
         "amd64",
         PackagesDiff(
@@ -92,7 +92,7 @@ def test_repo_diff_get_filenames_to_copy_uses_package_repr() -> None:
     added = make_package("pool/main/a/a_1_amd64.deb")
     upd = make_package("pool/main/u/u_2_amd64.deb")
 
-    diff.update(
+    diff.record(
         "main",
         "amd64",
         PackagesDiff(added=_by_name(added), removed={}, updated=_by_name(upd), old_versions={}),
@@ -109,7 +109,7 @@ def test_repo_diff_get_pkgs_to_remove_excludes_old_versions() -> None:
     removed = make_package("pool/main/r/r_1_amd64.deb")
     old = make_package("pool/main/u/u_1_amd64.deb")
 
-    diff.update(
+    diff.record(
         "main",
         "amd64",
         PackagesDiff(added={}, removed=_by_name(removed), updated={}, old_versions=_by_name(old)),
@@ -126,7 +126,7 @@ def test_repo_diff_counts_an_arch_all_payload_once() -> None:
     diff = RepoDiff()
     pkg = make_package("pool/main/h/hello_1_all.deb")
     for arch in ("amd64", "arm64"):
-        diff.update(
+        diff.record(
             "main",
             arch,
             PackagesDiff(added=_by_name(pkg), removed=_by_name(pkg), updated={}, old_versions={}),
@@ -142,12 +142,12 @@ def test_repo_diff_two_components_coexist_in_dump() -> None:
     a_main = make_package("pool/main/a/a_1_amd64.deb")
     a_contrib = make_package("pool/contrib/b/b_1_amd64.deb")
 
-    diff.update(
+    diff.record(
         "main",
         "amd64",
         PackagesDiff(added=_by_name(a_main), removed={}, updated={}, old_versions={}),
     )
-    diff.update(
+    diff.record(
         "contrib",
         "amd64",
         PackagesDiff(added=_by_name(a_contrib), removed={}, updated={}, old_versions={}),
@@ -163,8 +163,8 @@ def test_repo_diff_two_components_coexist_in_dump() -> None:
     ]
 
 
-def test_repo_diff_update_preserves_other_arch_in_same_component() -> None:
-    """LOOP-H1 regression: second update() on same component for a different
+def test_repo_diff_record_preserves_other_arch_in_same_component() -> None:
+    """LOOP-H1 regression: second record() on same component for a different
     arch must NOT clobber the first arch."""
     diff = RepoDiff()
     amd_added = make_package("pool/main/a/a_1_amd64.deb")
@@ -176,7 +176,7 @@ def test_repo_diff_update_preserves_other_arch_in_same_component() -> None:
     amd_old = make_package("pool/main/u/u_1_amd64.deb")
     arm_old = make_package("pool/main/u/u_1_arm64.deb")
 
-    diff.update(
+    diff.record(
         "main",
         "amd64",
         PackagesDiff(
@@ -186,7 +186,7 @@ def test_repo_diff_update_preserves_other_arch_in_same_component() -> None:
             old_versions=_by_name(amd_old),
         ),
     )
-    diff.update(
+    diff.record(
         "main",
         "arm64",
         PackagesDiff(
@@ -217,7 +217,7 @@ def test_repo_diff_is_empty_when_every_compared_slot_is_unchanged() -> None:
     """Regression: an identical re-insert recorded empty lists and read as a change."""
     diff = RepoDiff()
 
-    diff.update("main", "amd64", PackagesDiff(added={}, removed={}, updated={}, old_versions={}))
-    diff.update("main", "arm64", PackagesDiff(added={}, removed={}, updated={}, old_versions={}))
+    diff.record("main", "amd64", PackagesDiff(added={}, removed={}, updated={}, old_versions={}))
+    diff.record("main", "arm64", PackagesDiff(added={}, removed={}, updated={}, old_versions={}))
 
     assert diff.is_empty() is True
