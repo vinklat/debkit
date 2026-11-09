@@ -85,7 +85,8 @@ per entry by its transfer; the source is never probed.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Component | The segment before the first `/`; a key with no `/` belongs to no component and passes | — |
+| Component | The longest selected component the key starts with, followed by `/`, as `updates/main`; a key under none of them is outside the selection and dropped | — |
+| No component | A key with no `/` belongs to no component and passes | — |
 | Known architectures | The selected architectures plus every root Release token the Release token rule keeps, whatever `--architectures` selects → [Architectures](#architectures) | — |
 | Architecture token | A `-<arch>` run ending at `.`, `/`, or the key end, matched only against the known architectures; where several end at one token the longest owns it | — |
 | Structural rule scope | The architecture-token, source, and unparsed rules read the key below its component segment, so a component name such as `extra-armhf` or `installer-extras` never trips them | — |

@@ -135,6 +135,30 @@ def test_select_index_entry_component_name_is_not_read_as_a_token(key: str, want
 
 
 @pytest.mark.parametrize(
+    ("key", "wanted"),
+    [
+        ("updates/main/binary-amd64/Packages.xz", True),
+        ("updates/main/binary-i386/Packages.xz", False),
+        ("updates/contrib/binary-amd64/Packages.xz", False),
+        # the longest selected component owns the key
+        ("main/debug/binary-amd64/Packages.xz", True),
+    ],
+)
+def test_select_index_entry_component_with_slash_is_matched_whole(key: str, wanted: bool) -> None:
+    """A component holding `/` is read whole, the longest selected one first."""
+    assert (
+        select_index_entry(
+            key,
+            components={"updates/main", "main", "main/debug"},
+            archs={"amd64"},
+            arch_universe={"amd64", "i386"},
+            excludes=[],
+        )
+        is wanted
+    )
+
+
+@pytest.mark.parametrize(
     "key",
     [
         "main/source/Sources.xz",

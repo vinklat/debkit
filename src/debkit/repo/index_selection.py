@@ -43,6 +43,10 @@ def _split_component(key: str, components: set[str] | None) -> tuple[str | None,
     feeds both the component membership test and those rules, so the two never
     disagree on where a component ends -> [VALIDATION.md](VALIDATION.md#index-selection).
 
+    A component may hold `/`, as `updates/main` does, so the key is matched against the
+    selected components, the longest first; a key under none of them splits at its first
+    `/`, which names a component outside the selection.
+
     Args:
         key: Path as the Release lists it, relative to the layout prefix.
         components: Selected components, or `None` for a flat repo whose paths carry no component
@@ -52,9 +56,12 @@ def _split_component(key: str, components: set[str] | None) -> tuple[str | None,
         The component and the key below it, or `None` and the whole key for a flat repo and for a
         key with no `/`, which belongs to no component.
     """
-    component, sep, rest = key.partition("/")
-    if components is None or not sep:
+    if components is None or "/" not in key:
         return None, key
+    for component in sorted(components, key=len, reverse=True):
+        if key.startswith(f"{component}/"):
+            return component, key[len(component) + 1 :]
+    component, _, rest = key.partition("/")
     return component, rest
 
 
