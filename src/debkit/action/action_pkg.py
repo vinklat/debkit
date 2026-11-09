@@ -276,8 +276,8 @@ class ActionPkg(Action):
                 # -> [VALIDATION.md](VALIDATION.md#filename-safety)
                 if held is not None and not compare_digests(held, digests):
                     raise ActionException(
-                        f"{pool_key} already holds a different build of {filename}; "
-                        "publish a rebuild under a new version"
+                        f"{pool_key} already holds other bytes than {filename}; "
+                        "upload them under another file name or version"
                     )
                 package.set_digests(digests)
 

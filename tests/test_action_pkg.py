@@ -846,7 +846,7 @@ def test_insert_checks_each_deb_against_its_changes_digest(
 ) -> None:
     """Regression: a payload swapped after its `.changes` was pinned was published.
 
-    A pool key already holding the listed bytes must not turn the refusal into a rebuild one.
+    A pool key already holding the listed bytes must not turn the refusal into a pool-key one.
     """
     import hashlib
 
@@ -984,7 +984,7 @@ def test_insert_refuses_to_replace_a_pool_object_another_dist_lists(tmp_path: Pa
     _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)
     _insert_deb(tmp_path, "trixie", deb, _FOO_V1)
 
-    with pytest.raises(ActionException, match="already holds a different build"):
+    with pytest.raises(ActionException, match="already holds other bytes"):
         _insert_deb(tmp_path, "bookworm", deb, _FOO_REBUILT)
 
     assert (tmp_path / "repo" / pool_path("main", "foo", deb)).read_bytes() == _FOO_V1
@@ -1016,7 +1016,10 @@ def test_insert_refuses_two_arch_builds_under_one_upload_name(tmp_path: Path) ->
     arm = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: arm64\n")
     _insert_deb(tmp_path, "bookworm", "foo.deb", _FOO_V1)
 
-    with pytest.raises(ActionException, match="already holds a different build"):
+    with pytest.raises(
+        ActionException,
+        match=r"holds other bytes than foo\.deb; upload them under another file name or version$",
+    ):
         _insert_deb(tmp_path, "bookworm", "foo.deb", arm)
 
     assert (tmp_path / "repo" / pool_path("main", "foo", "foo.deb")).read_bytes() == _FOO_V1

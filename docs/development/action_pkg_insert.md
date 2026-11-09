@@ -54,8 +54,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 `tests/test_action_pkg.py` covers argument combinations, error propagation, and the transaction
 wiring (begin/commit on success, discard on failure, no-op on a non-transactional storage);
 `tests/test_repo_rw.py` covers the index mutations; `tests/test_debfile.py` and
-`tests/test_changes.py` cover the upload-name refusals; `tests/test_action_pkg.py` refuses a rebuild
-under a held pool key on a real `StorageFS` →
+`tests/test_changes.py` cover the upload-name refusals; `tests/test_action_pkg.py` refuses other
+bytes under a held pool key on a real `StorageFS` →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
