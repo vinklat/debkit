@@ -9,7 +9,6 @@ from __future__ import annotations
 import gzip
 import logging
 import re
-from copy import copy
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -213,22 +212,6 @@ def test_sources_remove_matches_nothing() -> None:
     src._parse_indices(_STANZA_3)
 
     assert src.remove({"Package": re.compile(".*")}) == set()
-
-
-def test_sources_copy_preserves_the_type() -> None:
-    """`--verify-existing` copies containers; a Sources must not degrade to Packages."""
-    src = _new_sources()
-    src._parse_indices(_STANZA_3)
-
-    other = copy(src)
-
-    assert isinstance(other, Sources)
-    assert set(other.packages) == set(src.packages)
-
-
-# ---------------------------------------------------------------------------
-# load
-# ---------------------------------------------------------------------------
 
 
 def test_sources_payload_verifies_through_the_repo_whatever_its_compression() -> None:

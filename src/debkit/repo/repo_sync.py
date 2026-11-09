@@ -92,7 +92,7 @@ class RepoSync(Repo):
         delete_list: list[str] = []
         forced = True
         if not indices_only:
-            diff = self.diff(target_repo)
+            diff = self.diff(target_repo.snapshot())
             # an index-only source change (i18n, dep11) leaves the package diff empty, and a
             # target index skipped as unreadable leaves the Release hashes equal
             forced = self.release.hash != target_repo.release.hash or not diff.is_empty()

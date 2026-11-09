@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-from copy import copy
-
 import pytest
 from helpers.factories import make_package, make_packages, make_params, make_storage_mock
 
@@ -352,36 +350,16 @@ def test_verify_checksum_still_uses_the_index_for_a_path_no_release_lists() -> N
 # --- copies -------------------------------------------------------------------------------------
 
 
-def _loaded_repo() -> Repo:
-    """Repo with one indexed component and a digest record in its root Release."""
+def test_snapshot_keeps_the_package_maps_a_later_insert_and_load_replace() -> None:
+    """A diff against the snapshot sees the repo as it was taken."""
     repo = _repo()
-    repo.release.update_digests("main/binary-amd64/Packages", {"SHA256": "old", "Size": "1"})
-    repo.release.root_digests = {"Release": {"SHA256": "root"}}
     _with_component_package(repo, _DEB, _DIGEST)
-    return repo
 
+    snapshot = repo.snapshot()
+    repo.components["main"].packages["amd64"].packages = {}
 
-def test_copy_rebinds_each_component_to_the_copied_release() -> None:
-    """A copy's save records index digests in its own Release, never the original's."""
-    repo = _loaded_repo()
-
-    copied = copy(repo)
-
-    assert copied.release is not repo.release
-    assert copied.components["main"].root_release is copied.release
-    assert repo.components["main"].root_release is repo.release
-
-
-def test_copied_release_digest_records_are_independent() -> None:
-    """`update_digests` mutates a record in place, so a shared one would change both."""
-    repo = _loaded_repo()
-    copied = copy(repo)
-
-    copied.release.update_digests("main/binary-amd64/Packages", {"SHA256": "new"})
-    copied.release.root_digests["Release"]["SHA256"] = "changed"
-
-    assert repo.release.digests["main/binary-amd64/Packages"]["SHA256"] == "old"
-    assert repo.release.root_digests["Release"]["SHA256"] == "root"
+    assert set(snapshot[("main", "amd64")]) == {_DEB}
+    assert repo.diff(snapshot).get_filenames_to_remove() == {_DEB}
 
 
 # --- diff ---------------------------------------------------------------------------------------
@@ -393,7 +371,7 @@ def test_diff_compares_packages_even_when_the_release_hashes_match() -> None:
     source.release.hash = target.release.hash = "same"
     _with_component_package(source, _DEB, _DIGEST)
 
-    diff = source.diff(target)
+    diff = source.diff(target.snapshot())
 
     assert diff.get_filenames_to_copy() == {_DEB}
 
@@ -415,7 +393,7 @@ def test_diff_reports_the_packages_of_a_slot_only_the_older_repo_holds_as_remove
     newer, older = _repo(), _repo()
     _with_component_package(older, _DEB, _DIGEST, arch="arm64")
 
-    diff = newer.diff(older)
+    diff = newer.diff(older.snapshot())
 
     assert diff.get_filenames_to_remove() == {_DEB}
     assert diff.get_filenames_to_copy() == set()

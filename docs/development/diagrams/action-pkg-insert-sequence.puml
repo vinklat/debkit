@@ -27,7 +27,8 @@ Tgt --> ActionPkg: ok / ReleaseNotFoundException
 opt ReleaseNotFoundException
   ActionPkg -> Tgt: setup(DEFAULT_REPO_FIELDS)
 end
-ActionPkg -> ActionPkg: prev_repo = copy(target)
+ActionPkg -> Tgt: snapshot()
+Tgt --> ActionPkg: prev_repo
 ActionPkg -> Tgt: get_archs()
 Tgt --> ActionPkg: archs
 ActionPkg -> ActionPkg: binary_archs = _binary_archs()\n[drop "source"]

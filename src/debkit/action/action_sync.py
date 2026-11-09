@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from argparse import BooleanOptionalAction
 from contextlib import nullcontext
-from copy import copy
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -23,7 +22,6 @@ if TYPE_CHECKING:
     from argparse import Namespace
 
     from debkit._options import EnvArgumentParser
-    from debkit.repo.release import Release
     from debkit.repo.repo_diff import RepoDiff
 
 ARCHITECTURES_DEFAULT = "amd64,arm64"
@@ -175,7 +173,7 @@ class ActionSync(Action):
             )
             run_floor = self._load_target()
             # the report compares against the target as this run found it
-            target_before = copy(self.target_repo)
+            target_before = self.target_repo.snapshot()
             if self.verify_existing:
                 self._verify_existing(self.target_repo)
 
@@ -193,7 +191,7 @@ class ActionSync(Action):
         else:
             self._print_sync_brief(ret_diff)
 
-    def _sync_until_settled(self, run_floor: Release) -> None:
+    def _sync_until_settled(self, run_floor: str | None) -> None:
         """Run sync passes until the source Release holds across one.
 
         A source that changed during a pass is read again with the target the pass staged,
@@ -202,7 +200,7 @@ class ActionSync(Action):
         -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Args:
-            run_floor: The target Release as the run found it.
+            run_floor: The target Release `Date` as the run found it.
         """
         for _ in range(MAX_UPDATED_REPO_RETRIES - 1):
             if not self._sync_pass():
@@ -238,14 +236,15 @@ class ActionSync(Action):
         self.source_repo.sync(self.target_repo, plan.copy, plan.delete, unproven=plan.unproven)
         return True
 
-    def _check_fresh(self, *floors: Release) -> None:
+    def _check_fresh(self, *floors: str | None) -> None:
         """Check the loaded source Release against each floor, in order.
 
         Skipped without GPG verification or with `--allow-release-rollback`
         -> [CRYPTO.md](CRYPTO.md#release-freshness).
 
         Args:
-            floors: Target Releases the source must not undercut.
+            floors: Target Release `Date` values the source must not undercut; None floors
+                nothing.
         """
         if not self.source_repo.params.verify_gpg or self.allow_release_rollback:
             return
@@ -253,16 +252,16 @@ class ActionSync(Action):
         for floor in floors:
             self.source_repo.release.check_fresh_against(floor, now)
 
-    def _load_target(self) -> Release:
+    def _load_target(self) -> str | None:
         """Load the target repo, treating a missing or corrupt one as empty.
 
         A target that fails a checksum is reset, so nothing it recorded settles an
         index -> [VALIDATION.md](VALIDATION.md#index-selection). Its Release still
-        floors the source, so the `Date` it carried is kept in the returned snapshot
+        floors the source, so the `Date` it carried is returned
         -> [CRYPTO.md](CRYPTO.md#release-freshness).
 
         Returns:
-            A snapshot of the target Release as read, taken before any reset.
+            The target Release `Date` as read, taken before any reset; None without one.
         """
         try:
             # the sync plans from the source and only copies indices, never writing one from
@@ -273,10 +272,10 @@ class ActionSync(Action):
             logger.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
             logger.warning("Target repo corrupted: %s indices IGNORED", exc)
-            floor = copy(self.target_repo.release)
+            floor = self.target_repo.release.fields.get("Date")
             self.target_repo.reset()
             return floor
-        return copy(self.target_repo.release)
+        return self.target_repo.release.fields.get("Date")
 
     @staticmethod
     def _verify_existing(target: RepoRW) -> None:

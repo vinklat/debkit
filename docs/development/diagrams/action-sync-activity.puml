@@ -12,9 +12,9 @@ partition "with maybe_transaction(target.storage)" {
     ReleaseNotFoundException -> log warn, continue
     ChecksumException    -> log warn, target.reset()
   end note
-  :run_floor = copy(target.release)
+  :run_floor = target.release.fields["Date"]
   (taken before any reset);
-  :target_before = copy(target);
+  :target_before = target.snapshot();
   if (verify_existing?) then (yes)
     :report = target.check(fix=True, purge_orphans=False)
     (missing payloads skipped, orphans left to the purge);
@@ -62,7 +62,7 @@ partition "with maybe_transaction(target.storage)" {
     endif
     :load target again;
     note right: reads the bytes the previous\npass staged
-    :check_fresh(target.release, run_floor);
+    :check_fresh(target.release.fields["Date"], run_floor);
   repeat while (source changed during the pass)
 }
 

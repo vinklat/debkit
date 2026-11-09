@@ -10,7 +10,7 @@ end note
 partition "with maybe_transaction(target.storage)" {
   :target.update();
   note right: read under history_lock:\na peer may have committed
-  :prev_repo = copy(target);
+  :prev_repo = target.snapshot();
   if (target.remove_pkg(fields) matched?) then (no)
     :raise ActionException("No packages matched the pattern.");
   else (yes)

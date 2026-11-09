@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Collection, Generator, Iterable, Mapping
-from copy import copy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -40,6 +39,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+# each component and arch slot -> its package map, by `Filename`, as `Repo.snapshot` takes it
+type RepoSnapshot = dict[tuple[str, str], dict[str, Package]]
 
 # the architecture directory of a binary index key, `<comp>/binary-<arch>/Packages[.<ext>]`
 _BINARY_INDEX_KEY = re.compile(r"binary-(?P<arch>[^/]+)/Packages(?:\.[^/]+)?")
@@ -103,24 +105,20 @@ class Repo:
             params.components,
         )
 
-    def __copy__(self) -> Repo:
-        """Snapshot this repo, as a diff against its later state needs it.
+    def snapshot(self) -> RepoSnapshot:
+        """Snapshot the package maps, as a diff against this repo's later state needs them.
 
-        The root Release and every component and package map are copied, so a later load,
-        insert, or save of the original leaves the snapshot as it was. The snapshot is a
-        plain `Repo`: it is only read.
+        A load or a mutation replaces packages rather than changing one in place, so copied
+        maps keep describing the repo as it was.
 
         Returns:
-            A snapshot of this repo.
+            Each component and arch slot → a copy of its package map.
         """
-        ret = Repo(self.storage, self.params, gpg=self.gpg)
-        ret.release = copy(self.release)
-        ret.components = {
-            comp_name: component.copy_onto(ret.release)
+        return {
+            (comp_name, arch): dict(packages.packages)
             for comp_name, component in self.components.items()
+            for arch, packages in component.packages.items()
         }
-        ret.modified = self.modified
-        return ret
 
     def get_components(self) -> Generator[str]:
         """Get the components of the repo.
@@ -335,33 +333,27 @@ class Repo:
                         seen.add(filename)
                         yield package
 
-    def diff(self, other_repo: Repo) -> RepoDiff:
-        """Get how this repo, the newer state, differs from `other_repo`, the older one.
+    def diff(self, older: RepoSnapshot) -> RepoDiff:
+        """Get how this repo, the newer state, differs from `older`.
 
         Every component and arch slot either side holds is compared, so a slot only the older
-        repo holds reports its packages as removed.
+        state holds reports its packages as removed.
 
         Args:
-            other_repo: The older state to diff against.
+            older: The older state, as `snapshot` took it.
 
         Returns:
             Packages added, removed and updated in this repo, by component and arch.
         """
         diff = RepoDiff()
         empty = Packages(self.storage, self.params)
-        slots = {
-            (comp_name, arch)
-            for repo in (self, other_repo)
-            for comp_name, component in repo.components.items()
-            for arch in component.packages
-        }
+        newer_maps = self.snapshot()
 
         # always compared: equal Release bytes do not prove equal loaded packages, since a
         # load may skip an unreadable index -> [VALIDATION.md](VALIDATION.md#index-loading)
-        for comp_name, arch in sorted(slots):
+        for comp_name, arch in sorted(newer_maps.keys() | older.keys()):
             newer = self._slot(comp_name, arch) or empty
-            older = other_repo._slot(comp_name, arch) or empty
-            diff.update(comp_name, arch, **older.diff(newer)._asdict())
+            diff.update(comp_name, arch, **newer.diff(older.get((comp_name, arch), {}))._asdict())
 
         return diff
 

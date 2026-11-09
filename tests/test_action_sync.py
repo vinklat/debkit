@@ -186,19 +186,18 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
     ]
 
 
-def _recording_copy(copies: list[tuple[object, MagicMock]]) -> Any:
-    """A `copy` stand-in returning a fresh mock per call and recording what it copied."""
+def _dated_target_loads(action: ActionSync) -> None:
+    """Give each target load a Release dated by its ordinal, `load1`, `load2`, …"""
+    loads = iter(range(1, 10))
 
-    def fake_copy(obj: object) -> MagicMock:
-        snapshot = MagicMock(name=f"copy{len(copies)}")
-        copies.append((obj, snapshot))
-        return snapshot
+    def update(skip_unreadable: bool = False) -> None:
+        _target(action).release.fields = {"Date": f"load{next(loads)}"}
 
-    return fake_copy
+    _target(action).update.side_effect = update
 
 
 def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
-    """Each pass floors on a snapshot of its own target load and on the first one."""
+    """Each pass floors on the Date of its own target load and on the first one."""
     action = _make_action(storage=TxnStorageStub())
     hashes = iter(["hash1", "hash2", "hash2"])
 
@@ -206,20 +205,12 @@ def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
         _source(action).release.hash = next(hashes)
 
     _source(action).update.side_effect = update
-    copies: list[tuple[object, MagicMock]] = []
+    _dated_target_loads(action)
 
-    with patch("debkit.action.action_sync.copy", _recording_copy(copies)):
-        action.sync()
+    action.sync()
 
-    # first load, the report's target_before, then the later pass's load
-    assert [obj for obj, _ in copies] == [
-        _target(action).release,
-        _target(action),
-        _target(action).release,
-    ]
-    first, staged = copies[0][1], copies[2][1]
     floors = [c.args[0] for c in _source(action).release.check_fresh_against.call_args_list]
-    assert floors == [first, staged, first]
+    assert floors == ["load1", "load2", "load1"]
 
 
 def test_sync_checks_release_freshness_before_planning() -> None:
@@ -229,15 +220,14 @@ def test_sync_checks_release_freshness_before_planning() -> None:
     action = _make_action(storage=TxnStorageStub())
     check = _source(action).release.check_fresh_against
     check.side_effect = ReleaseFreshnessException("stale")
-    copies: list[tuple[object, MagicMock]] = []
+    _dated_target_loads(action)
 
-    with patch("debkit.action.action_sync.copy", _recording_copy(copies)):
-        with pytest.raises(ReleaseFreshnessException):
-            action.sync()
+    with pytest.raises(ReleaseFreshnessException):
+        action.sync()
 
     check.assert_called_once()
-    target, now = check.call_args.args
-    assert copies[0] == (_target(action).release, target)
+    target_date, now = check.call_args.args
+    assert target_date == "load1"
     assert now.tzinfo is not None
     _source(action).build_sync_lists.assert_not_called()
 

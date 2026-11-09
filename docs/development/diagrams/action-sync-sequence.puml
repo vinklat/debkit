@@ -19,7 +19,7 @@ CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
 ActionSync -> Tgt: update(skip_unreadable=True)
 Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
-note over ActionSync: run_floor = copy(target.release), before any reset\ntarget_before = copy(target)
+note over ActionSync: run_floor = target.release.fields["Date"], before any reset\ntarget_before = target.snapshot()
 
 opt verify_existing
   ActionSync -> Tgt: check(fix=True, purge_orphans=False)
@@ -54,7 +54,7 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
   ActionSync -> Tgt: update(skip_unreadable=True)
   note right: reads through the transaction\nthe bytes the previous pass staged
   opt verify_gpg and not allow_release_rollback
-    ActionSync -> Src: release.check_fresh_against(target.release, now)
+    ActionSync -> Src: release.check_fresh_against(target.release.fields["Date"], now)
     ActionSync -> Src: release.check_fresh_against(run_floor, now)
     Src --> ActionSync: returns, or raises ReleaseFreshnessException
   end

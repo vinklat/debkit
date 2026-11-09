@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import logging
 from collections.abc import Callable
-from copy import copy
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -224,10 +223,9 @@ def test_load_of_a_root_with_a_digest_block_is_not_modified(tmp_path: Path) -> N
 
 
 def test_only_a_root_release_loads_signs_and_floors_at_the_root_paths() -> None:
-    """A per-component Release has no root API to misuse, and a copy keeps its kind."""
+    """A per-component Release has no root API to misuse."""
     for name in ("load", "setup", "check_fresh_against", "signature_mode", "gpg"):
         assert not hasattr(Release, name), name
-    assert type(copy(RootRelease(MagicMock(), _params()))) is RootRelease
 
 
 @pytest.mark.parametrize("root", [True, False], ids=["root", "component"])
@@ -840,7 +838,7 @@ def test_load_root_without_a_keyring_parses_the_inrelease_body(files: dict[str, 
 
     older = _dated({"Date": OLD_DATE})
     with pytest.raises(ReleaseFreshnessException, match="older than the target"):
-        older.check_fresh_against(r, NOW)
+        older.check_fresh_against(r.fields["Date"], NOW)
 
 
 def test_load_root_without_a_keyring_hashes_the_body_the_source_hashes() -> None:
@@ -910,12 +908,12 @@ def test_load_root_falls_back_to_latin_1_for_an_inrelease_body() -> None:
     assert r.fields["Origin"] == "Café"
 
 
-def test_reset_and_copy_carry_the_root_digests() -> None:
+def test_reset_drops_the_root_digests() -> None:
 
     r = RootRelease(_root_storage(_ROOT_FILES), _params())
     r.load()
 
-    assert copy(r).root_digests == r.root_digests
+    assert r.root_digests
     r.reset()
     assert r.root_digests == {}
 
@@ -982,46 +980,42 @@ def _dated(fields: dict[str, str]) -> RootRelease:
 
 @pytest.mark.parametrize("src_date", [NEW_DATE, OLD_DATE], ids=["newer", "equal"])
 def test_fresh_accepts_a_source_not_older_than_the_target(src_date: str) -> None:
-    _dated({"Date": src_date}).check_fresh_against(_dated({"Date": OLD_DATE}), NOW)
+    _dated({"Date": src_date}).check_fresh_against(OLD_DATE, NOW)
 
 
 def test_fresh_refuses_a_source_older_than_the_target() -> None:
     with pytest.raises(ReleaseFreshnessException, match="older than the target"):
-        _dated({"Date": OLD_DATE}).check_fresh_against(_dated({"Date": NEW_DATE}), NOW)
+        _dated({"Date": OLD_DATE}).check_fresh_against(NEW_DATE, NOW)
 
 
 def test_fresh_refuses_an_expired_source() -> None:
     source = _dated({"Date": NEW_DATE, "Valid-Until": NEW_DATE})
     with pytest.raises(ReleaseFreshnessException, match="expired"):
-        source.check_fresh_against(_dated({"Date": OLD_DATE}), NOW)
+        source.check_fresh_against(OLD_DATE, NOW)
 
 
 def test_fresh_accepts_a_source_valid_until_later() -> None:
-    _dated({"Date": NEW_DATE, "Valid-Until": LATER_DATE}).check_fresh_against(
-        _dated({"Date": OLD_DATE}), NOW
-    )
+    _dated({"Date": NEW_DATE, "Valid-Until": LATER_DATE}).check_fresh_against(OLD_DATE, NOW)
 
 
 @pytest.mark.parametrize("field", ["Date", "Valid-Until"])
 def test_fresh_refuses_a_malformed_source_date(field: str) -> None:
     source = _dated({"Date": NEW_DATE, field: "yesterday"})
     with pytest.raises(ReleaseFreshnessException, match=f"source {field} is"):
-        source.check_fresh_against(_dated({"Date": OLD_DATE}), NOW)
+        source.check_fresh_against(OLD_DATE, NOW)
 
 
 def test_fresh_refuses_a_source_without_date_against_a_dated_target() -> None:
     with pytest.raises(ReleaseFreshnessException, match="has no Date"):
-        _dated({}).check_fresh_against(_dated({"Date": OLD_DATE}), NOW)
+        _dated({}).check_fresh_against(OLD_DATE, NOW)
 
 
 def test_fresh_does_not_compare_with_an_unloaded_target() -> None:
-    _dated({"Date": OLD_DATE}).check_fresh_against(_dated({}), NOW)
+    _dated({"Date": OLD_DATE}).check_fresh_against(None, NOW)
 
 
 def test_fresh_logs_and_skips_a_malformed_target_date(caplog: pytest.LogCaptureFixture) -> None:
     """The source is older than any date the target could mean, so a comparison would raise."""
     with caplog.at_level(logging.WARNING):
-        _dated({"Date": "Thu, 01 Jan 1970 00:00:00 UTC"}).check_fresh_against(
-            _dated({"Date": "yesterday"}), NOW
-        )
+        _dated({"Date": "Thu, 01 Jan 1970 00:00:00 UTC"}).check_fresh_against("yesterday", NOW)
     assert "not compared with the source" in caplog.text

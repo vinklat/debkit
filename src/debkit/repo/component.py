@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from copy import copy
 from typing import TYPE_CHECKING, Any
 
 from txstore import StorageException
@@ -82,27 +81,6 @@ class Component:
     def is_flat(self) -> bool:
         """Whether the underlying repo layout is flat (delegates to ``params``)."""
         return self.params.is_flat
-
-    def copy_onto(self, root_release: Release) -> Component:
-        """Copy this component onto another root Release, the one of the repo copy owning it.
-
-        `save` records its index digests in the root Release, so a repo copy whose
-        components kept the original Release would write into it.
-
-        Args:
-            root_release: The root Release of the repo the copy belongs to.
-
-        Returns:
-            A copy whose package sets are copied too.
-        """
-        ret = Component(self.storage, self.params, root_release, self.name)
-        # slots sharing one container in a flat layout share its copy too
-        copies: dict[int, Packages] = {}
-        ret.packages = {
-            arch: copies.setdefault(id(packages), copy(packages))
-            for arch, packages in self.packages.items()
-        }
-        return ret
 
     def _flat_container(self, arch: str) -> Packages | None:
         """Get the container a flat layout already holds for the index file of `arch`.

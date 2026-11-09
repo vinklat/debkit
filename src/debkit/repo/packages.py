@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
-from copy import copy
+from collections.abc import Callable, Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -39,7 +38,7 @@ _STANZA_SEPARATOR = re.compile(r"\n[ \t]*\n\s*")
 
 
 class PackagesDiff(NamedTuple):
-    """How a newer set of packages differs from an older one, each by package name.
+    """How a newer set of packages differs from an older one, each keyed by `Filename`.
 
     Attributes:
         added: Packages only the newer set holds.
@@ -95,23 +94,6 @@ class Packages:
         self.used_indices_path = ""
         self.found_indices_paths: list[str] = []
         self.modified = False
-
-    def __copy__(self) -> Packages:
-        """Snapshot this index: its Release and package map are copies, the packages shared.
-
-        A load or a mutation replaces packages rather than changing one in place, so the
-        snapshot keeps describing the index as it was. A `Sources` copy stays a `Sources`.
-
-        Returns:
-            A copy of the same class.
-        """
-        ret = type(self)(self.storage, self.params)
-        ret.release = copy(self.release)
-        ret.packages = copy(self.packages)
-        ret.used_indices_path = self.used_indices_path
-        ret.found_indices_paths = self.found_indices_paths.copy()
-        ret.modified = self.modified
-        return ret
 
     @property
     def size(self) -> int:
@@ -498,35 +480,33 @@ class Packages:
 
         return compare_digests(incoming_digests, package.get_digests())
 
-    def diff(self, second: Packages) -> PackagesDiff:
-        """Compare this, the older set of packages, with `second`, the newer one.
+    def diff(self, older: Mapping[str, Package]) -> PackagesDiff:
+        """Compare this, the newer set of packages, with `older`, as a snapshot took it.
 
         Args:
-            second: The newer set of packages.
+            older: The older package map, keyed by `Filename`.
 
         Returns:
-            Packages by name: added, removed, and updated in `second`, and the old versions the
+            Packages by `Filename`: added, removed, and updated here, and the old versions the
             updated ones replace.
         """
         added_packages = {
-            pkg_name: package
-            for pkg_name, package in second.packages.items()
-            if pkg_name not in self.packages
+            filename: package
+            for filename, package in self.packages.items()
+            if filename not in older
         }
         removed_packages = {
-            pkg_name: package
-            for pkg_name, package in self.packages.items()
-            if pkg_name not in second.packages
+            filename: package
+            for filename, package in older.items()
+            if filename not in self.packages
         }
         updated_packages = {
-            pkg_name: package
-            for pkg_name, package in second.packages.items()
-            if pkg_name in self.packages and package != self.packages[pkg_name]
+            filename: package
+            for filename, package in self.packages.items()
+            if filename in older and package != older[filename]
         }
         old_versions = {
-            pkg_name: package
-            for pkg_name, package in self.packages.items()
-            if pkg_name in updated_packages
+            filename: package for filename, package in older.items() if filename in updated_packages
         }
 
         return PackagesDiff(added_packages, removed_packages, updated_packages, old_versions)

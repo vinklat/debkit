@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from copy import copy
 from typing import TYPE_CHECKING, Any
 
 from humanize import naturalsize
@@ -30,7 +29,7 @@ if TYPE_CHECKING:
     from txstore import Storage
 
     from debkit._options import EnvArgumentParser
-    from debkit.repo import Repo
+    from debkit.repo import RepoSnapshot
     from debkit.repo.package import Package
     from debkit.repo.repo_diff import RepoDiff
 
@@ -172,7 +171,7 @@ class ActionPkg(Action):
             if arch != SOURCE_ARCH and (arch or is_flat)
         ]
 
-    def _load_target_or_setup(self) -> Repo:
+    def _load_target_or_setup(self) -> RepoSnapshot:
         """Load the target, or set up a new one where it has no Release.
 
         Called inside the command's transaction: a peer may commit before `history_lock`
@@ -180,7 +179,7 @@ class ActionPkg(Action):
         -> [STORAGE.md](STORAGE.md#transactions).
 
         Returns:
-            A copy of the target as loaded, for the command's diff.
+            A snapshot of the target as loaded, for the command's diff.
         """
         try:
             self.target_repo.update()
@@ -190,7 +189,7 @@ class ActionPkg(Action):
             logger.debug("Target repository not found... (%s)", exc)
 
             self.target_repo.setup(fields=DEFAULT_REPO_FIELDS)
-        return copy(self.target_repo)
+        return self.target_repo.snapshot()
 
     def _load_changes(self, incoming_storage: Storage, changes_filename: str) -> Changes:
         """Load and check a `.changes` upload, whose digests each listed `.deb` must match.
@@ -334,13 +333,13 @@ class ActionPkg(Action):
             )
         return archs
 
-    def _save_if_changed(self, prev_repo: Repo) -> RepoDiff:
+    def _save_if_changed(self, prev_repo: RepoSnapshot) -> RepoDiff:
         """Diff the target against its state before the command and save it if it changed.
 
         Called inside the command's transaction, so the save is staged with the payloads.
 
         Args:
-            prev_repo: The target as loaded before the command.
+            prev_repo: The target as loaded before the command, as `snapshot` took it.
 
         Returns:
             The diff, for the command's output.
@@ -374,7 +373,7 @@ class ActionPkg(Action):
             # a peer may commit before `history_lock` is granted, so the target is read
             # under it -> [STORAGE.md](STORAGE.md#transactions)
             self.target_repo.update()
-            prev_repo = copy(self.target_repo)
+            prev_repo = self.target_repo.snapshot()
             if not self.target_repo.remove_pkg(self.pkg_pattern):
                 raise ActionException("No packages matched the pattern.")
             ret_diff = self._save_if_changed(prev_repo)

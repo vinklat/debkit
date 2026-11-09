@@ -627,17 +627,16 @@ def test_packages_remove_no_match_returns_false() -> None:
 def test_packages_diff_added_removed_updated_old_versions() -> None:
     s = make_storage_mock()
     p = make_params()
-    src = Packages(s, p)
-    src.packages = {
+    older = {
         "a.deb": make_package("a.deb", size=1),
         "b.deb": make_package("b.deb", size=1),
     }
-    tgt = Packages(s, p)
-    tgt.packages = {
+    newer = Packages(s, p)
+    newer.packages = {
         "a.deb": make_package("a.deb", size=2),  # updated (different Size)
-        "c.deb": make_package("c.deb", size=1),  # added in target
+        "c.deb": make_package("c.deb", size=1),  # added in the newer set
     }
-    added, removed, updated, old = src.diff(tgt)
+    added, removed, updated, old = newer.diff(older)
     assert set(added) == {"c.deb"}
     assert set(removed) == {"b.deb"}
     assert set(updated) == {"a.deb"}

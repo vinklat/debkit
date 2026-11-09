@@ -30,7 +30,7 @@ else (no)
 endif
 partition "with maybe_transaction(target.storage)" {
   :prev_repo = _load_target_or_setup()
-   [target.update(); copy(target)];
+   [target.update(); target.snapshot()];
   note right
     read under history_lock: a peer may have committed;
     ReleaseNotFoundException -> target.setup(fields=DEFAULT_REPO_FIELDS)

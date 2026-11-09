@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, NamedTuple, Self
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from debian.deb822 import Deb822
 from txstore import StorageNotFoundException, calc_digests, compare_digests
@@ -177,23 +177,6 @@ class Release(HexDigests):
         self.found_indices_files: list[str] = []
         self.hashfuns: list[str] = []
         self.hash = ""
-
-    def __copy__(self) -> Self:
-        """Create a copy of this Release whose digest records are its own.
-
-        `update_digests` mutates a record in place, so a record shared with the copy
-        would change the original too.
-
-        Returns:
-            A copy of this Release, of the same class.
-        """
-        ret = type(self).__new__(type(self))
-        ret.__dict__.update(self.__dict__)
-        ret.fields = self.fields.copy()
-        ret.digests = {key: digests.copy() for key, digests in self.digests.items()}
-        ret.found_indices_files = self.found_indices_files.copy()
-        ret.hashfuns = self.hashfuns.copy()
-        return ret
 
     def __repr__(self) -> str:
         """Return string representation of the Release object."""
@@ -566,16 +549,6 @@ class RootRelease(Release):
         super().reset()
         self.root_digests: dict[str, dict[str, str]] = {}
 
-    def __copy__(self) -> Self:
-        """Create a copy of this RootRelease whose digest records are its own.
-
-        Returns:
-            A copy of this RootRelease.
-        """
-        ret = super().__copy__()
-        ret.root_digests = {key: digests.copy() for key, digests in self.root_digests.items()}
-        return ret
-
     def _put(self) -> bytes:
         """Write the layout's root `Release`, then sign it or drop its stale signatures.
 
@@ -843,7 +816,7 @@ class RootRelease(Release):
         except ValueError as exc:
             raise ReleaseFreshnessException(f"source {field} is {exc}") from None
 
-    def check_fresh_against(self, target: Release, now: datetime) -> None:
+    def check_fresh_against(self, target_date: str | None, now: datetime) -> None:
         """Refuse this source Release when it is expired or older than the target.
 
         A signature proves who signed a Release, not that it is current: a replayed
@@ -851,7 +824,8 @@ class RootRelease(Release):
         newer object -> [CRYPTO.md](CRYPTO.md#release-freshness).
 
         Args:
-            target: The loaded target Release; an unloaded one has no fields.
+            target_date: The target Release `Date` as read, None when it has none or was not
+                loaded.
             now: Zone-aware current time.
 
         Raises:
@@ -866,20 +840,20 @@ class RootRelease(Release):
                 f"source Release expired at {self.fields['Valid-Until']}"
             )
 
+        if target_date is None:
+            return
         try:
-            target_date = target.date("Date")
+            target_dated = parse_release_date(target_date)
         except ValueError as exc:
             logger.warning("Target Release Date is %s; not compared with the source", exc)
-            return
-        if target_date is None:
             return
 
         if source_date is None:
             raise ReleaseFreshnessException(
-                f"source Release has no Date; the target Release is dated {target.fields['Date']}"
+                f"source Release has no Date; the target Release is dated {target_date}"
             )
-        if source_date < target_date:
+        if source_date < target_dated:
             raise ReleaseFreshnessException(
                 f"source Release dated {self.fields['Date']} is older than the target Release "
-                f"dated {target.fields['Date']}"
+                f"dated {target_date}"
             )
