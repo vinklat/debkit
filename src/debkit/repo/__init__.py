@@ -43,8 +43,9 @@ logger.addHandler(logging.NullHandler())
 # each component and arch slot -> its package map, by `Filename`, as `Repo.snapshot` takes it
 type RepoSnapshot = dict[tuple[str, str], dict[str, Package]]
 
-# the architecture directory of a binary index key, `<comp>/binary-<arch>/Packages[.<ext>]`
-_BINARY_INDEX_KEY = re.compile(r"binary-(?P<arch>[^/]+)/Packages(?:\.[^/]+)?")
+# a binary or source index key below its component, `binary-<arch>/Packages[.<ext>]` or
+# `source/Sources[.<ext>]`; a component may hold `/`, so the key is matched below a known one
+_INDEX_TAIL = re.compile(r"(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?")
 
 
 @dataclass(frozen=True)
@@ -191,8 +192,10 @@ class Repo:
         for comp in self.get_components():
             prefix = f"{comp}/"
             for key in self.release.digests:
-                match = _BINARY_INDEX_KEY.fullmatch(key[len(prefix) :])
-                if match is None or not key.startswith(prefix):
+                if not key.startswith(prefix):
+                    continue
+                match = _INDEX_TAIL.fullmatch(key[len(prefix) :])
+                if match is None or match["arch"] is None:
                     continue
                 arch = match["arch"]
                 if arch == ARCH_ANY:
@@ -768,11 +771,36 @@ _NOT_LOADED = (
 )
 
 
-# a binary or source index key a root Release lists: `<comp>/binary-<arch>/Packages[.<ext>]` or
-# `<comp>/source/Sources[.<ext>]`
-_LISTED_INDEX = re.compile(
-    r"(?P<comp>[^/]+)/(?:binary-(?P<arch>[^/]+)/Packages|source/Sources)(?:\.[^/]+)?"
-)
+# a listed index key whose Release names no components: the component is everything before
+# the index tail, so `updates/main/binary-amd64/Packages` reads as component `updates/main`
+_LISTED_INDEX = re.compile(rf"(?P<comp>.+)/(?:{_INDEX_TAIL.pattern})")
+
+
+def _listed_slots(release: Release) -> dict[str, set[str]]:
+    """Map each component of a root Release to the archs whose indices it lists.
+
+    A component may hold `/`, so a key is matched below a component the `Components` field
+    declares, the longest first; a key no declared component explains still claims, with the
+    key's head as its component, since a missed index would leave its payloads deletable
+    -> [VALIDATION.md](VALIDATION.md#index-selection).
+
+    Args:
+        release: A loaded root Release.
+
+    Returns:
+        Component -> its binary archs, plus `SOURCE_ARCH` for a listed `Sources`.
+    """
+    declared = sorted(release.fields.get("Components", "").split(), key=len, reverse=True)
+    slots: dict[str, set[str]] = {}
+    for key in release.digests:
+        for comp in declared:
+            if key.startswith(f"{comp}/") and (tail := _INDEX_TAIL.fullmatch(key[len(comp) + 1 :])):
+                slots.setdefault(comp, set()).add(tail["arch"] or SOURCE_ARCH)
+                break
+        else:
+            if listed := _LISTED_INDEX.fullmatch(key):
+                slots.setdefault(listed["comp"], set()).add(listed["arch"] or SOURCE_ARCH)
+    return slots
 
 
 def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
@@ -797,13 +825,9 @@ def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
     """
     release = RootRelease(storage, RepoParams(dist=dist, verify_gpg=False, verify_digests=False))
     release.load()
-    slots: dict[str, set[str]] = {}
-    for key in release.digests:
-        if listed := _LISTED_INDEX.fullmatch(key):
-            slots.setdefault(listed["comp"], set()).add(listed["arch"] or SOURCE_ARCH)
 
     claims: dict[str, list[dict[str, str]]] = {}
-    for comp, archs in sorted(slots.items()):
+    for comp, archs in sorted(_listed_slots(release).items()):
         if not is_safe_name(comp):
             raise RepoReadException(f"dist {dist} lists an unsafe component {comp!r}")
         params = RepoParams(

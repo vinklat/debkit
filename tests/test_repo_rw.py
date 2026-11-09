@@ -16,9 +16,10 @@ from helpers.factories import make_package, make_params, make_storage_mock
 from helpers.trees import payload_path, write_dist
 from txstore import Storage, StorageException, StorageFS
 
-from debkit.repo import shared_root_claims
+from debkit.repo import _listed_slots, shared_root_claims
 from debkit.repo.component import Component
 from debkit.repo.params import RepoParams
+from debkit.repo.release import RootRelease
 from debkit.repo.repo_rw import CheckReport, RepoRW
 
 
@@ -487,6 +488,62 @@ def test_shared_root_claims_keep_digests_only_when_asked(tmp_path: Path) -> None
     recorded = shared_root_claims(storage, make_params(), listing, with_digests=True).recorded
     assert list(recorded) == [_FOO]
     assert recorded[_FOO][0]["SHA256"] == hashlib.sha256(b"deb 1").hexdigest()
+
+
+@pytest.mark.parametrize("component", ["main", "updates/main"])
+def test_check_fix_keeps_a_payload_another_dist_lists_under_any_component(
+    tmp_path: Path, component: str
+) -> None:
+    """Regression: an `updates/main` neighbour's indices went unread, so its payload was purged."""
+    write_dist(tmp_path, "bookworm", {"bar": "1"}, component=component)
+    write_dist(tmp_path, "trixie", {"foo": "1"})
+    neighbour = tmp_path / payload_path("bar", "1", component)
+    repo = RepoRW(
+        StorageFS(str(tmp_path)), RepoParams("trixie", ["main"], ["amd64"], verify_gpg=False)
+    )
+    repo.update()
+
+    repo.check(fix=True)
+
+    assert neighbour.exists()
+
+
+@pytest.mark.parametrize(
+    ("components", "key", "slot"),
+    [
+        ("main", "main/binary-amd64/Packages.gz", ("main", "amd64")),
+        ("updates/main", "updates/main/binary-arm64/Packages.xz", ("updates/main", "arm64")),
+        ("main updates/main", "updates/main/source/Sources.gz", ("updates/main", "source")),
+        (None, "updates/main/binary-amd64/Packages", ("updates/main", "amd64")),
+        (
+            "main",
+            "main/debian-installer/binary-amd64/Packages.gz",
+            ("main/debian-installer", "amd64"),
+        ),
+        ("main", "contrib/binary-amd64/Packages", ("contrib", "amd64")),
+        ("main", "main/i18n/Translation-en.xz", None),
+    ],
+    ids=[
+        "plain",
+        "slashed",
+        "longest-first",
+        "no-components-field",
+        "udeb",
+        "undeclared",
+        "not-an-index",
+    ],
+)
+def test_listed_slots_reads_index_keys_below_each_component(
+    components: str | None, key: str, slot: tuple[str, str] | None
+) -> None:
+    """The index-key parser agrees with the path builder for every component name."""
+    release = RootRelease(make_storage_mock(), make_params())
+    release.fields = {} if components is None else {"Components": components}
+    release.digests = {key: {"SHA256": "x"}}
+
+    slots = _listed_slots(release)
+
+    assert slots == ({} if slot is None else {slot[0]: {slot[1]}})
 
 
 def test_check_reports_a_missing_payload_without_reading_it(tmp_path: Path) -> None:

@@ -11,13 +11,12 @@ import gzip
 import hashlib
 from pathlib import Path
 
-INDEX_KEY = "main/binary-amd64/Packages.gz"
 DATE = "Tue, 01 Sep 2026 00:00:00 UTC"
 
 
-def payload_path(name: str, version: str) -> str:
-    """The pool path a package of `name` and `version` is written to."""
-    return f"pool/main/{name[0]}/{name}/{name}_{version}_amd64.deb"
+def payload_path(name: str, version: str, component: str = "main") -> str:
+    """The pool path a package of `name` and `version` in `component` is written to."""
+    return f"pool/{component}/{name[0]}/{name}/{name}_{version}_amd64.deb"
 
 
 def payload_bytes(version: str) -> bytes:
@@ -33,6 +32,7 @@ def write_dist(
     date: str = DATE,
     detached_signature: bool = False,
     indices: dict[str, bytes | None] | None = None,
+    component: str = "main",
 ) -> None:
     """Write one dist of `packages` (name → version) under `base`, payloads included.
 
@@ -44,18 +44,21 @@ def write_dist(
         detached_signature: Also write a placeholder `Release.gpg`.
         indices: More Release-listed indices, key → content; None lists one the dist does not
             publish, recorded with the digest of empty content.
+        component: The one component, which may hold `/`; defaults to `main`.
     """
     stanzas: list[str] = []
     files: dict[str, bytes] = {}
     for name, version in (packages or {"foo": "1"}).items():
-        deb, data = payload_path(name, version), payload_bytes(version)
+        deb, data = payload_path(name, version, component), payload_bytes(version)
         files[deb] = data
         stanzas.append(
             f"Package: {name}\nVersion: {version}\nArchitecture: amd64\nFilename: {deb}\n"
             f"Size: {len(data)}\nSHA256: {hashlib.sha256(data).hexdigest()}\n"
         )
     listed: dict[str, bytes | None] = {
-        INDEX_KEY: gzip.compress("\n".join(stanzas).encode(), mtime=0),
+        f"{component}/binary-amd64/Packages.gz": gzip.compress(
+            "\n".join(stanzas).encode(), mtime=0
+        ),
         **(indices or {}),
     }
     block = ""
@@ -65,7 +68,7 @@ def write_dist(
         if content is not None:
             files[f"dists/{dist}/{key}"] = content
     files[f"dists/{dist}/Release"] = (
-        f"Origin: t\nSuite: {dist}\nDate: {date}\nArchitectures: amd64\nComponents: main\n"
+        f"Origin: t\nSuite: {dist}\nDate: {date}\nArchitectures: amd64\nComponents: {component}\n"
         f"SHA256:\n{block}"
     ).encode()
     if detached_signature:
