@@ -21,8 +21,9 @@ from txstore import (
     maybe_transaction,
 )
 
-from debkit.action import OutputType
+from debkit.action import ActionException, OutputType, action_pkg
 from debkit.action.action_pkg import ActionPkg
+from debkit.argparser import parse_cli
 from debkit.repo.component import ComponentException
 from debkit.repo.debfile import DebFileException
 from debkit.repo.hashes import ChecksumException
@@ -469,8 +470,6 @@ def test_insert_of_a_changes_targets_each_file_by_its_own_arch(
 def test_insert_refuses_an_all_package_when_the_target_has_no_binary_arch(
     mock_changes_cls: MagicMock, mock_debfile_cls: MagicMock, repo_archs: list[str]
 ) -> None:
-    from debkit.action import ActionException
-
     action = _changes_upload(mock_changes_cls, mock_debfile_cls, "all", ["b_1_all.deb"])
     _target(action).get_archs.return_value = repo_archs
 
@@ -494,8 +493,6 @@ def test_insert_refuses_a_changes_naming_the_source_arch_in_any_position(
     """`dpkg-genchanges` writes every built arch into one field, so reading the first
     token alone let the field order decide whether the upload was refused.
     """
-    from debkit.action import ActionException
-
     action = _make_pkg_action(storage=TxnStorageStub())
     action.deb_filename = None
     action.changes_filename = "hello_1.0_amd64.changes"
@@ -519,8 +516,6 @@ def test_insert_refuses_a_deb_whose_control_names_the_source_arch(
     """The control field is read straight out of the uploaded .deb, so it can overwrite
     the binary set `_binary_archs` picked and reach the read-only source index.
     """
-    from debkit.action import ActionException
-
     txn = TxnStorageStub()
     action = _make_pkg_action(storage=txn)
     _debfile_mock(mock_debfile_cls, arch="source")
@@ -544,8 +539,6 @@ def test_insert_refuses_a_deb_whose_control_arch_is_not_an_architecture(
     mock_debfile_cls: MagicMock,
 ) -> None:
     """The control arch names the `binary-<arch>/` directory, so `../x` would steer the write."""
-    from debkit.action import ActionException
-
     action = _make_pkg_action(storage=TxnStorageStub())
     _debfile_mock(mock_debfile_cls, arch="../x")
 
@@ -560,8 +553,6 @@ def test_insert_refuses_a_changes_whose_arch_is_not_an_architecture(
     mock_changes_cls: MagicMock,
 ) -> None:
     """Every `.changes` token is checked, not only the first."""
-    from debkit.action import ActionException
-
     action = _make_pkg_action(storage=TxnStorageStub())
     action.deb_filename = None
     action.changes_filename = "hello_1.0_amd64.changes"
@@ -733,8 +724,6 @@ def test_list_of_a_repository_without_packages_prints_nothing(
     ids=["neither", "both"],
 )
 def test_insert_needs_exactly_one_upload_file(changes: str | None, deb: str | None) -> None:
-    from debkit.action import ActionException
-
     action = _make_pkg_action()
     action.changes_filename, action.deb_filename = changes, deb
 
@@ -743,8 +732,6 @@ def test_insert_needs_exactly_one_upload_file(changes: str | None, deb: str | No
 
 
 def test_insert_refuses_a_deb_filename_without_the_deb_suffix() -> None:
-    from debkit.action import ActionException
-
     action = _make_pkg_action()
     action.deb_filename = "hello_1.0_amd64.txt"
 
@@ -754,8 +741,6 @@ def test_insert_refuses_a_deb_filename_without_the_deb_suffix() -> None:
 
 def test_remove_refuses_a_pattern_no_package_matches(tmp_path: Path) -> None:
     """Nothing is written: the transaction the miss aborts is discarded."""
-    from debkit.action import ActionException
-
     storage = StorageFS(str(tmp_path))
     built = RepoRW(storage, make_params())
     built.setup({"Architectures": "amd64", "Components": "main"})
@@ -773,8 +758,6 @@ def test_remove_refuses_a_pattern_no_package_matches(tmp_path: Path) -> None:
 
 def test_insert_without_incoming_storage_raises() -> None:
     """Regression: a namespace without `incoming_url` returned silently with exit 0."""
-    from debkit.action import ActionException
-
     action = _make_pkg_action()
     action.deb_filename = "foo_1.0_amd64.deb"
     action.incoming_storage = None
@@ -788,9 +771,6 @@ def test_insert_built_by_its_constructor_hands_the_retention_to_the_transaction(
     mock_debfile_cls: MagicMock, tmp_path: Path
 ) -> None:
     """The real `parse_cli` → `ActionPkg.__init__` → `maybe_transaction` chain."""
-    from debkit.action import action_pkg
-    from debkit.argparser import parse_cli
-
     (tmp_path / "in").mkdir()
     (tmp_path / "in" / "foo_1.0_amd64.deb").write_bytes(b"foo")
     pars = parse_cli(
@@ -819,8 +799,6 @@ def test_insert_from_a_missing_incoming_directory_fails_without_creating_it(
     tmp_path: Path,
 ) -> None:
     """The incoming storage is only read, so a mistyped path is never materialised."""
-    from debkit.argparser import parse_cli
-
     pars = parse_cli(
         [
             *("--target-url", f"fs://{tmp_path / 'repo'} bookworm main", "--skip-verify-gpg"),
@@ -848,10 +826,6 @@ def test_insert_checks_each_deb_against_its_changes_digest(
 
     A pool key already holding the listed bytes must not turn the refusal into a pool-key one.
     """
-    import hashlib
-
-    from debkit.repo.hashes import ChecksumException
-
     deb = "foo_1.0_amd64.deb"
     listed = b"the built package"
     incoming = StorageFS(str(tmp_path / "in"))
@@ -944,8 +918,6 @@ def test_target_archs_follows_the_control_architecture(
 def test_target_archs_refuses_an_unusable_architecture(
     arch: str, binary_archs: list[str], message: str
 ) -> None:
-    from debkit.action import ActionException
-
     package = make_package("pool/main/f/foo/foo.deb", Package="foo", Architecture=arch)
 
     with pytest.raises(ActionException, match=message):
@@ -962,8 +934,6 @@ _FOO_REBUILT = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: amd64\nDescr
 
 def _insert_deb(tmp_path: Path, dist: str, deb: str, data: bytes) -> None:
     """Insert *data* as *deb* into *dist* of an `fs` root under *tmp_path*, through `parse_cli`."""
-    from debkit.argparser import parse_cli
-
     incoming = tmp_path / "in"
     incoming.mkdir(exist_ok=True)
     (incoming / deb).write_bytes(data)
@@ -978,8 +948,6 @@ def _insert_deb(tmp_path: Path, dist: str, deb: str, data: bytes) -> None:
 
 
 def test_insert_refuses_to_replace_a_pool_object_another_dist_lists(tmp_path: Path) -> None:
-    from debkit.action import ActionException
-
     deb = "foo_1.0_amd64.deb"
     _insert_deb(tmp_path, "bookworm", deb, _FOO_V1)
     _insert_deb(tmp_path, "trixie", deb, _FOO_V1)
@@ -1011,8 +979,6 @@ def test_insert_repairs_a_corrupt_pool_object_after_check_fix(tmp_path: Path) ->
 
 def test_insert_refuses_two_arch_builds_under_one_upload_name(tmp_path: Path) -> None:
     """The pool key takes the upload file name, so `foo.deb` for two arches is one key."""
-    from debkit.action import ActionException
-
     arm = make_deb(b"Package: foo\nVersion: 1.0\nArchitecture: arm64\n")
     _insert_deb(tmp_path, "bookworm", "foo.deb", _FOO_V1)
 
