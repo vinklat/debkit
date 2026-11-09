@@ -294,7 +294,7 @@ def test_update_drops_a_component_the_reloaded_release_no_longer_lists(
     repo = _repo()
     repo.components["contrib"] = Component(repo.storage, repo.params, repo.release, "contrib")
     monkeypatch.setattr(repo.release, "load", lambda: True)
-    monkeypatch.setattr(Component, "load", lambda self, archs, **_: 0)
+    monkeypatch.setattr(Component, "load", lambda self, archs, *_: 0)
 
     repo.update()
 

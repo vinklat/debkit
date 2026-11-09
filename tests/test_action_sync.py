@@ -29,7 +29,7 @@ from txstore import (
 
 from debkit.action import ActionException, OutputType
 from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionCheck, ActionSync
-from debkit.repo.component import ComponentException
+from debkit.repo.component import ComponentException, IndexLoad
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException
 from debkit.repo.repo_rw import CheckReport
@@ -151,7 +151,7 @@ def test_sync_reloads_the_target_before_a_later_pass() -> None:
     action = _make_action(storage=TxnStorageStub())
     hashes = iter(["hash1", "hash2", "hash2"])
 
-    def update(strict_arch: bool = False) -> None:
+    def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
     _source(action).update.side_effect = update
@@ -170,7 +170,7 @@ def test_sync_commits_the_last_pass_and_warns_when_the_source_never_settles(
     action = _make_action(storage=txn)
     hashes = iter(f"hash{n}" for n in range(1, 100))
 
-    def update(strict_arch: bool = False) -> None:
+    def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
     _source(action).update.side_effect = update
@@ -192,7 +192,7 @@ def _dated_target_loads(action: ActionSync) -> None:
     """Give each target load a Release dated by its ordinal, `load1`, `load2`, …"""
     loads = iter(range(1, 10))
 
-    def update(skip_unreadable: bool = False) -> None:
+    def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _target(action).release.fields = {"Date": f"load{next(loads)}"}
 
     _target(action).update.side_effect = update
@@ -203,7 +203,7 @@ def test_sync_later_pass_never_goes_below_the_target_the_run_found() -> None:
     action = _make_action(storage=TxnStorageStub())
     hashes = iter(["hash1", "hash2", "hash2"])
 
-    def update(strict_arch: bool = False) -> None:
+    def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
     _source(action).update.side_effect = update
@@ -252,7 +252,7 @@ def test_sync_allow_release_rollback_warns_once_across_passes(
     action.allow_release_rollback = True
     hashes = iter(["hash1", "hash2", "hash2"])
 
-    def update(strict_arch: bool = False) -> None:
+    def update(mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         _source(action).release.hash = next(hashes)
 
     _source(action).update.side_effect = update
@@ -791,7 +791,7 @@ def test_sync_loads_the_target_inside_the_transaction() -> None:
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
     began_at_load: list[bool] = []
-    _target(action).update.side_effect = lambda **_: began_at_load.append(txn.began)
+    _target(action).update.side_effect = lambda *_: began_at_load.append(txn.began)
 
     action.sync()
 
@@ -829,7 +829,7 @@ def test_sync_verify_existing_checks_the_target_it_loaded_inside_the_transaction
     action.verify_existing = True
     began_at_load: list[bool] = []
     began_at_check: list[bool] = []
-    _target(action).update.side_effect = lambda **_: began_at_load.append(txn.began)
+    _target(action).update.side_effect = lambda *_: began_at_load.append(txn.began)
 
     def check(*, fix: bool = False, purge_orphans: bool = True) -> CheckReport:
         began_at_check.append(txn.began and not txn.committed)

@@ -331,7 +331,7 @@ class Packages:
         # storage; a truncated / 0-byte object against a non-empty digest in
         # Release must fail loudly instead of being silently treated as
         # "no packages for this arch" (which would mask repo-vs-pool drift
-        # and bypass `strict_arch` in the caller).
+        # and bypass a strict load in the caller).
         if self.params.verify_digests:
             digests = calc_digests(enc_data)
             if not self._verify_indices_checksum(root_release, indices_path, digests):

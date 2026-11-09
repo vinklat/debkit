@@ -155,7 +155,9 @@ inherits, through the decoders in `repo/compress.py`.
 
 ## Index loading
 
-Implemented by `Component.load()` in `repo/component.py`, called through `Repo.update()`.
+Implemented by `Component.load()` in `repo/component.py`, called through `Repo.update()` with an
+`IndexLoad` mode: `STRICT` for the `sync` source and shared-root claims, `WRITABLE` for `insert`,
+`remove`, and `check --fix`, `READ_ONLY` for the rest.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |

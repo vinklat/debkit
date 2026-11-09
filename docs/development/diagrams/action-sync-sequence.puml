@@ -17,7 +17,7 @@ CM -> TStor: history_lock acquire\n[blocks; S3 times out → txstore locking]
 CM -> TStor: history.load() / next_id()
 CM -> TStor: transaction_begin(id)\n[only if isinstance(TStor, FootmarkMixin)]
 
-ActionSync -> Tgt: update(skip_unreadable=True)
+ActionSync -> Tgt: update(READ_ONLY)
 Tgt --> ActionSync: ok / ReleaseNotFoundException / ChecksumException
 note over ActionSync: run_floor = target.release.fields["Date"], before any reset\ntarget_before = target.snapshot()
 
@@ -26,7 +26,7 @@ opt verify_existing
   Tgt -> TStor: list(); read, delete the failing payloads\n[staged in the transaction]
 end
 
-ActionSync -> Src: update(strict_arch=True)
+ActionSync -> Src: update(STRICT)
 opt verify_gpg and not allow_release_rollback
   ActionSync -> Src: release.check_fresh_against(run_floor, now)
   Src --> ActionSync: returns, or raises ReleaseFreshnessException
@@ -45,13 +45,13 @@ loop up to MAX_UPDATED_REPO_RETRIES passes
     note over ActionSync: log warning "Source repo still changing";\nthe last pass is committed, the source is not read again
   end
 
-  ActionSync -> Src: update(strict_arch=True)
+  ActionSync -> Src: update(STRICT)
   Src --> ActionSync: release.hash
   break release.hash unchanged by the pass
     note over ActionSync: source settled
   end
 
-  ActionSync -> Tgt: update(skip_unreadable=True)
+  ActionSync -> Tgt: update(READ_ONLY)
   note right: reads through the transaction\nthe bytes the previous pass staged
   opt verify_gpg and not allow_release_rollback
     ActionSync -> Src: release.check_fresh_against(target.release.fields["Date"], now)

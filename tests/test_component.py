@@ -16,7 +16,7 @@ import pytest
 from helpers.factories import make_package, make_params, make_storage_mock
 from txstore import StorageException
 
-from debkit.repo.component import Component, ComponentException, container_for
+from debkit.repo.component import Component, ComponentException, IndexLoad, container_for
 from debkit.repo.packages import Packages, PackagesException, PackagesNotFoundException
 from debkit.repo.params import SOURCE_ARCH, RepoParams
 from debkit.repo.release import Release
@@ -75,7 +75,7 @@ def test_component_load_storage_exception_skips_when_unreadable_may_be_skipped(
         pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with caplog.at_level(logging.WARNING):
-            total = comp.load(["amd64"], strict_arch=False, skip_unreadable=True)
+            total = comp.load(["amd64"], IndexLoad.READ_ONLY)
     assert total == 0
     assert "Architecture amd64 not available" in caplog.text
 
@@ -99,7 +99,7 @@ def test_component_load_storage_exception_strict_raises() -> None:
         pkgs_mock.release.load_component.side_effect = StorageException("not found")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main"):
-            comp.load(["amd64"], strict_arch=True)
+            comp.load(["amd64"], IndexLoad.STRICT)
 
 
 def test_component_load_architectures_field_multi_token_succeeds() -> None:
@@ -134,18 +134,18 @@ def test_component_load_packages_failure_strict_raises() -> None:
         pkgs_mock.load.side_effect = PackagesException("bad")
         PackagesCls.return_value = pkgs_mock
         with pytest.raises(ComponentException, match="Cannot load main"):
-            comp.load(["amd64"], strict_arch=True)
+            comp.load(["amd64"], IndexLoad.STRICT)
 
 
-@pytest.mark.parametrize("skip_unreadable", [False, True])
-def test_component_load_skips_an_arch_without_an_index(skip_unreadable: bool) -> None:
+@pytest.mark.parametrize("mode", [IndexLoad.WRITABLE, IndexLoad.READ_ONLY])
+def test_component_load_skips_an_arch_without_an_index(mode: IndexLoad) -> None:
     """An insert starts the index of an arch that has none yet."""
     comp = _component()
     with patch("debkit.repo.component.Packages") as PackagesCls:
         pkgs_mock = MagicMock()
         pkgs_mock.load.side_effect = PackagesNotFoundException("missing indices file")
         PackagesCls.return_value = pkgs_mock
-        assert comp.load(["amd64"], skip_unreadable=skip_unreadable) == 0
+        assert comp.load(["amd64"], mode) == 0
     assert comp.packages == {}
 
 
@@ -170,7 +170,7 @@ def test_component_load_skips_an_unreadable_index_when_asked(
         pkgs_mock.load.side_effect = PackagesException("Cannot decode indices")
         PackagesCls.return_value = pkgs_mock
         with caplog.at_level(logging.WARNING):
-            assert comp.load(["amd64"], skip_unreadable=True) == 0
+            assert comp.load(["amd64"], IndexLoad.READ_ONLY) == 0
     assert comp.packages == {}
     assert "Packages for amd64 failed: Packages: Cannot decode indices" in caplog.text
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from txstore import StorageException
@@ -40,6 +41,23 @@ def container_for(arch: str) -> type[Packages]:
         `Sources` for the source architecture, `Packages` otherwise.
     """
     return Sources if arch == SOURCE_ARCH else Packages
+
+
+class IndexLoad(Enum):
+    """What a component load skips when an arch's index does not load.
+
+    The modes and the commands using each -> [VALIDATION.md](VALIDATION.md#index-loading).
+
+    Attributes:
+        STRICT: Every arch must load; a missing or unreadable index raises.
+        WRITABLE: A missing index is skipped, so an insert starts it; an unreadable one
+            raises, since a save would replace it, except the never-written `Sources`.
+        READ_ONLY: A missing or unreadable index is skipped with a warning.
+    """
+
+    STRICT = "strict"
+    WRITABLE = "writable"
+    READ_ONLY = "read-only"
 
 
 class ComponentException(Exception):
@@ -101,22 +119,18 @@ class Component:
         kind = container_for(arch)
         return next((pkgs for pkgs in self.packages.values() if type(pkgs) is kind), None)
 
-    def load(
-        self, archs: list[str], strict_arch: bool = False, skip_unreadable: bool = False
-    ) -> int:
+    def load(self, archs: list[str], mode: IndexLoad = IndexLoad.WRITABLE) -> int:
         """Load package sets (Packages objects) for all architectures.
 
-        An arch with no index file is skipped unless `strict_arch`, so an insert can start its
+        An arch with no index file is skipped unless `STRICT`, so an insert can start its
         index. One whose index or per-arch Release exists but cannot be read is skipped only
-        with `skip_unreadable` or for the never-written `Sources` index: a caller that saves
-        would replace it with a fresh index holding its own changes alone
+        in `READ_ONLY`, or for the never-written `Sources` index in `WRITABLE`: a caller that
+        saves would replace it with a fresh index holding its own changes alone
         -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Args:
             archs: The list of architectures.
-            strict_arch: If True, an arch that does not load raises. Defaults to False.
-            skip_unreadable: If True, an arch whose index cannot be read is skipped too. Defaults
-                to False.
+            mode: What an arch that does not load may skip. Defaults to `WRITABLE`.
 
         Raises:
             ComponentException: If an arch cannot be loaded and may not be skipped, or the
@@ -133,7 +147,9 @@ class Component:
                 continue
             kind = container_for(arch)
             packages = kind(self.storage, self.params)
-            may_skip_unreadable = not strict_arch and (skip_unreadable or kind is Sources)
+            may_skip_unreadable = mode is IndexLoad.READ_ONLY or (
+                mode is IndexLoad.WRITABLE and kind is Sources
+            )
 
             if not self.is_flat:
                 try:
@@ -149,7 +165,7 @@ class Component:
                 packages.load(self.root_release, self.name, arch)
             except PackagesException as exc:
                 missing = isinstance(exc, PackagesNotFoundException)
-                if strict_arch or not (missing or may_skip_unreadable):
+                if mode is IndexLoad.STRICT or not (missing or may_skip_unreadable):
                     raise ComponentException(f"Cannot load {self.name}: {arch}: {exc}") from exc
 
                 logger.warning("Packages for %s failed: %s", arch, exc)

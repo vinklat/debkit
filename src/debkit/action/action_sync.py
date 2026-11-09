@@ -12,6 +12,7 @@ from humanize import naturalsize
 from txstore import get_supported_schemes, maybe_transaction, redact_url
 
 from debkit.action import Action, ActionException, OutputType, attach_storage_repo, dump_json
+from debkit.repo.component import IndexLoad
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
@@ -189,7 +190,7 @@ class ActionSync(Action):
                 "---------- Load source repo (%s)...",
                 redact_url(self.source_repo.params.url or ""),
             )
-            self.source_repo.update(strict_arch=True)
+            self.source_repo.update(IndexLoad.STRICT)
             self._check_fresh(run_floor)
             self._sync_until_settled(run_floor)
 
@@ -215,7 +216,7 @@ class ActionSync(Action):
                 return
             synced_hash = self.source_repo.release.hash
             logger.info("---------- Retrieve load to verify source repo changes...")
-            self.source_repo.update(strict_arch=True)
+            self.source_repo.update(IndexLoad.STRICT)
             if self.source_repo.release.hash == synced_hash:
                 return
             logger.info("Source repo modified during synchronisation! Repeat sync...")
@@ -275,7 +276,7 @@ class ActionSync(Action):
             # the sync plans from the source and only copies indices, never writing one from
             # this load, so an unreadable target index is skipped
             # -> [VALIDATION.md](VALIDATION.md#index-loading)
-            self.target_repo.update(skip_unreadable=True)
+            self.target_repo.update(IndexLoad.READ_ONLY)
         except ReleaseNotFoundException as exc:
             logger.warning("Target repo is empty: %s", exc)
         except ChecksumException as exc:
@@ -416,7 +417,7 @@ class ActionCheck(Action):
             try:
                 # `--fix` deletes what no loaded index claims, so it never skips one
                 # -> [VALIDATION.md](VALIDATION.md#index-loading)
-                self.target_repo.update(skip_unreadable=not self.fix)
+                self.target_repo.update(IndexLoad.WRITABLE if self.fix else IndexLoad.READ_ONLY)
             except ReleaseNotFoundException as exc:
                 logger.error("Target repo is empty: %s", exc)
                 return False

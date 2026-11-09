@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from txstore import StorageException, compare_digests, is_unsafe_path
 
-from debkit.repo.component import Component, ComponentException
+from debkit.repo.component import Component, ComponentException, IndexLoad
 from debkit.repo.gnupg import GPGVerifyException
 from debkit.repo.hashes import COMPARE_HASH_LIST, ChecksumException
 from debkit.repo.index_selection import select_index_entry
@@ -232,18 +232,15 @@ class Repo:
                 continue
             yield arch
 
-    def update(self, strict_arch: bool = False, skip_unreadable: bool = False) -> None:
+    def update(self, mode: IndexLoad = IndexLoad.WRITABLE) -> None:
         """Load Debian repository.
 
         This method does a similar thing to `apt-get update` command.
 
         Args:
-            strict_arch: Whether to use strict architecture. Defaults to False. If True, it will
-                raise an exception if the architecture is not available. If False, it will skip an
-                architecture without an index and continue loading other architectures.
-            skip_unreadable: Whether an architecture whose index exists but cannot be read is
-                skipped as well. Defaults to False, which raises: a caller that saves would
-                replace that index -> [VALIDATION.md](VALIDATION.md#index-loading).
+            mode: What an architecture that does not load may skip. Defaults to `WRITABLE`,
+                which skips a missing index but raises on an unreadable one, since a caller
+                that saves would replace it -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Raises:
             RepoReadException: The root Release storage fails to read.
@@ -268,9 +265,7 @@ class Repo:
         for component_name in self.get_components():
             component = Component(self.storage, self.params, self.release, component_name)
 
-            pkgs_total += component.load(
-                list(self.get_archs()), strict_arch=strict_arch, skip_unreadable=skip_unreadable
-            )
+            pkgs_total += component.load(list(self.get_archs()), mode)
 
             self.components[component_name] = component
 
@@ -848,7 +843,7 @@ def _claims_of(storage: Storage, dist: str) -> dict[str, list[dict[str, str]]]:
             verify_digests=False,
         )
         repo = Repo(storage, params)
-        repo.update(strict_arch=True)
+        repo.update(IndexLoad.STRICT)
         # every slot, not `get_packages`, which yields a path shared by two arch indices once
         for component in repo.components.values():
             for packages in component.packages.values():

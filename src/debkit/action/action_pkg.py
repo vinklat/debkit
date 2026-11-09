@@ -19,6 +19,7 @@ from debkit.action import (
 )
 from debkit.argtypes import component_type, pkg_pattern_type
 from debkit.repo.changes import Changes
+from debkit.repo.component import IndexLoad
 from debkit.repo.debfile import DebFile
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
@@ -67,7 +68,7 @@ class ActionPkg(Action):
 
     def dump(self) -> None:
         """Dump repository to stdout."""
-        self.target_repo.update(skip_unreadable=True)
+        self.target_repo.update(IndexLoad.READ_ONLY)
         logger.debug("%s", str(self._target_metrics))
         dump_dict = self.target_repo.dump(brief=self.output == OutputType.brief)
 
@@ -104,7 +105,7 @@ class ActionPkg(Action):
 
     def stats(self) -> None:
         """Print repository statistics to stdout."""
-        self.target_repo.update(skip_unreadable=True)
+        self.target_repo.update(IndexLoad.READ_ONLY)
         stats = self.target_repo.stats()
 
         if self.output == OutputType.brief:
@@ -151,7 +152,7 @@ class ActionPkg(Action):
 
     def list_packages(self) -> None:
         """List packages in repository to stdout."""
-        self.target_repo.update(skip_unreadable=True)
+        self.target_repo.update(IndexLoad.READ_ONLY)
 
         if self.output == OutputType.brief:
             print("\n".join(str(package) for package in self.target_repo.get_packages()))

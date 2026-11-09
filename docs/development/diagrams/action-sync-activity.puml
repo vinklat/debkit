@@ -5,7 +5,7 @@ if (allow_release_rollback?) then (yes)
 endif
 
 partition "with maybe_transaction(target.storage)" {
-  :target.update(skip_unreadable=True);
+  :target.update(READ_ONLY);
   note right
     under history_lock, so a peer commit
     that landed while waiting is seen;
@@ -26,7 +26,7 @@ partition "with maybe_transaction(target.storage)" {
       :log warning;
     endif
   endif
-  :source.update(strict_arch=True);
+  :source.update(STRICT);
   :check_fresh(run_floor);
   note right
     only with verify_gpg and not allow_release_rollback;
@@ -56,7 +56,7 @@ partition "with maybe_transaction(target.storage)" {
       break
     endif
     :synced = source.release.hash;
-    :source.update(strict_arch=True);
+    :source.update(STRICT);
     if (source.release.hash == synced?) then (yes)
       break
     endif
