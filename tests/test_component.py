@@ -339,12 +339,13 @@ def test_component_setup_creates_packages_per_arch() -> None:
 def test_component_insert_pkg_on_unknown_arch_creates_packages() -> None:
     comp = _component()
     pkg = make_package("pool/main/f/foo.deb")
-    with patch("debkit.repo.component.Packages") as PackagesCls:
-        pkgs_mock = MagicMock()
-        PackagesCls.return_value = pkgs_mock
-        comp.insert_pkg("amd64", pkg)
-    pkgs_mock.setup.assert_called_once_with("main", "amd64")
-    pkgs_mock.insert.assert_called_once_with(pkg)
+
+    comp.insert_pkg("amd64", pkg)
+
+    created = comp.packages["amd64"]
+    assert type(created) is Packages
+    assert created.packages == {"pool/main/f/foo.deb": pkg}
+    assert created.used_indices_path == "dists/bookworm/main/binary-amd64/Packages.gz"
 
 
 # ---------------------------------------------------------------------------

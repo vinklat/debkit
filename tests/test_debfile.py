@@ -9,7 +9,7 @@ import zlib
 from io import BytesIO, UnsupportedOperation
 from pathlib import Path
 from typing import IO
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from helpers.binaries import requires_binary
@@ -207,10 +207,15 @@ def test_init_refuses_a_control_tar_that_does_not_decode(
     assert storage.all_closed()
 
 
-def test_get_package_rejects_non_bytes_control() -> None:
-    with patch("debkit.repo.debfile._control_of", return_value="not-bytes"):
-        deb = DebFile(MagicMock(), _PATH)
-    with pytest.raises(DebFileException):
+def test_get_package_refuses_a_control_member_that_is_not_a_regular_file(tmp_path: Path) -> None:
+    buf = BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        member = tarfile.TarInfo("./control")
+        member.type = tarfile.DIRTYPE
+        tar.addfile(member)
+    deb = DebFile(_storage(tmp_path, make_deb(control_tar=buf.getvalue())), _PATH)
+
+    with pytest.raises(DebFileException, match="not a bytes object"):
         deb.get_package()
 
 

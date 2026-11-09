@@ -370,33 +370,18 @@ def test_packages_setup_flat_source_arch_writes_at_the_dist_root() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_packages_load_empty_payload_with_matching_digest_returns_false() -> None:
-    """Legitimately empty index (Release digest matches empty bytes) → False.
+def test_packages_load_empty_payload_with_matching_digest_returns_false(tmp_path: Path) -> None:
+    """A legitimately empty index, its Release recording the digest of no bytes, loads nothing.
 
-    Digest verification MUST run before the empty-payload short-circuit so
-    that truncated / 0-byte objects against a non-empty Release digest fail
-    loudly instead of being silently treated as "no packages for this arch".
+    The truncated case beside it shows the digest is checked before this short-circuit.
     """
-    p = make_params(verify_digests=True)
-    pkgs = _new_packages(params=p)
-    _storage(pkgs).get.return_value = b""
-    with (
-        patch.object(
-            Packages,
-            "_find_packages_file",
-            return_value=(
-                ["dists/bookworm/main/binary-amd64/Packages.xz"],
-                "dists/bookworm/main/binary-amd64/Packages.xz",
-                lambda b: b,
-            ),
-        ),
-        patch("debkit.repo.packages.calc_digests") as cd,
-        patch.object(Packages, "_verify_indices_checksum", return_value=True),
-    ):
-        root = MagicMock(spec=Release)
-        root.declared_size.return_value = None
-        assert pkgs.load(root, "main", "amd64") is False
-        cd.assert_called_once_with(b"")
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    root = Release(storage, params)
+    root.update_digests("main/binary-amd64/Packages", calc_digests(b""))
+    storage.put("dists/bookworm/main/binary-amd64/Packages", b"")
+
+    assert Packages(storage, params).load(root, "main", "amd64") is False
 
 
 _INDEX_PATH = "dists/bookworm/main/binary-amd64/Packages.gz"
