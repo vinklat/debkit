@@ -113,7 +113,7 @@ older Release no longer lists.
 | `check` payload digest mismatch | Logged and counted as an error; `--fix` deletes the object and counts it fixed. An unfixed error exits `Repository is not consistent.` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | `sync --verify-existing` payload digest mismatch | Logged and deleted inside the sync's transaction; the sync copies it again. Nothing is raised. |
 | `insert` `.changes` file | A `.changes` file whose SHA256 differs from `--changes-sha256` → `ChecksumException` (Distrustful). |
-| `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off; a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
+| `insert --changes-filename` payload | Each transferred `.deb` is compared with its `Checksums-Sha256` entry unless digest verification is off, before the pool object rule → [VALIDATION.md](VALIDATION.md#filename-safety); a mismatch → `ChecksumException` (Distrustful), and the transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | Parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. |
 | `insert` `.changes` with malformed armor | → `ChangesException` (Read). |

@@ -35,8 +35,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   transferred digests differ from its `.changes` entry is refused after it →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - The pool key holds no dist and no arch beyond the upload file name, so other dists and arch
-  indices may list it; a pool key already holding different bytes is refused after the transfer,
-  read through once before it, and an identical upload passes →
+  indices may list it; a pool key already holding different bytes is refused after the transfer
+  and the `.changes` digest check, read through once before it, and an identical upload passes →
   [VALIDATION.md](../../VALIDATION.md#filename-safety).
 - `transfer_from` is the only path that writes package content; index files (`Packages`, `Release`,
   and its signatures) are emitted by `target.save()` only when the diff is non-empty →

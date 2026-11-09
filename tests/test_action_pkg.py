@@ -835,12 +835,19 @@ def test_insert_from_a_missing_incoming_directory_fails_without_creating_it(
     assert not (tmp_path / "in").exists()
 
 
-@pytest.mark.parametrize("swapped", [False, True], ids=["matching", "swapped"])
+@pytest.mark.parametrize(
+    ("swapped", "pooled"),
+    [(False, False), (True, False), (True, True)],
+    ids=["matching", "swapped", "swapped-over-a-pooled-key"],
+)
 @patch("debkit.action.action_pkg.DebFile")
 def test_insert_checks_each_deb_against_its_changes_digest(
-    mock_debfile_cls: MagicMock, tmp_path: Path, swapped: bool
+    mock_debfile_cls: MagicMock, tmp_path: Path, swapped: bool, pooled: bool
 ) -> None:
-    """Regression: a payload swapped after its `.changes` was pinned was published."""
+    """Regression: a payload swapped after its `.changes` was pinned was published.
+
+    A pool key already holding the listed bytes must not turn the refusal into a rebuild one.
+    """
     import hashlib
 
     from debkit.repo.hashes import ChecksumException
@@ -865,6 +872,9 @@ def test_insert_checks_each_deb_against_its_changes_digest(
     )
     mock_debfile_cls.return_value = instance
     pool = tmp_path / "repo" / "pool/main/f/foo" / deb
+    if pooled:
+        pool.parent.mkdir(parents=True)
+        pool.write_bytes(listed)
 
     if not swapped:
         action.insert()
@@ -872,7 +882,8 @@ def test_insert_checks_each_deb_against_its_changes_digest(
         return
     with pytest.raises(ChecksumException, match="does not match its digest"):
         action.insert()
-    assert not pool.exists()
+    assert pool.exists() is pooled
+    assert not pooled or pool.read_bytes() == listed
     assert not (tmp_path / "repo" / "dists" / "bookworm" / "Release").exists()
 
 

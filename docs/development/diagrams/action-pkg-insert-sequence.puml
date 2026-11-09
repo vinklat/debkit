@@ -50,11 +50,11 @@ loop for filename in filenames
   ActionPkg -> Tgt: transfer_from(Inc, filename, pool_key)
   Tgt -> TStor: put / add_metadata (staged via footmarks)
   Tgt --> ActionPkg: digests
-  opt pool key held with other digests
-    ActionPkg -> ActionPkg: raise ActionException\n[staged transfer discarded]
-  end
   opt .changes upload, not --skip-verify, and digests differ from its entry
     ActionPkg -> ActionPkg: raise ChecksumException\n[staged transfer discarded]
+  end
+  opt pool key held with other digests
+    ActionPkg -> ActionPkg: raise ActionException\n[staged transfer discarded]
   end
   ActionPkg -> ActionPkg: package.set_digests(digests)
   loop for arch in archs
