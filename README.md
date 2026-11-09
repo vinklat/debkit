@@ -74,8 +74,9 @@ Domain owners and agent navigation → [AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Technology
 
-Python, [txstore](https://github.com/vinklat/txstore), python-debian, python-gnupg, humanize,
-pytest, Ruff, and mypy.
+Python and [txstore](https://github.com/vinklat/txstore); runtime dependencies →
+[STRUCTURE.md](STRUCTURE.md#dependencies). Tests and gates use pytest, Ruff, and mypy →
+[SETUP.md](SETUP.md#quality-gates).
 
 ## License
 

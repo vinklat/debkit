@@ -188,6 +188,19 @@ def test_repo_base_never_imports_the_modules_built_on_it() -> None:
     assert imported.isdisjoint({"repo.repo_rw", "repo.repo_sync", "repo.shared_root"})
 
 
+def test_repo_sync_reaches_storage_only_through_its_own() -> None:
+    """The target's storage is reached through `RepoRW` methods, never `target.storage`."""
+    tree = dict(_modules())["repo.repo_sync"]
+    offenders = [
+        f"line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and node.attr == "storage"
+        and not (isinstance(node.value, ast.Name) and node.value.id == "self")
+    ]
+    assert offenders == []
+
+
 def test_no_import_is_deferred() -> None:
     deferred = [
         f"{name}: {imp.module}"

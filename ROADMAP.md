@@ -5,8 +5,8 @@
 | Phase | Status | Feature | Notes |
 | -- | -- | -- | -- |
 | 0.1.0 | ✅ | Initial public release | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history; options by flag or `DEBKIT_*` variable |
-| 0.2.0 | ⏳ | `insert` of source packages | `ActionPkg.insert` refuses a `.changes` naming `source` among its `Architecture` tokens, and skips the source architecture when a binary package fans out over the repository arches |
-| 0.3.0 | ⏳ | `remove` of source packages | `Component.remove_pkg` skips the read-only `Sources` index, so a pattern never removes a source payload |
+| 0.2.0 | ⏳ | `insert` of source packages | Refused today → [VALIDATION.md](VALIDATION.md#sources-stanzas) |
+| 0.3.0 | ⏳ | `remove` of source packages | Source payloads kept today → [VALIDATION.md](VALIDATION.md#sources-stanzas) |
 
 ## Ideas
 

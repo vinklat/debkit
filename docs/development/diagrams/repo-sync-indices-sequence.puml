@@ -7,8 +7,9 @@ participant "Storage\n(source)" as SStor
 participant "Storage\n(target)" as TStor
 
 ActionSync -> Src: build_sync_lists(target, indices_only)
-Src -> TStor: list()
-TStor --> Src: existing objects\n[NotImplementedError on http]
+Src -> Tgt: held_paths()
+Tgt -> TStor: list()
+Tgt --> Src: existing objects, or None\n[NotImplementedError on http]
 
 Src -> Src: _get_indices()
 Src -> Rel: get_indices_paths()
@@ -37,9 +38,10 @@ group _reduce_indices
     alt the target holds it, its Release loaded, digests are verified,\nand both root Releases record the same digests
       note right: skipped with no round trip
     else the target holds it, its Release loaded, and agreement does not settle it
-      Src -> TStor: get_metadata(path)
-      TStor --> Src: stored digests
-      note right: compare_digests match\nmeans the index is skipped
+      Src -> Tgt: metadata_agrees(path, digests)
+      Tgt -> TStor: get_metadata(path)
+      Tgt --> Src: whether the stored digests match
+      note right: a match means the index is skipped
     end
   end
 end

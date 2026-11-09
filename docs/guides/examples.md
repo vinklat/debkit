@@ -37,7 +37,8 @@ relative path works, `..` included). The dist and components follow the path as 
 debkit --target-url="debian bookworm main contrib non-free" list
 ```
 
-From an S3 bucket; the secret key is read only from its variable, never from a flag:
+From an S3 bucket; the secret key is read only from its variable, never from a flag →
+[CONFIG.md](../../CONFIG.md#secrets):
 
 ```bash
 export DEBKIT_TARGET_URL="s3://s3.example.com/bucket/prefix bookworm main"
@@ -162,8 +163,9 @@ debkit remove
 ```
 
 Every package matching all regex patterns is removed from every component and binary architecture. A
-mirrored `Sources` index is read-only, so a matching source package is kept and logged. Pattern
-rules → [VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
+mirrored `Sources` index is read-only, so a matching source package is kept and logged →
+[VALIDATION.md](../../VALIDATION.md#sources-stanzas). Pattern rules →
+[VALIDATION.md](../../VALIDATION.md#package-pattern-matching).
 
 ## Mirror a repository
 
@@ -187,8 +189,9 @@ exclude globs when the mirror does not need all of it:
 debkit sync --indices-exclude '*/i18n/*,*/dep11/icons-*'
 ```
 
-Every compression the source publishes is mirrored too, uncompressed forms included. A glob that
-names the bare file drops only that form, since matching runs on the whole path:
+Every compression the source publishes is mirrored too, uncompressed forms included →
+[VALIDATION.md](../../VALIDATION.md#index-selection). A glob that names the bare file drops only
+that form, since matching runs on the whole path:
 
 ```bash
 debkit sync --indices-exclude '*/Contents-all,*/Contents-amd64,*/Contents-arm64'
@@ -210,8 +213,9 @@ debkit sync --architectures amd64,arm64,source
 ```
 
 Without it the source indices are skipped, like any unselected architecture. Selecting `source`
-against a repository that publishes none fails the run, as an unavailable architecture does.
-`insert` does not accept source packages → [ROADMAP.md](../../ROADMAP.md#phases).
+against a repository that publishes none fails the run, as an unavailable architecture does →
+[VALIDATION.md](../../VALIDATION.md#index-loading). `insert` does not accept source packages →
+[ROADMAP.md](../../ROADMAP.md#phases).
 
 ### Into an S3 bucket
 
@@ -230,8 +234,9 @@ debkit sync
 
 ### Verify existing packages while syncing
 
-Checks every existing target package before syncing and fixes corrupted files. This reads every
-package, so it is far more data intensive than a plain sync.
+Checks every existing target package before syncing and fixes corrupted files →
+[CRYPTO.md](../../CRYPTO.md#verification-failures). This reads every package, so it is far more data
+intensive than a plain sync.
 
 ```bash
 debkit sync --verify-existing
@@ -240,8 +245,9 @@ debkit sync --verify-existing
 ### Standalone check
 
 Loads the indices, detects missing packages, downloads every package and validates its checksums.
-Exit status is 0 when the repository is consistent, otherwise 1; `-o json` gives a machine-readable
-report. Pass the selection flags the mirror was synced with, as for [Check and fix](#check-and-fix).
+Exit status is 0 when the repository is consistent, otherwise 1 →
+[EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups); `-o json` gives a machine-readable report.
+Pass the selection flags the mirror was synced with, as for [Check and fix](#check-and-fix).
 
 ```bash
 debkit check
@@ -292,7 +298,7 @@ debkit --target-url="debian" prune --orphans --dry-run
 A pruned transaction stays applied and stops being revertable; nothing in the repository itself
 changes. `--orphans` additionally removes hidden footmark objects that belong to no recorded
 transaction, which is how residue of an interrupted write is reclaimed. Use `--history-max-age=0` to
-switch pruning off. The full rule →
+switch pruning off → [CONFIG.md](../../CONFIG.md#global-flags). The full rule →
 [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#retention).
 
 ## Further reading

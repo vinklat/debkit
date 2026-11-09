@@ -65,7 +65,7 @@ hash-block layer over them is `repo/hashes.py`.
 
 1. `Release`, `InRelease`, and `Release.gpg` are answered by the digests of the bytes the root
    Release load fetched and verified, and by nothing else: no digest block lists them, a stanza
-   cannot vouch for them, and a file the load did not fetch fails, which a `sync` transfer raises as
+   cannot vouch for them, and a file the load did not fetch fails; a failed `sync` transfer →
    `ChecksumException` (Distrustful).
 2. A matching entry in any component package index, whatever the path's suffix, but only for a path
    no `Release` digest block lists: each container keys by the `Filename` field it parsed, so a path
