@@ -123,16 +123,18 @@ per entry by its transfer; the source is never probed.
 
 ## Object sizes
 
-Release files and stored indices are read by `read_capped()` in `repo/compress.py`, which reads at
-most one byte past a cap, so each is refused before it is verified or buffered in full. Upload
-control data is capped by `_control_of()` in `repo/debfile.py`, which decodes the `control.tar`
-member under a limit and walks it as a stream. "Checked" means digest verification is on.
+Release files, stored indices, and `.changes` files are read by `read_capped()` in
+`repo/compress.py`, which reads at most one byte past a cap, so each is refused before it is
+verified or buffered in full. Upload control data is capped by `_control_of()` in
+`repo/debfile.py`, which decodes the `control.tar` member under a limit and walks it as a stream.
+"Checked" means digest verification is on.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Root Release files | `Release`, `InRelease`, and `Release.gpg` are at most `MAX_RELEASE_BYTES` (16 MiB): no signed file records their size. | → `ReleaseReadException` (Read) |
 | Per-arch Release | At most the `Size` the checked root Release records, else `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
 | Stored index | At most the largest `Size` a checked root or per-arch Release records, else `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
+| `.changes` file | At most `MAX_CHANGES_BYTES` (4 MiB), read by `read_capped()` before `--changes-sha256` is checked. | → `ChangesException` (Read) |
 | Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
 | Upload control tar | The `control.tar` decodes to at most `MAX_CONTROL_TAR_BYTES` (64 MiB), which also bounds its member count; it is uncompressed, `.gz`, `.xz`, `.bz2`, `.lzma`, or `.zst`, the last decoded by the `zstd` binary. | Past the limit, another compression, or a stream that does not decode → `DebFileException` (Read) |
 

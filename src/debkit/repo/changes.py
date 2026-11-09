@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from txstore import StorageException, is_unsafe_path
 
+from debkit.repo.compress import SizeLimitError, read_capped
 from debkit.repo.gnupg import CLEARSIGN_BEGIN, GPGVerifyException, cleartext_body
 from debkit.repo.hashes import CHECKSUMS_SHA256, ChecksumException, HexDigests, parse_hash_block
 from debkit.repo.params import SOURCE_ARCH
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 DEFAULT_ARCH = "amd64"
+
+# Largest `.changes` file read; a real one lists a few files and is a few KiB, so this bounds
+# what a mistyped name or a misbehaving backend can make a load buffer
+# -> [VALIDATION.md](VALIDATION.md#object-sizes)
+MAX_CHANGES_BYTES = 4 * 1024 * 1024
 
 
 class ChangesException(Exception):
@@ -107,13 +113,16 @@ class Changes(HexDigests):
             digest_expected: The expected digest of the data.
 
         Raises:
-            ChangesException: If the file cannot be read or is empty.
+            ChangesException: If the file cannot be read, is empty, or is larger than
+                `MAX_CHANGES_BYTES`.
             ChecksumException: If the checksum of the file does not match the expected checksum.
         """
         try:
-            data: bytes = self.storage.get(filename)
+            data = read_capped(self.storage, filename, MAX_CHANGES_BYTES)
         except StorageException as exc:
             raise ChangesException(f"Cannot read .changes file {filename}: {exc}") from exc
+        except SizeLimitError as exc:
+            raise ChangesException(str(exc)) from exc
 
         if not data:
             raise ChangesException(f"Empty changes file: {filename}")

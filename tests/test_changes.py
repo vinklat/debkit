@@ -13,6 +13,7 @@ import pytest
 from helpers.factories import make_clearsigned
 from txstore import StorageFS
 
+from debkit.repo import changes as changes_module
 from debkit.repo.changes import Changes, ChangesException
 from debkit.repo.hashes import ChecksumException
 
@@ -100,10 +101,32 @@ def test_get_deb_files_filters_extension() -> None:
     assert set(changes.get_deb_files()) == {"foo_1.0_amd64.deb", "bar_1.0_all.deb"}
 
 
-def test_load_empty_payload_raises() -> None:
-    changes = Changes(_storage_with(b""))
+def _stored(tmp_path: Path, data: bytes) -> StorageFS:
+    """An `fs` storage holding *data* as `incoming.changes`."""
+    (tmp_path / "incoming.changes").write_bytes(data)
+    return StorageFS(str(tmp_path))
+
+
+def test_load_empty_payload_raises(tmp_path: Path) -> None:
+    changes = Changes(_stored(tmp_path, b""))
     with pytest.raises(ChangesException, match="Empty changes file"):
         changes.load("incoming.changes")
+
+
+def test_load_refuses_a_file_past_the_size_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mistyped name or a misbehaving backend is refused before it is buffered in full."""
+    monkeypatch.setattr(changes_module, "MAX_CHANGES_BYTES", len(_CHANGES_BLOB) - 1)
+    with pytest.raises(ChangesException, match="larger than"):
+        Changes(_stored(tmp_path, _CHANGES_BLOB)).load("incoming.changes")
+
+
+def test_load_reads_a_file_at_the_size_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(changes_module, "MAX_CHANGES_BYTES", len(_CHANGES_BLOB))
+    changes = Changes(_stored(tmp_path, _CHANGES_BLOB))
+    changes.load("incoming.changes")
+    assert "foo_1.0_amd64.deb" in changes.digests
 
 
 def test_load_wraps_a_missing_file(tmp_path: Path) -> None:
@@ -112,15 +135,15 @@ def test_load_wraps_a_missing_file(tmp_path: Path) -> None:
         Changes(StorageFS(str(tmp_path))).load("incoming.changes")
 
 
-def test_load_checksum_mismatch_raises_checksum_exc() -> None:
-    changes = Changes(_storage_with(_CHANGES_BLOB))
+def test_load_checksum_mismatch_raises_checksum_exc(tmp_path: Path) -> None:
+    changes = Changes(_stored(tmp_path, _CHANGES_BLOB))
     with pytest.raises(ChecksumException):
         changes.load("incoming.changes", digest_expected="not-a-real-digest")
 
 
-def test_load_matching_digest_parses() -> None:
+def test_load_matching_digest_parses(tmp_path: Path) -> None:
     digest = hashlib.sha256(_CHANGES_BLOB).hexdigest()
-    changes = Changes(_storage_with(_CHANGES_BLOB))
+    changes = Changes(_stored(tmp_path, _CHANGES_BLOB))
     changes.load("incoming.changes", digest_expected=digest)
     assert "foo_1.0_amd64.deb" in changes.digests
 
