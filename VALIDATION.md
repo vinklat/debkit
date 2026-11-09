@@ -164,6 +164,7 @@ Implemented by `Component.load()` in `repo/component.py`, called through `Repo.u
 | -- | -- | -- |
 | Missing index | An arch whose Release lists no `Packages*` file present in storage is skipped, so `insert` starts its index; only the strict `sync` source refuses it. | Strict → `ComponentException` (Read) |
 | Unreadable index | An index that exists but does not decode, passes the size cap, or holds a bad `Sources` stanza, or a per-arch Release storage fails to read, stops `insert`, `remove`, and `check --fix`, which would replace that index or delete what it lists. | → `ComponentException` (Read) |
+| Index storage failure | Storage fails while reading an index that exists: a backend failure, not an unreadable index, so every mode stops, the skipping ones included. | → `StorageException` (Generic) |
 | Skipped unreadable index | `list`, `dump`, `stats`, `check` without `--fix`, and the `sync` target, which plans from the source, skip an unreadable index with a warning. | Logged |
 | Sources index | A mirrored `Sources` index is never written, so every non-strict load skips an unreadable one. | Logged |
 | Index digest | A digest mismatch is never skipped; the `sync` target resets instead → [Index selection](#index-selection). | → `ChecksumException` (Distrustful) |

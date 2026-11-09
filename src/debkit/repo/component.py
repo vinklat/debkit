@@ -123,10 +123,11 @@ class Component:
         """Load package sets (Packages objects) for all architectures.
 
         An arch with no index file is skipped unless `STRICT`, so an insert can start its
-        index. One whose index or per-arch Release exists but cannot be read is skipped only
-        in `READ_ONLY`, or for the never-written `Sources` index in `WRITABLE`: a caller that
-        saves would replace it with a fresh index holding its own changes alone
-        -> [VALIDATION.md](VALIDATION.md#index-loading).
+        index. One whose index exists but does not decode, or whose per-arch Release storage
+        fails, is skipped only in `READ_ONLY`, or for the never-written `Sources` index in
+        `WRITABLE`: a caller that saves would replace it with a fresh index holding its own
+        changes alone. A storage failure reading an existing index is a backend failure and
+        propagates in every mode -> [VALIDATION.md](VALIDATION.md#index-loading).
 
         Args:
             archs: The list of architectures.
@@ -135,6 +136,7 @@ class Component:
         Raises:
             ComponentException: If an arch cannot be loaded and may not be skipped, or the
                 architecture check fails.
+            StorageException: An index exists but its storage fails to read.
 
         Returns:
             The total number of packages loaded.

@@ -175,6 +175,20 @@ def test_component_load_skips_an_unreadable_index_when_asked(
     assert "Packages for amd64 failed: Packages: Cannot decode indices" in caplog.text
 
 
+@pytest.mark.parametrize("mode", list(IndexLoad))
+def test_component_load_index_storage_failure_propagates_in_every_mode(mode: IndexLoad) -> None:
+    """A backend failure reading an existing index is not an unreadable index to skip."""
+    comp = _component()
+    with patch("debkit.repo.component.Packages") as PackagesCls:
+        pkgs_mock = MagicMock()
+        pkgs_mock.release.is_empty.return_value = True
+        pkgs_mock.load.side_effect = StorageException("timeout")
+        PackagesCls.return_value = pkgs_mock
+        with pytest.raises(StorageException, match="timeout"):
+            comp.load(["amd64"], mode)
+    assert comp.packages == {}
+
+
 def test_component_load_skips_an_unreadable_sources_index() -> None:
     """A `Sources` index is never written, so no save can replace it."""
     comp = _component()
