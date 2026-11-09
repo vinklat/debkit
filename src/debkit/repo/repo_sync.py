@@ -151,7 +151,9 @@ class RepoSync(Repo):
             repair_files, purge_files = self._repair_and_purge(
                 all_pkg_files, indices, existing_files, planned=copy_pkg_files | remove_pkg_files
             )
-            # another dist sharing the root keeps its tree and the payloads it lists
+        # another dist sharing the root keeps its tree and the payloads it lists; reading
+        # those claims loads every other dist, so only a pass that deletes reads them
+        if can_list and (purge_files or remove_pkg_files):
             shared = shared_root_claims(target_repo.storage, target_repo.params, existing_files)
             purge_files = {file for file in purge_files if shared.deletable(file)}
             remove_pkg_files = {file for file in remove_pkg_files if shared.deletable(file)}

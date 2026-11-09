@@ -22,6 +22,8 @@ from helpers.factories import (
 )
 from txstore import StorageException, StorageNotFoundException, StorageType
 
+from debkit.repo import repo_sync as repo_sync_module
+from debkit.repo import shared_root_claims
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.packages import Packages
@@ -223,6 +225,30 @@ def test_build_sync_lists_orphan_in_target_goes_to_delete_list() -> None:
 
     assert delete_list == ["junk.deb"]
     assert copy_list == []
+
+
+@pytest.mark.parametrize(
+    ("tgt_list", "reads"),
+    [(["p1.deb", *INDICES], 0), (["p1.deb", "junk.deb", *INDICES], 1)],
+    ids=["nothing-to-delete", "orphan"],
+)
+def test_build_sync_lists_reads_the_shared_root_claims_only_to_delete(
+    monkeypatch: pytest.MonkeyPatch, tgt_list: list[str], reads: int
+) -> None:
+    """The claims load every other dist, so a pass that deletes nothing skips them."""
+    p1 = make_package("p1.deb")
+    src, tgt = _two_repos(
+        src_components={"main": {"amd64": [p1]}},
+        tgt_components={"main": {"amd64": [p1]}},
+        tgt_list=tgt_list,
+        same_hash=True,
+    )
+    claims = MagicMock(wraps=shared_root_claims)
+    monkeypatch.setattr(repo_sync_module, "shared_root_claims", claims)
+
+    src.build_sync_lists(tgt)
+
+    assert claims.call_count == reads
 
 
 def test_build_sync_lists_missing_index_forces_indices_copy() -> None:
