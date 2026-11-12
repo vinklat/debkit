@@ -23,29 +23,47 @@ Current version: **0.1.0**. Planned work → [ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 
-Released versions are published to [PyPI](https://pypi.org/project/debkit/). Prerequisites (the
-Python floor, the GnuPG and `zstd` binaries, `fs://` extended attributes) →
-[SETUP.md](SETUP.md#prerequisites-and-install).
+### Installation
 
-debkit verifies every Release it reads from a repository it trusts (a `sync` source, an `insert` or
-`remove` target, the inspecting commands) against `~/.gnupg/trustedkeys.gpg` by default, the keyring
-gpgv reads → [CONFIG.md](CONFIG.md#global-flags); a `sync` target is read unverified →
-[CRYPTO.md](CRYPTO.md#gpg). The examples keep a dedicated home instead, named by
-`DEBKIT_GNUPG_HOME`; import the Debian archive keys into it before reading deb.debian.org. The
-keyring file comes from the `debian-archive-keyring` package on Debian and Ubuntu.
+Released versions are published to [PyPI](https://pypi.org/project/debkit/). Prerequisites →
+[SETUP.md](SETUP.md#prerequisites-and-install). Other examples →
+[Quick how-to](docs/guides/examples.md).
 
 ```bash
 pip install debkit
-export DEBKIT_GNUPG_HOME="$HOME/.debkit-gnupg"
-mkdir -m 700 -p "$DEBKIT_GNUPG_HOME"
-gpg --homedir "$DEBKIT_GNUPG_HOME" --no-default-keyring --keyring trustedkeys.gpg \
-    --import /usr/share/keyrings/debian-archive-keyring.gpg
-debkit --target-url "https://deb.debian.org/debian bookworm main" stats
 ```
 
-Build a signed local repository from a `.deb`: debkit signs with the key `DEBKIT_GNUPG_SIGN_KEY`
-names and verifies what it reads back against its `trustedkeys.gpg`. The key below has no
-passphrase, which suits a local demo only; protect a real one and pass `DEBKIT_GNUPG_PASSPHRASE`.
+### Example: working with a remote repository (Debian bookworm)
+
+#### GPG setup for repository
+
+debkit verifies the repositories it reads against trusted keys by default. Import every key that
+signs it. Bookworm's carries three (its archive key, the trixie archive key, and its stable release
+key):
+
+```bash
+export DEBKIT_GNUPG_HOME="$HOME/.debkit-gnupg"
+mkdir -m 700 -p "$DEBKIT_GNUPG_HOME"
+curl -sS https://ftp-master.debian.org/keys/{archive-key-12,archive-key-13,release-12}.asc | \
+    gpg --homedir "$DEBKIT_GNUPG_HOME" --no-default-keyring --keyring trustedkeys.gpg --import
+```
+
+#### Operating with a remote repository
+
+```bash
+# stats of a remote repository
+debkit --target-url "https://deb.debian.org/debian bookworm main" stats
+# list packages in a repository
+debkit --target-url "https://deb.debian.org/debian bookworm main" list
+# mirror a remote repository into `/srv/repo`
+debkit --target-url "/srv/repo bookworm main" sync \
+    --source-url "https://deb.debian.org/debian bookworm main" \
+    --indices-only
+```
+
+### Example: building a local repository from a `.deb`
+
+#### GPG setup for local repository
 
 ```bash
 export DEBKIT_GNUPG_SIGN_KEY="repo@example.com"
@@ -53,14 +71,19 @@ gpg --homedir "$DEBKIT_GNUPG_HOME" --batch --passphrase '' \
     --quick-gen-key "Repo signing <$DEBKIT_GNUPG_SIGN_KEY>"
 gpg --homedir "$DEBKIT_GNUPG_HOME" --export "$DEBKIT_GNUPG_SIGN_KEY" | \
     gpg --homedir "$DEBKIT_GNUPG_HOME" --no-default-keyring --keyring trustedkeys.gpg --import
+```
+
+#### Building a local repository
+
+debkit signs the repository with the key `DEBKIT_GNUPG_SIGN_KEY`. The key generated above has no
+passphrase, which suits a local demo only; protect a real one and pass `DEBKIT_GNUPG_PASSPHRASE`.
+
+```bash
 debkit --target-url "/srv/repo bookworm main" \
     insert --incoming-url ./incoming --deb-filename hello_1.0_amd64.deb
 debkit --target-url "/srv/repo bookworm main" list
 debkit --target-url /srv/repo log
 ```
-
-Install, test, and release details → [SETUP.md](SETUP.md); flags and variables →
-[CONFIG.md](CONFIG.md); worked examples → [docs/guides/examples.md](docs/guides/examples.md).
 
 ## Documentation
 
