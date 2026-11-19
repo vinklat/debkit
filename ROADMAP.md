@@ -4,7 +4,7 @@
 
 | Phase | Status | Feature | Notes |
 | -- | -- | -- | -- |
-| 0.1.0 | ✅ | Initial public release | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history; options by flag or `DEBKIT_*` variable |
+| 0.1.0 | ✅ | Initial public release | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history |
 | 0.1.1 | ⏳ | Storage size and error limits | Size-capped `transfer` and `get` with mapped stream errors, a public digest sink, and an exit group for `NotImplementedError`; needs txstore 0.1.3 → [known deviations](#known-deviations) |
 | 0.2.0 | ⏳ | Debian package `debkit` | Waits for txstore 0.2.0, its Debian package → [SETUP.md](SETUP.md#dependency-policy); the `debian-testing` CI job then installs txstore from apt → [known deviations](#known-deviations) |
 
