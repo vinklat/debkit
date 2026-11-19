@@ -4,9 +4,9 @@
 
 | Phase | Status | Feature | Notes |
 | -- | -- | -- | -- |
-| 0.1.0 | ✅ | Initial public release | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history; options by flag or `DEBKIT_*` variable |
-| 0.2.0 | ⏳ | `insert` of source packages | Refused today → [VALIDATION.md](VALIDATION.md#sources-stanzas) |
-| 0.3.0 | ⏳ | `remove` of source packages | Source payloads kept today → [VALIDATION.md](VALIDATION.md#sources-stanzas) |
+| 0.1.0 | ✅ | Initial public release | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history |
+| 0.1.1 | ⏳ | Storage size and error limits | Size-capped `transfer` and `get` with mapped stream errors, a public digest sink, and an exit group for `NotImplementedError`; needs txstore 0.1.3 → [known deviations](#known-deviations) |
+| 0.2.0 | ⏳ | Debian package `debkit` | Waits for txstore 0.2.0, its Debian package → [SETUP.md](SETUP.md#dependency-policy); the `debian-testing` CI job then installs txstore from apt → [known deviations](#known-deviations) |
 
 ## Ideas
 
@@ -17,14 +17,14 @@ or the work is planned; drop it when it no longer applies.
 | -- | -- | -- |
 | Typed settings object passed to actions instead of the argparse `Namespace`; it also carries the parsed `--architectures` and `--indices-exclude` selection `_selection()` returns as a tuple | An action is called from Python rather than the CLI | [STRUCTURE.md](STRUCTURE.md#dependencies) |
 | Immutable `RepoParams` holding location only, with the run's `VerifyPolicy` passed to `Repo*` beside it instead of the `verify_gpg` and `verify_digests` fields | The typed settings idea starts, or a second caller builds `RepoParams` | [CRYPTO.md](CRYPTO.md#verification-switches) |
-| Debian package `debkit` | txstore is packaged for Debian (txstore 0.2.0) | [SETUP.md](SETUP.md#dependency-policy) |
+| `insert` and `remove` of source packages; `insert` refuses them and `remove` keeps their payloads today | A user publishes source packages, or the `IndexKind` work starts | [VALIDATION.md](VALIDATION.md#sources-stanzas) |
 | One deb822 stanza reader and writer for `Release`, `.changes`, and `Sources`, which still read through the email parser, with the repeated-field and blank-line rules as its parameters; the email parser also matches field names case-sensitively, so a lowercase `sha256:` Release block is ignored, where Debian Policy 5.1 makes names case-insensitive | A fourth stanza rule diverges between the email parser and `debian.deb822` | [VALIDATION.md](VALIDATION.md#release-fields) |
 | Mirror `by-hash/` indices | A mirror's clients rely on `Acquire-By-Hash` | [VALIDATION.md](VALIDATION.md#repository-index-paths) |
 | `ReleaseKey`/`StoragePath` NewTypes and a coordinate-aware `Packages` owning its component, arch, and codec; a `Repo.slots()` iterator over it would then replace the hand-written component and arch walks in `repo/__init__.py`, `repo/shared_root.py`, and `ActionPkg`, resolve the component and arch selection once, and rename `Packages.packages` | A fifth raw `component.packages` walk outside `Component`, or `IndexKind` or `Layout` starts | [STRUCTURE.md](STRUCTURE.md#layout) |
 | Split `ActionPkg` into its read-only views, `ActionInsert`, and `ActionRemove`, and `ActionHistory` per subcommand, as `ActionSync` and `ActionCheck` are, so no action reads its subcommand's flags as optional | The typed settings idea starts, or the `ActionPkg.insert` placement moves into `RepoRW` | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `SyncPlanner(source, target, listing)` returning the `SyncPlan`, so `RepoSync` keeps only the transfer, with an optional listing replacing the `existing_files`/`can_list` pair | The `ActionSync` sync policy moves into a repo-level use case, or `RepoSync` gains a second caller | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `ComponentRelease` split out of `Release`, so `load_component` and `setup_component` cannot be called on a `RootRelease` | A third Release role, or a caller of either method on the root | [STRUCTURE.md](STRUCTURE.md#layout) |
-| `IndexKind` value object owning the arch directory, index name, container class, and writability, replacing the `SOURCE_ARCH` comparisons | A second index kind is written, or 0.2.0 starts | [STRUCTURE.md](STRUCTURE.md#dependencies) |
+| `IndexKind` value object owning the arch directory, index name, container class, and writability, replacing the `SOURCE_ARCH` comparisons | A second index kind is written, or `insert` of source packages starts | [STRUCTURE.md](STRUCTURE.md#dependencies) |
 | Decode a `.zst` `control.tar` in process with `compression.zstd`, capped by `ZstdDecompressor.decompress(max_length=…)`, replacing the `zstd` subprocess and the `zstd` binary prerequisite | `requires-python` rises to 3.14, once Debian testing no longer ships Python 3.13 | [VALIDATION.md](VALIDATION.md#object-sizes) |
 | Require `SHA256` or `SHA512` for payload, index, and shared-root replace decisions, so a `SHA1`-only record no longer verifies | A mirrored source publishes `SHA1`-only records, or a publisher is not trusted with its own payloads | [CRYPTO.md](CRYPTO.md#checksums) |
 | `insert` reads each `.deb` control from the stored copy after its `.changes` digest check, so the index stanza and the verified payload come from one read | The pool key no longer needs the control before the transfer | [CRYPTO.md](CRYPTO.md#verification-failures) |
