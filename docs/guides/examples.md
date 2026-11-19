@@ -215,7 +215,7 @@ debkit sync --architectures amd64,arm64,source
 Without it the source indices are skipped, like any unselected architecture. Selecting `source`
 against a repository that publishes none fails the run, as an unavailable architecture does →
 [VALIDATION.md](../../VALIDATION.md#index-loading). `insert` does not accept source packages →
-[ROADMAP.md](../../ROADMAP.md#phases).
+[ROADMAP.md](../../ROADMAP.md#ideas).
 
 ### Into an S3 bucket
 
