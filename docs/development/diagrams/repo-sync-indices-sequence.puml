@@ -9,7 +9,7 @@ participant "Storage\n(target)" as TStor
 ActionSync -> Src: build_sync_lists(target, indices_only)
 Src -> Tgt: held_paths()
 Tgt -> TStor: list()
-Tgt --> Src: existing objects, or None\n[NotImplementedError on http]
+Tgt --> Src: existing objects, or None\n[StorageNotSupportedException on http]
 
 Src -> Src: _get_indices()
 Src -> Rel: get_indices_paths()

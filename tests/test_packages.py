@@ -729,6 +729,19 @@ def test_packages_verify_checksum_finds_a_package_whose_key_carries_a_pool_path(
     assert pkgs.verify_checksum("hello_2.10-3_amd64.deb", {"SHA256": "aa"}) is False
 
 
+@pytest.mark.parametrize(
+    ("filename", "size", "expected"),
+    [("pool/foo.deb", 42, 42), ("pool/foo.deb", "4x", None), ("pool/missing.deb", 42, None)],
+    ids=["recorded", "malformed", "unlisted"],
+)
+def test_packages_declared_size_reads_the_record_verify_checksum_finds(
+    filename: str, size: int | str, expected: int | None
+) -> None:
+    pkgs = _new_packages()
+    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", size=size, SHA256="aa")}
+    assert pkgs.declared_size(filename) == expected
+
+
 def test_packages_get_indices_paths_concatenates() -> None:
     pkgs = _new_packages()
     pkgs.found_indices_paths = ["A"]

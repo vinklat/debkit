@@ -488,6 +488,31 @@ class Repo:
             for packages in component.containers()
         )
 
+    def recorded_size(self, filename: str) -> int | None:
+        """Get the largest `Size` of the records `verify_checksum` checks a file against.
+
+        It walks the same branches, so a transfer capped here is refused only when no record
+        could verify it -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+        Args:
+            filename: The name of the file.
+
+        Returns:
+            The largest recorded size, or None when no record lists a well-formed size.
+        """
+        release_key = self.params.release_key(filename)
+        if release_key in ROOT_RELEASE_KEYS:
+            return self.release.root_size(release_key)
+        if self._release_owns(release_key):
+            sizes = [release.declared_size(release_key) for release in self._release_blocks()]
+        else:
+            sizes = [
+                packages.declared_size(filename)
+                for component in self.components.values()
+                for packages in component.containers()
+            ]
+        return max((size for size in sizes if size is not None), default=None)
+
     def _get_indices(self) -> dict[str, IndexTarget]:
         """Get every repository index file to mirror, with its expected digests.
 

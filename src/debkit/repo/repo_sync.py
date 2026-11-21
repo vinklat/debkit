@@ -362,7 +362,8 @@ class RepoSync(Repo):
                 published -> [VALIDATION.md](VALIDATION.md#index-selection).
 
         Raises:
-            ChecksumException: If the checksum verification fails.
+            ChecksumException: If the checksum verification fails, or the file is larger than
+                the largest `Size` recorded for it.
 
         Returns:
             True when the file needs no retry: it was transferred, or `missing_ok` is set and the
@@ -370,8 +371,13 @@ class RepoSync(Repo):
         """
         logger.info("Copy (%d/%d): %s", progress[0], progress[1], file)
 
+        # a checked record bounds the copy, so an endless source body stops at its `Size`
+        # -> [VALIDATION.md](VALIDATION.md#object-sizes)
+        max_size = self.recorded_size(file) if self.params.verify_digests else None
         try:
-            digests = target_repo.transfer_from(self.storage, file, path_dst=file)
+            digests = target_repo.transfer_from(
+                self.storage, file, path_dst=file, max_size=max_size
+            )
         except StorageNotFoundException as exc:
             if missing_ok:
                 logger.debug("%s listed in Release but missing in source. Skipped.", file)

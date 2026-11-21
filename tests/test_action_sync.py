@@ -704,9 +704,11 @@ class _RecordingFS(StorageFS):
         storage_dst: Storage,
         path_dst: str | None = None,
         acl: str | None = None,
+        *,
+        max_size: int | None = None,
     ) -> dict[str, str]:
         self.transferred.append(path_src)
-        return super().transfer(path_src, storage_dst, path_dst, acl)
+        return super().transfer(path_src, storage_dst, path_dst, acl, max_size=max_size)
 
 
 def test_sync_copies_only_the_indices_a_real_tree_changed(tmp_path: Path) -> None:
@@ -1044,10 +1046,10 @@ def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
 class _UnreadableIndicesFS(StorageFS):
     """A backend whose every index read and every listing fails."""
 
-    def get(self, path: str) -> bytes:
+    def get(self, path: str, *, max_size: int | None = None) -> bytes:
         if path.startswith("dists/"):
             raise StorageException(f"backend down reading {path}")
-        return super().get(path)
+        return super().get(path, max_size=max_size)
 
     def get_stream(self, path: str) -> IO[bytes]:
         if path.startswith("dists/"):

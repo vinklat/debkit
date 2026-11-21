@@ -97,6 +97,8 @@ def test_sources_parse_record_carries_the_stanza_fields_and_every_digest() -> No
     assert dsc.fields["Size"] == "1234"
     assert str(dsc) == f"{_DIR}/hello_2.10-3.dsc"
     assert dsc.get_digests() == {"MD5Sum": "1111111111111111", "SHA256": "aaaa"}
+    # the sync transfer cap reads the same record -> VALIDATION.md#object-sizes
+    assert src.declared_size(f"{_DIR}/hello_2.10-3.dsc") == 1234
 
 
 def test_sources_parse_keeps_the_last_of_a_repeated_field() -> None:

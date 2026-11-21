@@ -427,7 +427,9 @@ def _changes_upload(
     changes.names_source_arch.return_value = False
     changes.get_deb_files.return_value = files
 
-    def debfile(_storage: object, filename: str, comp: str) -> MagicMock:
+    def debfile(
+        _storage: object, filename: str, comp: str, max_size: int | None = None
+    ) -> MagicMock:
         instance = MagicMock()
         instance.get_package.return_value = make_package(
             filename, Architecture=filename.removesuffix(".deb").rsplit("_", 1)[1]
@@ -875,6 +877,46 @@ def test_insert_checks_each_deb_against_its_changes_digest(
     assert pool.exists() is pooled
     assert not pooled or pool.read_bytes() == listed
     assert not (tmp_path / "repo" / "dists" / "bookworm" / "Release").exists()
+
+
+@pytest.mark.parametrize(
+    ("verify_digests", "cap"), [(True, len(b"the built package")), (False, None)]
+)
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_caps_each_deb_at_the_size_its_changes_lists(
+    mock_debfile_cls: MagicMock, tmp_path: Path, verify_digests: bool, cap: int | None
+) -> None:
+    """An endless upload stops at its pinned `Size` -> VALIDATION.md#object-sizes."""
+    deb = "foo_1.0_amd64.deb"
+    listed = b"the built package"
+    incoming = StorageFS(str(tmp_path / "in"))
+    incoming.put(deb, listed + b" and an endless tail")
+    incoming.put(
+        "foo_1.0_amd64.changes",
+        f"Format: 1.8\nArchitecture: amd64\nChecksums-Sha256:\n"
+        f" {hashlib.sha256(listed).hexdigest()} {len(listed)} {deb}\n".encode(),
+    )
+    action = _make_pkg_action()
+    action.incoming_storage = incoming
+    action.deb_filename = None
+    action.changes_filename = "foo_1.0_amd64.changes"
+    params = make_params(verify_digests=verify_digests)
+    action.target_repo = RepoRW(StorageFS(str(tmp_path / "repo")), params)
+    instance = MagicMock()
+    instance.get_package.return_value = make_package(
+        f"pool/main/f/foo/{deb}", Package="foo", Version="1.0", Architecture="amd64"
+    )
+    mock_debfile_cls.return_value = instance
+    pool = tmp_path / "repo" / "pool/main/f/foo" / deb
+
+    if verify_digests:
+        with pytest.raises(ChecksumException, match=f"larger than the {cap} bytes recorded"):
+            action.insert()
+        assert not pool.exists()
+    else:
+        action.insert()
+        assert pool.read_bytes() == listed + b" and an endless tail"
+    assert mock_debfile_cls.call_args.kwargs["max_size"] == cap
 
 
 @pytest.mark.parametrize("output", [OutputType.brief, OutputType.json])

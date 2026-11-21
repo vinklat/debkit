@@ -6,7 +6,7 @@ commands. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 Storage is the [txstore](https://github.com/vinklat/txstore) package; its contracts own the
 `Storage` interface, backends, transactions, footmarks, history files, retention rules, locking, S3
 ACL handling, and digests →
-[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md). This file states
+[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md). This file states
 only what debkit chooses.
 
 ## Construction
@@ -26,7 +26,6 @@ storage → [STYLE.md](STYLE.md#layers).
 | Rejected URL | → [VALIDATION.md](VALIDATION.md#storage-urls) |
 | Construction failure | `make_storage` raising `StorageException` (empty URL, no host, unresolved S3 key, uncreatable path): `--target-url` or `--source-url` → `RepoReadException` (Read). |
 | Construction failure, plain URL | The same on `--incoming-url` or a `log`, `revert`, or `prune` target → `StorageException` (Generic). |
-| Digest sink | A storage built outside `open_storage()` → [ROADMAP.md](ROADMAP.md#known-deviations). |
 
 ## Storage errors
 

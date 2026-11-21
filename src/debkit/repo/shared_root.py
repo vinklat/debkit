@@ -12,7 +12,7 @@ import re
 from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, NamedTuple
 
-from txstore import StorageException, compare_digests
+from txstore import StorageException, StorageNotSupportedException, compare_digests
 
 from debkit.repo import Repo, RepoReadException
 from debkit.repo.component import ComponentException, IndexLoad
@@ -280,7 +280,7 @@ def shared_root_claims(
     if existing is None:
         try:
             existing = set(storage.list())
-        except NotImplementedError:
+        except StorageNotSupportedException:
             return unlisted_shared_root(params)
 
     prefix = f"{params.indices_prefix}/"

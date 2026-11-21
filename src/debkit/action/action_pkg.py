@@ -238,7 +238,8 @@ class ActionPkg(Action):
             ActionException: If the package control field names the source architecture.
             ActionException: If an `all` or arch-less package finds no binary architecture
                 in the target.
-            ChecksumException: If a transferred `.deb` does not match its `.changes` digest.
+            ChecksumException: If a transferred `.deb` does not match its `.changes` digest,
+                or is larger than the `Size` it lists.
         """
         # `--incoming-url` is required for `insert`, so argparse already refused a missing one
         assert self.incoming_storage is not None, "insert without --incoming-url"
@@ -257,14 +258,23 @@ class ActionPkg(Action):
             target_before = self._load_target_or_setup()
             binary_archs = self.target_repo.binary_archs()
             for filename in filenames:
-                debfile_obj = DebFile(self.incoming_storage, filename, comp=self.component)
+                # the pinned `.changes` bounds each read of its payload
+                # -> [VALIDATION.md](VALIDATION.md#object-sizes)
+                max_size = (
+                    changes.declared_size(filename)
+                    if changes is not None and self.target_repo.params.verify_digests
+                    else None
+                )
+                debfile_obj = DebFile(
+                    self.incoming_storage, filename, comp=self.component, max_size=max_size
+                )
                 package = debfile_obj.get_package()
                 archs = self._target_archs(filename, package, binary_archs)
 
                 pool_key = package.get_filename()
                 held = self.target_repo.held_digests(pool_key)
                 digests = self.target_repo.transfer_from(
-                    self.incoming_storage, filename, path_dst=pool_key
+                    self.incoming_storage, filename, path_dst=pool_key, max_size=max_size
                 )
                 # the pinned `.changes` lists each payload's digest, so a payload swapped in
                 # the incoming storage is refused before any other check can misname it;

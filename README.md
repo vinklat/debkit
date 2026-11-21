@@ -4,7 +4,7 @@ Command-line tool for building, inspecting, and mirroring Debian package reposit
 filesystem, S3-compatible object storage, or HTTP(S) servers, with GPG-signed Release files,
 streamed checksum verification, and transactional writes you can revert.
 
-Current version: **0.1.0**. Planned work → [ROADMAP.md](ROADMAP.md).
+Current version: **0.1.1**. Planned work → [ROADMAP.md](ROADMAP.md).
 
 ## Capabilities
 

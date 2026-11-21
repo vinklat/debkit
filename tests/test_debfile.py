@@ -19,6 +19,7 @@ from txstore import StorageFS
 from debkit.repo import debfile as debfile_module
 from debkit.repo.compress import codec_for
 from debkit.repo.debfile import DebFile, DebFileException
+from debkit.repo.hashes import ChecksumException
 
 _PATH = "foo_1.0_amd64.deb"
 _CONTROL = b"Package: foo\nVersion: 1.0\nArchitecture: amd64\n"
@@ -38,9 +39,9 @@ class _TrackingFS(StorageFS):
         self.handles.append(handle)
         return handle
 
-    def get(self, path: str) -> bytes:
+    def get(self, path: str, *, max_size: int | None = None) -> bytes:
         self.gets += 1
-        return super().get(path)
+        return super().get(path, max_size=max_size)
 
     def all_closed(self) -> bool:
         """At least one stream was opened, and every one of them is closed."""
@@ -98,6 +99,23 @@ def test_init_falls_back_to_get_when_the_stream_cannot_seek(tmp_path: Path) -> N
     assert deb.control == _CONTROL
     assert storage.gets == 1
     assert storage.all_closed()
+
+
+@pytest.mark.parametrize("slack", [0, 1], ids=["at-the-cap", "under-the-cap"])
+def test_init_reads_an_unseekable_deb_within_its_recorded_size(tmp_path: Path, slack: int) -> None:
+    data = make_deb(_CONTROL)
+    storage = _storage(tmp_path, data, _UnseekableFS)
+
+    assert DebFile(storage, _PATH, max_size=len(data) + slack).control == _CONTROL
+
+
+def test_init_refuses_an_unseekable_deb_past_its_recorded_size(tmp_path: Path) -> None:
+    """The whole-file fallback stops at the `.changes` Size -> VALIDATION.md#object-sizes."""
+    data = make_deb(_CONTROL)
+    storage = _storage(tmp_path, data, _UnseekableFS)
+
+    with pytest.raises(ChecksumException, match=f"larger than the {len(data) - 1} bytes"):
+        DebFile(storage, _PATH, max_size=len(data) - 1)
 
 
 @pytest.mark.parametrize(

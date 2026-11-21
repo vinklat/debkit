@@ -184,6 +184,51 @@ def test_verify_checksum_accepts_a_source_payload_through_its_index(filename: st
     assert repo.verify_checksum(filename, _OTHER_DIGEST) is False
 
 
+# --- recorded sizes: the sync transfer cap -> VALIDATION.md#object-sizes ----------------------
+
+
+def test_recorded_size_of_a_payload_is_the_largest_size_its_records_list() -> None:
+    """`verify_checksum` accepts any matching record, so the cap is the largest one."""
+    repo = _repo()
+    _with_component_package(repo, _DEB, _DIGEST)
+    _with_component_package(repo, _DEB, _DIGEST, arch="arm64")
+    repo.components["main"].packages["amd64"] = make_packages(
+        repo.storage, repo.params, [make_package(_DEB, size=7, **_DIGEST)]
+    )
+
+    assert repo.recorded_size(_DEB) == 7
+
+
+def test_recorded_size_of_a_root_release_file_is_the_size_the_load_fetched() -> None:
+    repo = _repo()
+    repo.release.root_digests = {"InRelease": {**_DIGEST, "Size": "12"}}
+
+    assert repo.recorded_size("dists/bookworm/InRelease") == 12
+    assert repo.recorded_size("dists/bookworm/Release") is None
+
+
+def test_recorded_size_of_a_listed_index_comes_from_the_release_not_a_stanza() -> None:
+    """A stanza shadowing a Release-listed index must not widen its cap."""
+    key = "main/binary-amd64/Packages"
+    path = f"dists/bookworm/{key}"
+    repo = _repo()
+    repo.components["main"] = Component(repo.storage, repo.params, repo.release, "main")
+    repo.components["main"].packages = {
+        "amd64": make_packages(repo.storage, repo.params, [make_package(path, size=999)])
+    }
+    repo.release.digests = {key: {**_DIGEST, "Size": "5"}}
+    repo.components["main"].packages["amd64"].release.digests = {key: {**_DIGEST, "Size": "9"}}
+
+    assert repo.recorded_size(path) == 9
+
+
+def test_recorded_size_is_none_when_no_record_lists_the_file() -> None:
+    repo = _repo()
+    _with_component_package(repo, _DEB, _DIGEST)
+
+    assert repo.recorded_size("pool/main/o/other/other_1_amd64.deb") is None
+
+
 # --- component and architecture resolution ------------------------------------------------------
 
 

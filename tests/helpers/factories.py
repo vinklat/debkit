@@ -11,18 +11,18 @@ from __future__ import annotations
 import io
 import tarfile
 from argparse import Namespace
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from functools import partial
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock
 
-from txstore import Storage, StorageMetrics, StorageType
+from txstore import Storage, StorageMetrics, StorageTooLargeException, StorageType
 
 from debkit.repo.component import Component
 from debkit.repo.package import Package
 from debkit.repo.packages import Packages
 from debkit.repo.params import RepoParams
-from debkit.repo.release import IndexEntry, Release
+from debkit.repo.release import IndexEntry, RootRelease
 from debkit.repo.repo_rw import RepoRW
 from debkit.repo.repo_sync import RepoSync
 from helpers.storage import storage_namespace
@@ -156,10 +156,29 @@ def make_packages(storage: Storage, params: RepoParams, pkgs: Iterable[Package])
     return container
 
 
+def capped_get(content: Callable[[str], bytes]) -> Callable[..., bytes]:
+    """Build a `Storage.get` side effect that honors `max_size` as txstore 0.1.3 does.
+
+    Args:
+        content: Returns the bytes stored at a path.
+
+    Returns:
+        A `get(path, *, max_size=None)` raising `StorageTooLargeException` past the cap.
+    """
+
+    def get(path: str, *, max_size: int | None = None) -> bytes:
+        data = content(path)
+        if max_size is not None and len(data) > max_size:
+            raise StorageTooLargeException(f"{path} is larger than {max_size} bytes")
+        return data
+
+    return get
+
+
 def make_storage_mock(
     *,
     list_result: list[str] | None = None,
-    list_raises: type[BaseException] | None = None,
+    list_raises: BaseException | None = None,
     storage_type: StorageType = StorageType.fs,
     transfer_digests: dict[str, str] | None = None,
 ) -> MagicMock:
@@ -167,8 +186,8 @@ def make_storage_mock(
 
     Args:
         list_result: Value returned by `.list()` when not raising.
-        list_raises: Exception class raised from `.list()` (e.g.
-            `NotImplementedError` to emulate `StorageHttp`). Mutually
+        list_raises: Exception raised from `.list()` (e.g. a
+            `StorageNotSupportedException` to emulate `StorageHTTP`). Mutually
             exclusive with `list_result`.
         storage_type: Returned by `.get_type()`. Must be a real
             `StorageType` member because production code uses `is` comparison.
@@ -210,8 +229,8 @@ def _attach_state(
             `Component.get_indices_paths()`; a component absent from the mapping
             reports none, as a repo whose parse discovered no index would.
     """
-    # `spec=Release` so the ownership gate's isinstance check sees a Release
-    release = MagicMock(spec=Release, name="Release")
+    # `spec=RootRelease` so the ownership gate's isinstance check sees a Release
+    release = MagicMock(spec=RootRelease, name="Release")
     release.content_sha256 = release_hash or None
     # derived, as the real property is, so a test that unloads it sets content_sha256 alone
     type(release).is_loaded = PropertyMock(side_effect=lambda: release.content_sha256 is not None)
@@ -219,6 +238,9 @@ def _attach_state(
     paths = indices_paths if indices_paths is not None else ["dists/bookworm/Release"]
     repo.release.get_indices_paths.side_effect = lambda: list(paths)
     repo.release.verify_digests.return_value = False
+    # no recorded size, so a transfer runs uncapped unless a test sets one
+    repo.release.root_size.return_value = None
+    repo.release.declared_size.return_value = None
     listed = list(listed_indices or [])
     repo.release.listed_indices.side_effect = lambda: list(listed)
     repo.release.digests = {entry.key: entry.digests for entry in listed}

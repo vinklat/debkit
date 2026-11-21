@@ -50,7 +50,7 @@ Import directions → [STRUCTURE.md](STRUCTURE.md#dependencies).
 
 | Concern | Rule |
 | -- | -- |
-| Large objects | Stream with `get_stream`, `put_stream`, and `transfer`; never load a package just to digest it. |
+| Large objects | Stream with `get_stream`, `put_stream`, and `transfer`, and digest with `get_digests`; never load a package just to digest it. |
 | Digests | Reuse txstore's `ChecksumOpen` for in-flight calculation → [CRYPTO.md](CRYPTO.md#checksums). |
 | Lookups | Avoid repeated full scans when a stable key lookup is available. |
 

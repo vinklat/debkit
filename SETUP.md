@@ -130,6 +130,18 @@ A floor raise names the Debian testing version that satisfies it in the change d
 
 ## Upgrade notes
 
+### 0.1.1
+
+Size-capped storage reads on txstore 0.1.3.
+
+| Change | Migration |
+| -- | -- |
+| txstore | Requires txstore 0.1.3 or later → [Dependency policy](#dependency-policy). |
+| Unsupported operation | An operation the backend lacks, such as a write to an `http://` target, exits with the Generic message instead of a traceback → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
+| Oversized objects | A synced object, or a `.deb` a checked `.changes` lists, longer than its recorded `Size` stops the copy at that size and exits `Distrustful object.` without a retry → [VALIDATION.md](VALIDATION.md#object-sizes). |
+| Stream read failures | A backend error while an S3 or HTTP body is read exits as a storage failure (Generic) or, under `sync`, is retried, instead of escaping unwrapped. |
+| Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics. |
+
 ### 0.1.0
 
 Initial public release. debkit continues repo-deb-factory 5.1.2 under a new name, on the public

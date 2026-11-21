@@ -15,7 +15,7 @@ from typing import (
 from txstore import calc_digests, compare_digests, is_unsafe_path
 
 from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, codec_for, read_capped
-from debkit.repo.hashes import ChecksumException
+from debkit.repo.hashes import ChecksumException, parse_size
 from debkit.repo.package import Package
 from debkit.repo.params import is_safe_name
 from debkit.repo.release import Release, RootRelease
@@ -515,6 +515,18 @@ class Packages:
             return False
 
         return compare_digests(package.get_digests(), incoming_digests)
+
+    def declared_size(self, filename: str) -> int | None:
+        """Get the `Size` the record keyed by `filename` lists, as `verify_checksum` finds it.
+
+        Args:
+            filename: The `Filename` of the record.
+
+        Returns:
+            The recorded size, or None when no record or no well-formed size is listed.
+        """
+        package = self.packages.get(filename)
+        return None if package is None else parse_size(package.fields.get("Size", ""))
 
     def __len__(self) -> int:
         """Return the number of packages.

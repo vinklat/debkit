@@ -19,6 +19,7 @@ from debkit.repo.hashes import (
     ChecksumException,
     HexDigests,
     parse_hash_block,
+    parse_size,
 )
 from debkit.repo.stanza import parse_stanza
 
@@ -745,6 +746,17 @@ class RootRelease(Release):
             True when the last load fetched the file with these digests.
         """
         return compare_digests(self.root_digests.get(key, {}), incoming_digests)
+
+    def root_size(self, key: str) -> int | None:
+        """Get the size of a root Release file as the last load fetched it.
+
+        Args:
+            key: `Release`, `InRelease`, or `Release.gpg`.
+
+        Returns:
+            Its size, or None when the last load did not fetch it.
+        """
+        return parse_size(self.root_digests.get(key, {}).get("Size", ""))
 
     def load(self) -> None:
         """Load the root Release file, verifying its signatures when they are checked.
