@@ -36,7 +36,7 @@ Owns: directories, module ownership, internal import directions, and the txstore
 | `src/debkit/repo/debfile.py` | `.deb` introspection. |
 | `src/debkit/repo/compress.py` | Index codecs that stop at a size limit → [VALIDATION.md](VALIDATION.md#index-decoding); `codec_for()` picks one by suffix → [VALIDATION.md](VALIDATION.md#repository-index-paths); `read_capped()` and `zstd_decompress()` cap a read or decode → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | `src/debkit/repo/gnupg.py` | GPG sign/verify wrapper → [CRYPTO.md](CRYPTO.md#gpg). |
-| `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `parse_size()`, `has_sha()`, `HexDigests`, `ChecksumException`; the algorithm-name lists are imported from txstore directly → [CRYPTO.md](CRYPTO.md#checksums). |
+| `src/debkit/repo/hashes.py` | Debian hash blocks: `parse_hash_block()`, `parse_size()`, `has_sha()`, `HexDigests`, `ChecksumException`, `refuse_past_recorded_size()`; the algorithm-name lists are imported from txstore directly → [CRYPTO.md](CRYPTO.md#checksums). |
 | `tests/` | Test suite → [TESTING.md](TESTING.md#file-layout). |
 | `scripts/check_docs.py` | Contract-doc gate → [SETUP.md](SETUP.md#quality-gates). |
 | `scripts/render_diagrams.py` | PlantUML renderer and freshness checker → [SETUP.md](SETUP.md#diagrams). |

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import pytest
-from txstore import calc_digests
+from txstore import StorageException, StorageTooLargeException, calc_digests
 
-from debkit.repo.hashes import HexDigests, has_sha, parse_hash_block, parse_size
+from debkit.repo.hashes import (
+    ChecksumException,
+    HexDigests,
+    has_sha,
+    parse_hash_block,
+    parse_size,
+    refuse_past_recorded_size,
+)
 
 
 def test_verify_digests_refuses_an_md5_only_entry() -> None:
@@ -93,3 +100,20 @@ def test_has_sha_needs_an_algorithm_comparison_keeps(
     record: dict[str, object], expected: bool
 ) -> None:
     assert has_sha(record) is expected
+
+
+# --- refuse_past_recorded_size ---------------------------------------------------------------
+
+
+def test_refuse_past_recorded_size_names_a_capped_refusal_a_checksum_failure() -> None:
+    with (
+        pytest.raises(ChecksumException, match="p.deb is larger than the 7 bytes recorded"),
+        refuse_past_recorded_size("p.deb", 7),
+    ):
+        raise StorageTooLargeException("too large")
+
+
+def test_refuse_past_recorded_size_lets_a_storage_failure_through() -> None:
+    """A transport failure stays retryable; only the cap contradicts the record."""
+    with pytest.raises(StorageException, match="down"), refuse_past_recorded_size("p.deb", 7):
+        raise StorageException("down")

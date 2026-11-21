@@ -7,7 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from humanize import naturalsize
-from txstore import StorageTooLargeException, compare_digests, maybe_transaction
+from txstore import compare_digests, maybe_transaction
 
 from debkit._escape import escape_control
 from debkit.action import (
@@ -22,7 +22,7 @@ from debkit.argtypes import component_type, pkg_pattern_type
 from debkit.repo.changes import Changes
 from debkit.repo.component import IndexLoad
 from debkit.repo.debfile import DebFile
-from debkit.repo.hashes import ChecksumException
+from debkit.repo.hashes import ChecksumException, refuse_past_recorded_size
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
 
@@ -264,23 +264,20 @@ class ActionPkg(Action):
                 # the pinned `Size` bounds each read of its payload
                 # -> [VALIDATION.md](VALIDATION.md#object-sizes)
                 max_size = pinned.declared_size(filename) if pinned is not None else None
-                try:
+                # only the pinned `.changes` sets a cap, so a refusal contradicts it
+                with refuse_past_recorded_size(filename, max_size):
                     debfile_obj = DebFile(
                         self.incoming_storage, filename, comp=self.component, max_size=max_size
                     )
-                    package = debfile_obj.get_package()
-                    archs = self._target_archs(filename, package, binary_archs)
+                package = debfile_obj.get_package()
+                archs = self._target_archs(filename, package, binary_archs)
 
-                    pool_key = package.get_filename()
-                    held = self.target_repo.held_digests(pool_key)
+                pool_key = package.get_filename()
+                held = self.target_repo.held_digests(pool_key)
+                with refuse_past_recorded_size(filename, max_size):
                     digests = self.target_repo.transfer_from(
                         self.incoming_storage, filename, path_dst=pool_key, max_size=max_size
                     )
-                except StorageTooLargeException as exc:
-                    # only the pinned `.changes` sets a cap, so the upload contradicts it
-                    raise ChecksumException(
-                        f"{filename} is larger than the {max_size} bytes recorded for it"
-                    ) from exc
                 # the pinned digest refuses a payload swapped in the incoming storage before
                 # any other check can misname it; raising discards the staged transfer
                 # -> [CRYPTO.md](CRYPTO.md#verification-failures)

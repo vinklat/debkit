@@ -139,7 +139,9 @@ and leave no target object. Upload control data is capped by `_control_of()` in 
 which decodes the `control.tar` member under a limit and walks it as a stream. "Checked" means
 digest verification is on. A recorded `Size` is only as trustworthy as the metadata that lists
 it: without GPG verification the source sets both a body and its `Size` →
-[CRYPTO.md](CRYPTO.md#verification-switches).
+[CRYPTO.md](CRYPTO.md#verification-switches). Digest reads of objects the target already holds
+(`held_digests`, `check`) stream through txstore's `get_digests` with no cap: the target is the
+operator's storage, and a stream buffers nothing.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |

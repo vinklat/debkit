@@ -10,15 +10,10 @@ import logging
 from collections.abc import Collection
 from typing import TYPE_CHECKING, NamedTuple
 
-from txstore import (
-    StorageException,
-    StorageNotFoundException,
-    StorageTooLargeException,
-    compare_digests,
-)
+from txstore import StorageException, StorageNotFoundException, compare_digests
 
 from debkit.repo import IndexTarget, Repo
-from debkit.repo.hashes import ChecksumException
+from debkit.repo.hashes import ChecksumException, refuse_past_recorded_size
 from debkit.repo.shared_root import SharedRoot, missing_and_unclaimed
 
 if TYPE_CHECKING:
@@ -380,21 +375,18 @@ class RepoSync(Repo):
         # -> [VALIDATION.md](VALIDATION.md#object-sizes)
         max_size = self.max_recorded_size(file) if self.params.verify_digests else None
         try:
-            digests = target_repo.transfer_from(
-                self.storage, file, path_dst=file, max_size=max_size
-            )
+            # only a checked record sets a cap, so a refusal contradicts it; a retry would
+            # read the same body
+            with refuse_past_recorded_size(file, max_size):
+                digests = target_repo.transfer_from(
+                    self.storage, file, path_dst=file, max_size=max_size
+                )
         except StorageNotFoundException as exc:
             if missing_ok:
                 logger.debug("%s listed in Release but missing in source. Skipped.", file)
                 return True
             logger.error("Error transfer file %s: %s", file, exc)
             return False
-        except StorageTooLargeException as exc:
-            # only a checked record sets a cap, so the source contradicts its own record; a
-            # retry would read the same body
-            raise ChecksumException(
-                f"{file} is larger than the {max_size} bytes recorded for it"
-            ) from exc
         except StorageException as exc:
             logger.error("Error transfer file %s: %s", file, exc)
             return False

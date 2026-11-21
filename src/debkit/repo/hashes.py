@@ -7,9 +7,10 @@ is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 
-from txstore import COMPARE_HASH_LIST, compare_digests
+from txstore import COMPARE_HASH_LIST, StorageTooLargeException, compare_digests
 
 __all__ = [
     "CHECKSUMS_SHA256",
@@ -19,6 +20,7 @@ __all__ = [
     "has_sha",
     "parse_hash_block",
     "parse_size",
+    "refuse_past_recorded_size",
 ]
 
 # The longest `Size` read as a byte count: 2**64 has 20 digits
@@ -94,6 +96,29 @@ class ChecksumException(Exception):
             message: Explanation of the error.
         """
         super().__init__(f"Checksum: {message}")
+
+
+@contextmanager
+def refuse_past_recorded_size(path: str, size: int | None) -> Iterator[None]:
+    """Name a capped read's refusal as a checksum failure.
+
+    Wrap only a read capped at `size` from a checked record: the object then contradicts its
+    own record -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+    Args:
+        path: The object path, for the message.
+        size: The recorded `Size` the read was capped at.
+
+    Yields:
+        Control to the capped read.
+
+    Raises:
+        ChecksumException: If the read raises `StorageTooLargeException`.
+    """
+    try:
+        yield
+    except StorageTooLargeException as exc:
+        raise ChecksumException(f"{path} is larger than the {size} bytes recorded for it") from exc
 
 
 class HexDigests:

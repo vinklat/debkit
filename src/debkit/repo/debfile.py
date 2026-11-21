@@ -138,10 +138,11 @@ class DebFile:
             path: Path to the Debian package file.
             comp: Component name. Defaults to None.
             max_size: The cap on a whole-file read by a backend that cannot seek; None reads
-                any size. The caller decides what passing it means.
+                any size. A streaming backend never reads the whole file, so it ignores it.
 
         Raises:
-            StorageTooLargeException: If a whole-file read passes `max_size`.
+            StorageTooLargeException: If a whole-file read passes `max_size`; it is not a
+                parse failure, so it is not wrapped, and the caller that chose the cap names it.
             DebFileException: If the underlying ``.deb`` cannot be read or parsed.
         """
         self.storage = storage
@@ -151,7 +152,7 @@ class DebFile:
         try:
             self.control = self._read_control()
         except StorageTooLargeException:
-            # the caller owns the cap's source, so it names the failure
+            # before `StorageException`, its base: the caller that chose the cap names it
             raise
         except StorageException as exc:
             raise DebFileException(f"Cannot read .deb file {path}: {exc}") from exc
