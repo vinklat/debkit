@@ -33,7 +33,11 @@ ActionPkg -> Tgt: binary_archs()\n[get_archs() minus "source"]
 Tgt --> ActionPkg: binary_archs
 
 loop for filename in filenames
-  ActionPkg -> Df: DebFile(Inc, filename, comp)
+  ActionPkg -> ActionPkg: max_size = the Size a checked .changes lists, else None
+  ActionPkg -> Df: DebFile(Inc, filename, comp, max_size)
+  opt a backend that cannot seek reads past max_size
+    ActionPkg -> ActionPkg: raise ChecksumException\n[before any transfer]
+  end
   ActionPkg -> Df: get_package()
   Df --> ActionPkg: package
   ActionPkg -> ActionPkg: pkg_arch = package.get_arch()
@@ -47,9 +51,12 @@ loop for filename in filenames
   ActionPkg -> Tgt: held_digests(pool_key)
   Tgt -> TStor: exists / read through [only if held]
   Tgt --> ActionPkg: held digests or None
-  ActionPkg -> Tgt: transfer_from(Inc, filename, pool_key)
+  ActionPkg -> Tgt: transfer_from(Inc, filename, pool_key, max_size)
   Tgt -> TStor: put / add_metadata (staged via footmarks)
   Tgt --> ActionPkg: digests
+  opt the copy passes max_size
+    ActionPkg -> ActionPkg: raise ChecksumException\n[copy stopped at the cap; staged transfer discarded]
+  end
   opt .changes upload, not --skip-verify, and digests differ from its entry
     ActionPkg -> ActionPkg: raise ChecksumException\n[staged transfer discarded]
   end

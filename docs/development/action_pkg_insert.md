@@ -8,6 +8,7 @@ together. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
 [VALIDATION.md](../../VALIDATION.md#debian-source-strings) (deb source and file rules),
 [VALIDATION.md](../../VALIDATION.md#filename-safety) (upload names),
 [CRYPTO.md](../../CRYPTO.md#verification-failures) (`.changes` and payload digests),
+[VALIDATION.md](../../VALIDATION.md#object-sizes) (payload size caps),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups) (exit groups), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
@@ -37,7 +38,8 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   any transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred
   digests differ from its `.changes` entry is refused after it →
   [CRYPTO.md](../../CRYPTO.md#verification-failures); one longer than the `Size` that entry lists
-  is refused during it → [VALIDATION.md](../../VALIDATION.md#object-sizes).
+  is refused during it, or during the whole-file read of a backend that cannot seek →
+  [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - The pool key holds no dist and no arch beyond the upload file name, so other dists and arch
   indices may list it; a pool key already holding different bytes is refused after the transfer and
   the `.changes` digest check, read through once before it, and an identical upload passes →
@@ -60,7 +62,11 @@ wiring (begin/commit on success, discard on failure, no-op on a non-transactiona
 `tests/test_repo_rw.py` covers the index mutations; `tests/test_debfile.py` and
 `tests/test_changes.py` cover the upload-name refusals; `tests/test_action_pkg.py` refuses other
 bytes under a held pool key on a real `StorageFS` and keeps a peer's insert committed while the run
-waited for the lock → [TESTING.md](../../TESTING.md#required-coverage).
+waited for the lock; `tests/test_action_pkg.py` also refuses a `.deb` past the `Size` its checked
+`.changes` lists, takes one at that size, and leaves an unchecked `.changes` or a bare `.deb`
+uncapped; `tests/test_debfile.py` covers the capped whole-file read of a backend that cannot seek;
+`tests/test_repo_rw.py` covers `transfer_from` forwarding the cap →
+[TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 
@@ -68,6 +74,7 @@ waited for the lock → [TESTING.md](../../TESTING.md#required-coverage).
   [VALIDATION.md](../../VALIDATION.md#debian-source-strings),
   [VALIDATION.md](../../VALIDATION.md#filename-safety),
   [CRYPTO.md](../../CRYPTO.md#verification-failures),
+  [VALIDATION.md](../../VALIDATION.md#object-sizes),
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [action_pkg_remove.md](action_pkg_remove.md), [action_sync.md](action_sync.md),
   [repo_sync_indices.md](repo_sync_indices.md),

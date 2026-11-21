@@ -37,9 +37,12 @@ partition "with maybe_transaction(target.storage)" {
   :binary_archs = target.binary_archs();
   note right: get_archs() minus "source":\nthe mirrored Sources index is read-only
   while (more filenames?) is (yes)
-    :debfile = DebFile(incoming_storage, filename, comp);
+    :max_size = the Size a checked .changes lists, else None;
+    :debfile = DebFile(incoming_storage, filename, comp, max_size);
     :package = debfile.get_package();
     note right
+      ChecksumException (Distrustful) when a backend
+      that cannot seek reads past max_size;
       DebFileException (Read) before any transfer:
       malformed .deb (read in DebFile()),
       Package or Source not a policy name,
@@ -74,7 +77,12 @@ partition "with maybe_transaction(target.storage)" {
     :held = target.held_digests(pool_key);
     :digests = target.transfer_from(
         incoming_storage, filename,
-        path_dst=pool_key);
+        path_dst=pool_key, max_size);
+    if (transfer passes max_size?) then (yes)
+      :raise ChecksumException;
+      note right: the copy stops at the cap;\nthe transaction discards the staged transfer
+      stop
+    endif
     if (.changes upload, digest verification on,\n and digests differ from its entry?) then (yes)
       :raise ChecksumException;
       note right: the transaction discards the staged transfer;\noff under --skip-verify

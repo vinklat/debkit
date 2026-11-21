@@ -6,6 +6,7 @@ target commits every change or discards them all. Rules are owned by
 [STYLE.md](../../STYLE.md#layers) (action layer), [CONFIG.md](../../CONFIG.md#sync) (flags),
 [CRYPTO.md](../../CRYPTO.md#release-freshness) (source Release freshness),
 [CRYPTO.md](../../CRYPTO.md#verification-failures) (checksum abort),
+[VALIDATION.md](../../VALIDATION.md#object-sizes) (transfer size caps),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups) (exit groups), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#mirror-a-repository).
@@ -41,9 +42,11 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   as the run found it; a failure there discards what earlier passes staged.
   `--allow-release-rollback` skips the check and warns once →
   [CRYPTO.md](../../CRYPTO.md#release-freshness).
-- A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop; the mismatching target
-  object is deleted and every staged footmark is discarded, so no partial commit is produced →
-  [CRYPTO.md](../../CRYPTO.md#verification-failures).
+- A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop and every staged footmark
+  is discarded, so no partial commit is produced. A digest mismatch also deletes the mismatching
+  target object → [CRYPTO.md](../../CRYPTO.md#verification-failures); a transfer past the `Size`
+  its records list stops without leaving one, and is not retried →
+  [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - Corrupted target indices reset the target, and the sync proceeds →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - A target with neither `Release` nor `InRelease` is synced as empty; any other read failure stops
@@ -62,7 +65,10 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 
 `tests/test_action_sync.py` covers the retry loop, checksum abort, the per-pass freshness check and
 its skips, transaction wiring, and `--verify-existing`; `tests/test_release.py` covers each
-freshness rule; `tests/test_repo_sync.py` covers list building and transfer →
+freshness rule; `tests/test_repo_sync.py` covers list building and transfer, including the
+recorded-`Size` cap and its refusal without retry; `tests/test_action_sync.py` refuses a payload and
+an index past their recorded `Size` on a real tree; `tests/test_repo.py` covers
+`max_recorded_size` →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
@@ -70,6 +76,7 @@ freshness rule; `tests/test_repo_sync.py` covers list building and transfer →
 - [STYLE.md](../../STYLE.md#layers), [CONFIG.md](../../CONFIG.md#sync),
   [CRYPTO.md](../../CRYPTO.md#release-freshness),
   [CRYPTO.md](../../CRYPTO.md#verification-failures),
+  [VALIDATION.md](../../VALIDATION.md#object-sizes),
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [repo_sync_indices.md](repo_sync_indices.md),
   [action_pkg_insert.md](action_pkg_insert.md), [action_pkg_remove.md](action_pkg_remove.md),

@@ -6,7 +6,8 @@ rebuilt by name. Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 [VALIDATION.md](../../VALIDATION.md#repository-index-paths) (index paths),
 [VALIDATION.md](../../VALIDATION.md#index-selection) (selection and skip rules),
 [VALIDATION.md](../../VALIDATION.md#index-exclude-globs) (exclude globs),
-[CRYPTO.md](../../CRYPTO.md#verification-order) (checksum sources), and
+[CRYPTO.md](../../CRYPTO.md#verification-order) (checksum sources),
+[VALIDATION.md](../../VALIDATION.md#object-sizes) (index copy caps), and
 [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi)
 (`exists` and `get_metadata`). The surrounding subcommand flow is in
 [action_sync.md](action_sync.md); the user-facing walkthrough is in
@@ -112,7 +113,9 @@ filtered by selection rules and by what the source actually publishes.
   canonical index path after a 404 → [ROADMAP.md](../../ROADMAP.md#known-deviations).
 - Index checksums need no new verification path: `Repo.verify_checksum` maps the path back through
   `RepoParams.release_key()`, and a Release digest block decides a listed key →
-  [CRYPTO.md](../../CRYPTO.md#verification-order).
+  [CRYPTO.md](../../CRYPTO.md#verification-order). With digests checked, the same blocks cap the
+  copy: an index past the largest `Size` they list is refused, and one a block lists with no usable
+  `Size` copies uncapped → [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - Excluding an index with `--indices-exclude` also purges it from the target, because an object
   outside the index set and outside the package set is an orphan, unless another dist sharing the
   target root claims it → [VALIDATION.md](../../VALIDATION.md#index-selection). The globs reach
@@ -132,7 +135,10 @@ covers the `indices_path` / `release_key` round trip; `is_unsafe_path` is txstor
 `tests/test_sources.py` covers the `Sources` expansion; `tests/test_index_selection.py` covers
 `select_index_entry`; `tests/test_repo_sync.py` covers the index set, skip, purge, and flat-layout
 behavior in `build_sync_lists`, and the transfer skip in `sync`; `tests/test_argparser.py` and
-`tests/test_action_sync.py` cover the flag and its hand-off to both repo params →
+`tests/test_action_sync.py` cover the flag and its hand-off to both repo params;
+`tests/test_repo.py` covers `max_recorded_size` across Release blocks; `tests/test_repo_sync.py`
+covers the transfer cap and its refusal without retry; `tests/test_action_sync.py` refuses a loaded
+index past its recorded `Size` at the source load, before any copy →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
@@ -141,6 +147,7 @@ behavior in `build_sync_lists`, and the transfer skip in `sync`; `tests/test_arg
   [VALIDATION.md](../../VALIDATION.md#index-selection),
   [VALIDATION.md](../../VALIDATION.md#index-exclude-globs),
   [CRYPTO.md](../../CRYPTO.md#verification-order),
+  [VALIDATION.md](../../VALIDATION.md#object-sizes),
   [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi).
 - Sibling pages: [action_sync.md](action_sync.md), [action_pkg_insert.md](action_pkg_insert.md),
   [action_pkg_remove.md](action_pkg_remove.md),

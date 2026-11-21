@@ -139,19 +139,19 @@ and leave no target object. Upload control data is capped by `_control_of()` in 
 which decodes the `control.tar` member under a limit and walks it as a stream. "Checked" means
 digest verification is on. A recorded `Size` is only as trustworthy as the metadata that lists
 it: without GPG verification the source sets both a body and its `Size` →
-[CRYPTO.md](CRYPTO.md#verification-switches). Digest reads of objects the target already holds
-(`held_digests`, `check`) stream through txstore's `get_digests` with no cap: the target is the
-operator's storage, and a stream buffers nothing.
+[CRYPTO.md](CRYPTO.md#verification-switches).
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
 | Recorded `Size` | A run of at most `MAX_SIZE_DIGITS` (20) ASCII digits, read by `parse_size()` in `repo/hashes.py`. | Any other value → no `Size` recorded |
 | Root Release files | `Release`, `InRelease`, and `Release.gpg` are at most `MAX_RELEASE_BYTES` (16 MiB): no signed file records their size. | → `ReleaseReadException` (Read) |
 | Per-arch Release | At most the `Size` the checked root Release records, and never past `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
-| Stored index | At most the largest `Size` a checked root or per-arch Release records, and never past `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding); a Release listing the index with no usable `Size` → only `MAX_INDICES_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
+| Stored index | At most the largest `Size` a checked root or per-arch Release records, and never past `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
+| Stored index without a `Size` | A Release listing the index with no usable `Size` leaves only `MAX_INDICES_BYTES`. | Past the cap → `PackagesException` (Read) |
 | `.changes` file | At most `MAX_CHANGES_BYTES` (4 MiB), read by `read_capped()` before `--changes-sha256` is checked. | → `ChangesException` (Read) |
-| Sync transfer | At most the largest `Size` of the records `Repo.verify_checksum` checks the object against → [CRYPTO.md](CRYPTO.md#verification-order); unchecked, no record listing the object, or one listing it with no usable `Size` → no cap. Without GPG verification the source chooses that `Size`. | Larger than recorded → `ChecksumException` (Distrustful), not retried |
-| Insert payload | Each `.deb` a checked `.changes` lists is at most the `Size` it records, on its transfer and on a whole-file read by a backend that cannot seek; `--deb-filename` or unchecked → no cap. The cap is only as trustworthy as the `.changes` → [CRYPTO.md](CRYPTO.md#verification-failures). | Larger than recorded → `ChecksumException` (Distrustful) |
+| Sync transfer | At most the largest `Size` of the records `Repo.verify_checksum` checks the object against → [CRYPTO.md](CRYPTO.md#verification-order); unchecked, no record listing the object, or one listing it with no usable `Size` → no cap. | Larger than recorded → `ChecksumException` (Distrustful), not retried |
+| Insert payload | Each `.deb` a checked `.changes` lists is at most the `Size` it records, on its transfer and on a whole-file read by a backend that cannot seek; `--deb-filename` or unchecked → no cap. | Larger than recorded → `ChecksumException` (Distrustful) |
+| Held object digests | Digest reads of objects the target already holds (`held_digests`, `check`) stream through txstore's `get_digests` with no cap: the target is the operator's storage, and a stream buffers nothing. | — |
 | Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
 | Upload control tar | The `control.tar` decodes to at most `MAX_CONTROL_TAR_BYTES` (64 MiB), which also bounds its member count; it is uncompressed, `.gz`, `.xz`, `.bz2`, `.lzma`, or `.zst`, the last decoded by the `zstd` binary. | Past the limit, another compression, or a stream that does not decode → `DebFileException` (Read) |
 
