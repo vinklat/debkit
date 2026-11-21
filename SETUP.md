@@ -140,7 +140,7 @@ Size-capped storage reads on txstore 0.1.3.
 | Unsupported operation | An operation the backend lacks, such as a write to an `http://` target, exits with the Generic message instead of a traceback → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | Oversized objects | A synced object, or a `.deb` a checked `.changes` lists, longer than its recorded `Size` stops the copy at that size and exits `Distrustful object.` without a retry → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | Stream read failures | A backend error while an S3 or HTTP body is read exits as a storage failure (Generic) or, under `sync`, is retried, instead of escaping unwrapped. |
-| Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics. |
+| Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
 
 ### 0.1.0
 
