@@ -108,6 +108,13 @@ def test_init_reads_an_unseekable_deb_within_its_recorded_size(tmp_path: Path, s
     assert DebFile(storage, _PATH, max_size=len(data) + slack).control == _CONTROL
 
 
+def test_init_streams_a_seekable_deb_whatever_its_cap(tmp_path: Path) -> None:
+    """A backend that seeks never reads the whole file, so the cap does not apply."""
+    storage = _storage(tmp_path, make_deb(_CONTROL))
+
+    assert DebFile(storage, _PATH, max_size=1).control == _CONTROL
+
+
 def test_init_lets_an_unseekable_deb_past_its_cap_through(tmp_path: Path) -> None:
     """The whole-file fallback stops at the cap; the caller that set it names the failure."""
     data = make_deb(_CONTROL)

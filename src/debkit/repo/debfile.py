@@ -120,7 +120,6 @@ class DebFile:
         path: Path of the ``.deb`` file inside ``storage``.
         comp: Component name the package belongs to, or None for a pool without one.
         control: Content of the ``control`` file in ``control.tar``.
-        max_size: The cap on a whole-file read, or None.
     """
 
     def __init__(
@@ -148,9 +147,8 @@ class DebFile:
         self.storage = storage
         self.path = path
         self.comp = comp
-        self.max_size = max_size
         try:
-            self.control = self._read_control()
+            self.control = self._read_control(max_size)
         except StorageTooLargeException:
             # before `StorageException`, its base: the caller that chose the cap names it
             raise
@@ -162,11 +160,14 @@ class DebFile:
         except (ArError, tarfile.TarError, EOFError, OSError, lzma.LZMAError, zlib.error) as exc:
             raise DebFileException(f"Invalid .deb file {path}: {exc}") from exc
 
-    def _read_control(self) -> bytes | None:
+    def _read_control(self, max_size: int | None) -> bytes | None:
         """Read the ``control`` file, streaming when the backend can seek.
 
         python-debian's `ArFile` seeks, so a backend that cannot is read whole, capped at
         `max_size` -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+        Args:
+            max_size: The cap on a whole-file read; None reads any size.
 
         Returns:
             The ``control`` file content.
@@ -176,7 +177,7 @@ class DebFile:
                 return _control_of(fp, self.path)
         except UnsupportedOperation as exc:
             logger.debug("%s cannot stream (%s); reading it into memory.", self.path, exc)
-        with BytesIO(self.storage.get(self.path, max_size=self.max_size)) as fp:
+        with BytesIO(self.storage.get(self.path, max_size=max_size)) as fp:
             return _control_of(fp, self.path)
 
     def get_package(self) -> Package:
