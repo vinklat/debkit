@@ -875,7 +875,7 @@ def test_transfer_is_capped_at_the_recorded_size_only_when_digests_are_checked(
 ) -> None:
     """An unchecked record bounds nothing -> VALIDATION.md#object-sizes."""
     src, tgt = _transfer_setup(verify_digests=verify_digests)
-    src.recorded_size = MagicMock(return_value=42)  # type: ignore[method-assign]
+    src.max_recorded_size = MagicMock(return_value=42)  # type: ignore[method-assign]
 
     src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
 
@@ -885,7 +885,7 @@ def test_transfer_is_capped_at_the_recorded_size_only_when_digests_are_checked(
 def test_transfer_past_the_recorded_size_is_distrustful_and_not_retried() -> None:
     """The source contradicts its own record, so a retry would read the same body."""
     src, tgt = _transfer_setup()
-    src.recorded_size = MagicMock(return_value=1)  # type: ignore[method-assign]
+    src.max_recorded_size = MagicMock(return_value=1)  # type: ignore[method-assign]
     _mock_storage(src).transfer.side_effect = StorageTooLargeException("p1.deb too large")
 
     with pytest.raises(ChecksumException, match="larger than the 1 bytes recorded"):

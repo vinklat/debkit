@@ -21,6 +21,9 @@ __all__ = [
     "parse_size",
 ]
 
+# The longest `Size` read as a byte count: 2**64 has 20 digits
+MAX_SIZE_DIGITS = 20
+
 # A `Sources` or `.changes` hash-block field -> the algorithm its digests are in; a `Release`
 # names its hash fields after the algorithm itself -> [CRYPTO.md](CRYPTO.md#checksums)
 CHECKSUMS_SHA256 = "Checksums-Sha256"
@@ -52,10 +55,14 @@ def parse_size(value: object) -> int | None:
         value: The field value.
 
     Returns:
-        The byte count, or None when the value is not a run of ASCII digits.
+        The byte count, or None when the value is not a run of at most `MAX_SIZE_DIGITS` ASCII
+        digits -> [VALIDATION.md](VALIDATION.md#object-sizes).
     """
     size = str(value)
-    return int(size) if size.isascii() and size.isdigit() else None
+    # an overlong run would make `int()` raise past the CLI's exception groups
+    if len(size) > MAX_SIZE_DIGITS or not (size.isascii() and size.isdigit()):
+        return None
+    return int(size)
 
 
 def parse_hash_block(text: str) -> list[tuple[str, str, str]]:

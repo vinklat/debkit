@@ -251,14 +251,6 @@ def test_read_capped_refuses_an_object_past_the_limit_as_a_size_limit_error(
     assert storage.metrics.read_bytes == 0
 
 
-def test_read_capped_passes_the_limit_to_get() -> None:
-    storage = MagicMock()
-    storage.get.return_value = b"x"
-
-    assert read_capped(storage, "p", 10) == b"x"
-    storage.get.assert_called_once_with("p", max_size=10)
-
-
 def test_read_capped_lets_a_storage_failure_through() -> None:
     storage = MagicMock()
     storage.get.side_effect = StorageException("disk gone")

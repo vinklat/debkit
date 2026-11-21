@@ -32,7 +32,6 @@ from txstore import (
 import debkit.repo as repo_package
 from debkit.repo import Repo
 from debkit.repo.component import Component, IndexLoad
-from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import RootRelease
 from debkit.repo.repo_rw import CheckReport, RepoRW
@@ -188,7 +187,7 @@ def test_transfer_from_does_not_pass_acl_kwarg() -> None:
     src = make_storage_mock()
     src.transfer.return_value = {"SHA256": "deadbeef"}
 
-    digests = repo.transfer_from(src, "incoming/foo.deb")
+    digests = repo.transfer_from(src, "incoming/foo.deb", max_size=None)
 
     assert digests == {"SHA256": "deadbeef"}
     _, kwargs = src.transfer.call_args
@@ -205,22 +204,16 @@ def test_transfer_from_forwards_the_size_cap() -> None:
     assert src.transfer.call_args.kwargs["max_size"] == 7
 
 
-def test_transfer_from_maps_a_capped_refusal_to_a_checksum_failure() -> None:
+@pytest.mark.parametrize(
+    "raised", [StorageTooLargeException("too large"), StorageException("down")], ids=str
+)
+def test_transfer_from_lets_a_storage_failure_through(raised: StorageException) -> None:
+    """The caller that set the cap names a refusal; a transport failure stays retryable."""
     repo, _release = _repo()
     src = make_storage_mock()
-    src.transfer.side_effect = StorageTooLargeException("too large")
+    src.transfer.side_effect = raised
 
-    with pytest.raises(ChecksumException, match="foo.deb is larger than the 7 bytes recorded"):
-        repo.transfer_from(src, "incoming/foo.deb", max_size=7)
-
-
-def test_transfer_from_lets_a_storage_failure_through() -> None:
-    """Only a capped refusal is distrustful; a transport failure stays retryable."""
-    repo, _release = _repo()
-    src = make_storage_mock()
-    src.transfer.side_effect = StorageException("down")
-
-    with pytest.raises(StorageException, match="down"):
+    with pytest.raises(type(raised)):
         repo.transfer_from(src, "incoming/foo.deb", max_size=7)
 
 
@@ -317,6 +310,14 @@ def test_shared_root_of_a_storage_that_cannot_list_keeps_all_but_the_own_tree() 
     assert not shared.complete
     assert not shared.deletable("pool/main/f/foo/foo_1_amd64.deb")
     assert shared.deletable("dists/bookworm/main/binary-amd64/Packages.gz")
+
+
+def test_shared_root_propagates_a_programming_not_implemented_error() -> None:
+    """Only txstore's capability stub means "cannot list"; a bare one is a bug, not a listing."""
+    repo = RepoRW(make_storage_mock(list_raises=NotImplementedError()), make_params())
+
+    with pytest.raises(NotImplementedError):
+        repo.shared_root()
 
 
 def test_held_digests_reads_through_txstore_without_a_sink() -> None:

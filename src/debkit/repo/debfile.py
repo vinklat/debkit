@@ -16,7 +16,6 @@ from debian.arfile import ArError
 from txstore import StorageException, StorageTooLargeException, is_unsafe_path
 
 from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, zstd_decompress
-from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
 from debkit.repo.params import pool_path
 
@@ -138,11 +137,11 @@ class DebFile:
             storage: Storage backend.
             path: Path to the Debian package file.
             comp: Component name. Defaults to None.
-            max_size: The `Size` a checked record gives the file, which caps a whole-file read
-                on a backend that cannot seek; None reads any size.
+            max_size: The cap on a whole-file read by a backend that cannot seek; None reads
+                any size. The caller decides what passing it means.
 
         Raises:
-            ChecksumException: If a whole-file read passes `max_size`.
+            StorageTooLargeException: If a whole-file read passes `max_size`.
             DebFileException: If the underlying ``.deb`` cannot be read or parsed.
         """
         self.storage = storage
@@ -151,11 +150,9 @@ class DebFile:
         self.max_size = max_size
         try:
             self.control = self._read_control()
-        except StorageTooLargeException as exc:
-            # the cap comes from a checked record, so the upload contradicts it
-            raise ChecksumException(
-                f"{path} is larger than the {max_size} bytes recorded for it"
-            ) from exc
+        except StorageTooLargeException:
+            # the caller owns the cap's source, so it names the failure
+            raise
         except StorageException as exc:
             raise DebFileException(f"Cannot read .deb file {path}: {exc}") from exc
         # `ArError` is the base of `DebError`; a truncated ar header raises a bare `OSError`, a

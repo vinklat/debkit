@@ -17,6 +17,7 @@ from txstore import (
     HistoryRetention,
     StorageFS,
     StorageNull,
+    StorageTooLargeException,
     TransactionHistory,
     maybe_transaction,
 )
@@ -879,22 +880,21 @@ def test_insert_checks_each_deb_against_its_changes_digest(
     assert not (tmp_path / "repo" / "dists" / "bookworm" / "Release").exists()
 
 
-@pytest.mark.parametrize(
-    ("verify_digests", "cap"), [(True, len(b"the built package")), (False, None)]
-)
-@patch("debkit.action.action_pkg.DebFile")
-def test_insert_caps_each_deb_at_the_size_its_changes_lists(
-    mock_debfile_cls: MagicMock, tmp_path: Path, verify_digests: bool, cap: int | None
-) -> None:
-    """An endless upload stops at its pinned `Size` -> VALIDATION.md#object-sizes."""
+_LISTED = b"the built package"
+_TAIL = b" and an endless tail"
+
+
+def _capped_insert(
+    tmp_path: Path, mock_debfile_cls: MagicMock, *, verify_digests: bool
+) -> tuple[ActionPkg, Path]:
+    """An insert whose upload runs past the `Size` its `.changes` lists; returns the pool path."""
     deb = "foo_1.0_amd64.deb"
-    listed = b"the built package"
     incoming = StorageFS(str(tmp_path / "in"))
-    incoming.put(deb, listed + b" and an endless tail")
+    incoming.put(deb, _LISTED + _TAIL)
     incoming.put(
         "foo_1.0_amd64.changes",
         f"Format: 1.8\nArchitecture: amd64\nChecksums-Sha256:\n"
-        f" {hashlib.sha256(listed).hexdigest()} {len(listed)} {deb}\n".encode(),
+        f" {hashlib.sha256(_LISTED).hexdigest()} {len(_LISTED)} {deb}\n".encode(),
     )
     action = _make_pkg_action()
     action.incoming_storage = incoming
@@ -907,16 +907,55 @@ def test_insert_caps_each_deb_at_the_size_its_changes_lists(
         f"pool/main/f/foo/{deb}", Package="foo", Version="1.0", Architecture="amd64"
     )
     mock_debfile_cls.return_value = instance
-    pool = tmp_path / "repo" / "pool/main/f/foo" / deb
+    return action, tmp_path / "repo" / "pool/main/f/foo" / deb
 
-    if verify_digests:
-        with pytest.raises(ChecksumException, match=f"larger than the {cap} bytes recorded"):
-            action.insert()
-        assert not pool.exists()
-    else:
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_refuses_a_deb_past_the_size_its_changes_lists(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """An endless upload stops at its pinned `Size` -> VALIDATION.md#object-sizes."""
+    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True)
+
+    with pytest.raises(ChecksumException, match=f"larger than the {len(_LISTED)} bytes recorded"):
         action.insert()
-        assert pool.read_bytes() == listed + b" and an endless tail"
-    assert mock_debfile_cls.call_args.kwargs["max_size"] == cap
+    assert not pool.exists()
+    assert mock_debfile_cls.call_args.kwargs["max_size"] == len(_LISTED)
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_of_an_unchecked_changes_is_uncapped(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=False)
+
+    action.insert()
+
+    assert pool.read_bytes() == _LISTED + _TAIL
+    assert mock_debfile_cls.call_args.kwargs["max_size"] is None
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_refuses_an_unseekable_deb_past_the_size_its_changes_lists(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """The whole-file read of a backend that cannot seek hits the same pinned cap."""
+    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True)
+    mock_debfile_cls.side_effect = StorageTooLargeException("foo_1.0_amd64.deb too large")
+
+    with pytest.raises(ChecksumException, match=f"larger than the {len(_LISTED)} bytes recorded"):
+        action.insert()
+    assert not pool.exists()
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_of_a_bare_deb_is_uncapped_even_when_checked(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """`--deb-filename` has no record to pin a `Size` -> VALIDATION.md#object-sizes."""
+    _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo", verify_digests=True)
+
+    assert mock_debfile_cls.call_args.kwargs["max_size"] is None
 
 
 @pytest.mark.parametrize("output", [OutputType.brief, OutputType.json])

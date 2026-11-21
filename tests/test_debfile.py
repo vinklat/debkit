@@ -14,12 +14,11 @@ from unittest.mock import MagicMock
 import pytest
 from helpers.binaries import requires_binary
 from helpers.factories import make_deb, make_tar_gz
-from txstore import StorageFS
+from txstore import StorageFS, StorageTooLargeException
 
 from debkit.repo import debfile as debfile_module
 from debkit.repo.compress import codec_for
 from debkit.repo.debfile import DebFile, DebFileException
-from debkit.repo.hashes import ChecksumException
 
 _PATH = "foo_1.0_amd64.deb"
 _CONTROL = b"Package: foo\nVersion: 1.0\nArchitecture: amd64\n"
@@ -109,12 +108,12 @@ def test_init_reads_an_unseekable_deb_within_its_recorded_size(tmp_path: Path, s
     assert DebFile(storage, _PATH, max_size=len(data) + slack).control == _CONTROL
 
 
-def test_init_refuses_an_unseekable_deb_past_its_recorded_size(tmp_path: Path) -> None:
-    """The whole-file fallback stops at the `.changes` Size -> VALIDATION.md#object-sizes."""
+def test_init_lets_an_unseekable_deb_past_its_cap_through(tmp_path: Path) -> None:
+    """The whole-file fallback stops at the cap; the caller that set it names the failure."""
     data = make_deb(_CONTROL)
     storage = _storage(tmp_path, data, _UnseekableFS)
 
-    with pytest.raises(ChecksumException, match=f"larger than the {len(data) - 1} bytes"):
+    with pytest.raises(StorageTooLargeException):
         DebFile(storage, _PATH, max_size=len(data) - 1)
 
 

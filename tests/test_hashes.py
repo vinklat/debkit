@@ -47,8 +47,28 @@ def test_parse_hash_block_empty_text_yields_nothing() -> None:
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [("12", 12), ("0", 0), ("12kB", None), ("\u0661\u0662", None), ("", None), (" 1", None)],
-    ids=["digits", "zero", "suffix", "non-ascii-digits", "empty", "padded"],
+    [
+        ("12", 12),
+        ("0", 0),
+        ("9" * 20, int("9" * 20)),
+        ("12kB", None),
+        ("\u0661\u0662", None),
+        ("", None),
+        (" 1", None),
+        ("9" * 21, None),
+        ("9" * 5000, None),
+    ],
+    ids=[
+        "digits",
+        "zero",
+        "max-digits",
+        "suffix",
+        "non-ascii-digits",
+        "empty",
+        "padded",
+        "past-max-digits",
+        "past-int-conversion-limit",
+    ],
 )
 def test_parse_size_reads_only_ascii_digits(value: str, expected: int | None) -> None:
     assert parse_size(value) == expected

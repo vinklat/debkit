@@ -488,7 +488,7 @@ class Repo:
             for packages in component.containers()
         )
 
-    def recorded_size(self, filename: str) -> int | None:
+    def max_recorded_size(self, filename: str) -> int | None:
         """Get the largest `Size` of the records `verify_checksum` checks a file against.
 
         It walks the same branches, so a transfer capped here is refused only when no record

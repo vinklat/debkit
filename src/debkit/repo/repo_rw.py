@@ -13,14 +13,12 @@ from typing import TYPE_CHECKING, NamedTuple
 from txstore import (
     StorageException,
     StorageNotSupportedException,
-    StorageTooLargeException,
     compare_digests,
     normalize_digests,
 )
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
-from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import FLAT_COMPONENT, SOURCE_ARCH
 from debkit.repo.shared_root import (
     ConsistencyLists,
@@ -186,7 +184,7 @@ class RepoRW(Repo):
         path_src: str,
         path_dst: str | None = None,
         *,
-        max_size: int | None = None,
+        max_size: int | None,
     ) -> dict[str, str]:
         """Transfer a file from an external storage into this repo's storage.
 
@@ -198,23 +196,16 @@ class RepoRW(Repo):
             source_storage: The storage to read from.
             path_src: Source path in `source_storage`.
             path_dst: Destination path in this repo. Defaults to `path_src`.
-            max_size: The `Size` a checked record gives the object, or None for no cap.
+            max_size: The cap on the transfer, or None for no cap; required, so every caller
+                decides it and names a refusal.
 
         Raises:
-            ChecksumException: The object is larger than its recorded `max_size`.
+            StorageTooLargeException: The object is larger than `max_size`.
 
         Returns:
             Digests of the transferred object.
         """
-        try:
-            return source_storage.transfer(
-                path_src, self.storage, path_dst=path_dst, max_size=max_size
-            )
-        except StorageTooLargeException as exc:
-            # a cap comes only from a checked record, so the source contradicts its own record
-            raise ChecksumException(
-                f"{path_src} is larger than the {max_size} bytes recorded for it"
-            ) from exc
+        return source_storage.transfer(path_src, self.storage, path_dst=path_dst, max_size=max_size)
 
     def metadata_agrees(self, path: str, digests: dict[str, str]) -> bool:
         """Report whether the stored metadata of `path` records `digests`.

@@ -7,7 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from humanize import naturalsize
-from txstore import compare_digests, maybe_transaction
+from txstore import StorageTooLargeException, compare_digests, maybe_transaction
 
 from debkit._escape import escape_control
 from debkit.action import (
@@ -254,37 +254,37 @@ class ActionPkg(Action):
             assert self.deb_filename is not None
             filenames = [self.deb_filename]
 
+        # a checked `.changes` pins each payload's `Size` and digest; unchecked, it pins nothing
+        pinned = changes if self.target_repo.params.verify_digests else None
+
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             target_before = self._load_target_or_setup()
             binary_archs = self.target_repo.binary_archs()
             for filename in filenames:
-                # the pinned `.changes` bounds each read of its payload
+                # the pinned `Size` bounds each read of its payload
                 # -> [VALIDATION.md](VALIDATION.md#object-sizes)
-                max_size = (
-                    changes.declared_size(filename)
-                    if changes is not None and self.target_repo.params.verify_digests
-                    else None
-                )
-                debfile_obj = DebFile(
-                    self.incoming_storage, filename, comp=self.component, max_size=max_size
-                )
-                package = debfile_obj.get_package()
-                archs = self._target_archs(filename, package, binary_archs)
+                max_size = pinned.declared_size(filename) if pinned is not None else None
+                try:
+                    debfile_obj = DebFile(
+                        self.incoming_storage, filename, comp=self.component, max_size=max_size
+                    )
+                    package = debfile_obj.get_package()
+                    archs = self._target_archs(filename, package, binary_archs)
 
-                pool_key = package.get_filename()
-                held = self.target_repo.held_digests(pool_key)
-                digests = self.target_repo.transfer_from(
-                    self.incoming_storage, filename, path_dst=pool_key, max_size=max_size
-                )
-                # the pinned `.changes` lists each payload's digest, so a payload swapped in
-                # the incoming storage is refused before any other check can misname it;
-                # raising discards the staged transfer
+                    pool_key = package.get_filename()
+                    held = self.target_repo.held_digests(pool_key)
+                    digests = self.target_repo.transfer_from(
+                        self.incoming_storage, filename, path_dst=pool_key, max_size=max_size
+                    )
+                except StorageTooLargeException as exc:
+                    # only the pinned `.changes` sets a cap, so the upload contradicts it
+                    raise ChecksumException(
+                        f"{filename} is larger than the {max_size} bytes recorded for it"
+                    ) from exc
+                # the pinned digest refuses a payload swapped in the incoming storage before
+                # any other check can misname it; raising discards the staged transfer
                 # -> [CRYPTO.md](CRYPTO.md#verification-failures)
-                if (
-                    changes is not None
-                    and self.target_repo.params.verify_digests
-                    and not changes.verify_digests(filename, digests)
-                ):
+                if pinned is not None and not pinned.verify_digests(filename, digests):
                     raise ChecksumException(
                         f"{filename} does not match its digest in {self.changes_filename}"
                     )

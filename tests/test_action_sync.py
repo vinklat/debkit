@@ -18,7 +18,7 @@ import pytest
 from helpers import trees
 from helpers.factories import make_params
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history, storage_namespace
-from helpers.trees import write_dist
+from helpers.trees import payload_path, write_dist
 from txstore import (
     HistoryRetention,
     Storage,
@@ -375,6 +375,24 @@ def test_sync_logs_each_release_token_warning_once(
 
     assert (tmp_path / "tgt" / "pool/main/f/foo/foo_3_amd64.deb").exists()
     assert caplog.text.count("'../evil' is not a safe name") == 1
+
+
+def test_sync_refuses_a_payload_past_its_recorded_size(tmp_path: Path) -> None:
+    """The transfer stops at the checked `Size`, so an endless body never reaches the target
+    -> VALIDATION.md#object-sizes."""
+    from debkit.repo.hashes import ChecksumException
+
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    payload = tmp_path / "src" / payload_path("foo", "3")
+    listed = len(payload.read_bytes())
+    payload.write_bytes(payload.read_bytes() + b" and an endless tail")
+    (tmp_path / "tgt").mkdir()
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+
+    with pytest.raises(ChecksumException, match=f"larger than the {listed} bytes recorded"):
+        action.sync()
+
+    assert not (tmp_path / "tgt" / payload_path("foo", "3")).exists()
 
 
 class _SwapReleaseOnceFS(StorageFS):

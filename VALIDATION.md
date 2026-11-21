@@ -137,10 +137,13 @@ Release files, stored indices, and `.changes` files are read by `read_capped()` 
 is refused before it is verified or buffered in full. Sync and insert transfers stop the same way
 and leave no target object. Upload control data is capped by `_control_of()` in `repo/debfile.py`,
 which decodes the `control.tar` member under a limit and walks it as a stream. "Checked" means
-digest verification is on.
+digest verification is on. A recorded `Size` is only as trustworthy as the metadata that lists
+it: without GPG verification the source sets both a body and its `Size` →
+[CRYPTO.md](CRYPTO.md#verification-switches).
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
+| Recorded `Size` | A run of at most `MAX_SIZE_DIGITS` (20) ASCII digits, read by `parse_size()` in `repo/hashes.py`. | Any other value → no `Size` recorded |
 | Root Release files | `Release`, `InRelease`, and `Release.gpg` are at most `MAX_RELEASE_BYTES` (16 MiB): no signed file records their size. | → `ReleaseReadException` (Read) |
 | Per-arch Release | At most the `Size` the checked root Release records, and never past `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
 | Stored index | At most the largest `Size` a checked root or per-arch Release records, and never past `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
