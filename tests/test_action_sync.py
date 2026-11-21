@@ -129,7 +129,6 @@ def test_sync_discards_on_exception() -> None:
 
 def test_sync_discards_on_checksum_exception() -> None:
     """ChecksumException must propagate so the transaction is discarded, not committed."""
-
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
     _source(action).sync.side_effect = ChecksumException("digest mismatch")
@@ -448,7 +447,6 @@ def test_sync_refuses_a_root_release_copy_that_differs_from_the_verified_one(
     tmp_path: Path, swapped_date: str
 ) -> None:
     """Freshness was checked on the loaded bytes; the copy must be those bytes."""
-
     _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
     _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
     real = (tmp_path / "src" / _PREFIX / "Release").read_bytes()

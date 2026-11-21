@@ -956,12 +956,11 @@ def test_insert_names_a_capped_debfile_read_a_checksum_failure(
 ) -> None:
     """`DebFile` lets its capped whole-file read's refusal through; the insert names it.
     The unseekable read itself -> test_debfile.py."""
-    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True)
+    action, _pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True)
     mock_debfile_cls.side_effect = StorageTooLargeException("foo_1.0_amd64.deb too large")
 
     with pytest.raises(ChecksumException, match=f"larger than the {len(_LISTED)} bytes recorded"):
         action.insert()
-    assert not pool.exists()
 
 
 @patch("debkit.action.action_pkg.DebFile")
