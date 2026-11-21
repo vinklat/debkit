@@ -44,9 +44,9 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   [CRYPTO.md](../../CRYPTO.md#release-freshness).
 - A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop and every staged footmark
   is discarded, so no partial commit is produced. A digest mismatch also deletes the mismatching
-  target object → [CRYPTO.md](../../CRYPTO.md#verification-failures); a transfer past the `Size`
-  its records list stops without leaving one, and is not retried →
-  [VALIDATION.md](../../VALIDATION.md#object-sizes).
+  target object → [CRYPTO.md](../../CRYPTO.md#verification-failures); with digests checked, a
+  transfer past its recorded `Size` stops without leaving one, and is not retried; when a cap
+  applies → [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - Corrupted target indices reset the target, and the sync proceeds →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - A target with neither `Release` nor `InRelease` is synced as empty; any other read failure stops

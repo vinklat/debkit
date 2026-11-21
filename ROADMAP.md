@@ -5,7 +5,7 @@
 | Phase | Status | Feature | Notes |
 | -- | -- | -- | -- |
 | 0.1.0 | ✅ | Initial public release | Insert, remove, inspect, sync, and check Debian repositories on fs, S3, and HTTP via txstore; transactional writes with history |
-| 0.1.1 | ✅ | Storage size and error limits | Sync and insert transfers and capped reads stop at their recorded `Size`, stream read errors arrive as `StorageException`, digests read without a sink storage, and an operation the backend lacks raises `StorageNotSupportedException` → [upgrade notes](SETUP.md#upgrade-notes); on txstore 0.1.3 |
+| 0.1.1 | ✅ | Storage size and error limits | Recorded-`Size` caps and mapped storage stream errors on txstore 0.1.3 → [upgrade notes](SETUP.md#upgrade-notes) |
 | 0.2.0 | ⏳ | Debian package `debkit` | Waits for txstore 0.2.0, its Debian package → [SETUP.md](SETUP.md#dependency-policy); the `debian-testing` CI job then installs txstore from apt → [known deviations](#known-deviations) |
 
 ## Ideas
@@ -45,5 +45,5 @@ TODOs; remove a row when the code meets the rule.
 | [STYLE.md](STYLE.md#layers) | `ActionSync` decides the sync policy itself: the target reset after a checksum failure, the freshness floors of each pass, and the verify-before-sync order; it moves into a repo-level use case with the typed settings [idea](#ideas), when an action is called from Python. | `action/action_sync.py` `sync`, `_load_target`, `_sync_until_settled` |
 | [VALIDATION.md](VALIDATION.md#index-selection) | A component nested below a selected one, as `main/debug` below `--components main`, keeps its indices, since selection splits a key at the longest selected component, while its payloads are never loaded, so the mirror lists packages it lacks. | `repo/index_selection.py` `_split_component` |
 | [VALIDATION.md](VALIDATION.md#repository-index-paths) | `by-hash/` objects are not mirrored because the root `Release` does not list them; an apt client of a mirror whose `Release` advertises `Acquire-By-Hash: yes` falls back to the canonical index path after a 404. | `repo/__init__.py` `Repo._get_indices` |
-| [VALIDATION.md](VALIDATION.md#object-sizes) | An upload inserted with `--deb-filename` or without digest verification, on a backend that cannot seek, is read whole with `storage.get` before the control caps apply, since no checked `Size` bounds it and python-debian's `ArFile` seeks; only the backend bounds its size. | `repo/debfile.py` `DebFile._read_control` |
+| [VALIDATION.md](VALIDATION.md#object-sizes) | An upload inserted with `--deb-filename`, without digest verification, or listed in its `.changes` with no usable `Size`, on a backend that cannot seek, is read whole with `storage.get` before the control caps apply, since no checked `Size` bounds it and python-debian's `ArFile` seeks; only the backend bounds its size. | `repo/debfile.py` `DebFile._read_control` |
 | [SETUP.md](SETUP.md#dependency-policy) | The `debian-testing` CI job installs txstore from PyPI, since Debian does not package it yet; every other dependency comes from apt. | `.github/debian-test.sh` |

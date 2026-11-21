@@ -37,9 +37,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 - An unsafe `.changes` entry, `Package` or `Source` name, `Version`, or pool path is refused before
   any transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred
   digests differ from its `.changes` entry is refused after it →
-  [CRYPTO.md](../../CRYPTO.md#verification-failures); one longer than the `Size` that entry lists
-  is refused during it, or during the whole-file read of a backend that cannot seek →
-  [VALIDATION.md](../../VALIDATION.md#object-sizes).
+  [CRYPTO.md](../../CRYPTO.md#verification-failures); with digests checked, one longer than the
+  `Size` that entry lists is refused during it, or during the whole-file read of a backend that
+  cannot seek; when a cap applies → [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - The pool key holds no dist and no arch beyond the upload file name, so other dists and arch
   indices may list it; a pool key already holding different bytes is refused after the transfer and
   the `.changes` digest check, read through once before it, and an identical upload passes →
