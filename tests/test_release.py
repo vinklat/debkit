@@ -706,11 +706,6 @@ def test_load_root_records_the_digests_of_every_root_file() -> None:
         "Release.gpg": calc_digests(_ROOT_FILES["dists/bookworm/Release.gpg"]),
         "InRelease": calc_digests(_ROOT_FILES["dists/bookworm/InRelease"]),
     }
-    assert (
-        r.verify_root_digests("Release", calc_digests(_ROOT_FILES["dists/bookworm/Release"]))
-        is True
-    )
-    assert r.verify_root_digests("Release", calc_digests(b"replayed")) is False
 
 
 def test_load_root_refuses_a_root_file_past_the_size_cap(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -762,7 +757,6 @@ def test_load_root_skips_a_detached_signature_without_its_release(
 
     assert r.get_indices_paths() == ["dists/bookworm/InRelease"]
     assert "Release.gpg" not in r.root_digests
-    assert r.verify_root_digests("Release.gpg", calc_digests(junk)) is False
     assert "signs no dists/bookworm/Release" in caplog.text
 
 

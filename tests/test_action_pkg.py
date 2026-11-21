@@ -427,7 +427,7 @@ def _changes_upload(
     changes.get_archs.return_value = field.split()
     changes.names_source_arch.return_value = False
     changes.get_deb_files.return_value = files
-    changes.declared_size.return_value = None
+    changes.recorded_size.return_value = None
 
     def debfile(
         _storage: object, filename: str, comp: str, max_size: int | None = None

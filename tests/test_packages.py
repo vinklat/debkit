@@ -441,6 +441,23 @@ def test_packages_load_refuses_an_index_larger_than_the_release_records(tmp_path
         pkgs.load(root, "main", "amd64")
 
 
+def test_packages_load_reads_an_index_a_release_without_a_size_verifies(tmp_path: Path) -> None:
+    """A record that verifies the index but lists no usable `Size` lifts the cap: a smaller
+    `Size` on a record that does not verify it must not refuse the index."""
+    storage = StorageFS(str(tmp_path))
+    params = make_params(verify_digests=True)
+    stored = make_packages_block("foo").encode()
+    root = RootRelease(storage, params)
+    root.update_digests("main/binary-amd64/Packages", {**calc_digests(stored), "Size": "1x"})
+    storage.put("dists/bookworm/main/binary-amd64/Packages", stored)
+    pkgs = Packages(storage, params)
+    pkgs.release.update_digests("main/binary-amd64/Packages", {"SHA256": "00", "Size": "10"})
+
+    pkgs.load(root, "main", "amd64")
+
+    assert list(pkgs.packages) == ["pool/main/f/foo/foo_1.0_amd64.deb"]
+
+
 def test_packages_load_caps_an_unchecked_index_as_stored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -706,40 +723,26 @@ def test_packages_dump_lists_the_given_packages_or_every_one() -> None:
 
 
 # ---------------------------------------------------------------------------
-# verify_checksum / get_indices_paths / is_empty / __len__
+# record / get_indices_paths / is_empty / __len__
 # ---------------------------------------------------------------------------
 
 
-def test_packages_verify_checksum_match_and_miss() -> None:
+def test_packages_record_carries_the_digests_and_size_of_the_keyed_stanza() -> None:
     pkgs = _new_packages()
     pkgs.packages = {
-        "pool/foo.deb": make_package("pool/foo.deb", SHA256="aa", MD5Sum="bb"),
+        "pool/foo.deb": make_package("pool/foo.deb", size=42, SHA256="aa", MD5Sum="bb"),
     }
-    assert pkgs.verify_checksum("pool/foo.deb", {"SHA256": "aa"}) is True
-    assert pkgs.verify_checksum("pool/foo.deb", {"SHA256": "zz"}) is False
-    assert pkgs.verify_checksum("pool/missing.deb", {"SHA256": "aa"}) is False
+    assert pkgs.record("pool/foo.deb") == {"SHA256": "aa", "MD5Sum": "bb", "Size": "42"}
+    assert pkgs.record("pool/missing.deb") is None
 
 
-def test_packages_verify_checksum_finds_a_package_whose_key_carries_a_pool_path() -> None:
+def test_packages_record_is_keyed_by_the_filename_with_its_pool_path() -> None:
     """The lookup key is the `Filename` field verbatim, pool prefix included."""
     pkgs = _new_packages()
     pool_key = "pool/main/h/hello/hello_2.10-3_amd64.deb"
     pkgs.packages = {pool_key: make_package(pool_key, SHA256="aa")}
-    assert pkgs.verify_checksum(pool_key, {"SHA256": "aa"}) is True
-    assert pkgs.verify_checksum("hello_2.10-3_amd64.deb", {"SHA256": "aa"}) is False
-
-
-@pytest.mark.parametrize(
-    ("filename", "size", "expected"),
-    [("pool/foo.deb", 42, 42), ("pool/foo.deb", "4x", None), ("pool/missing.deb", 42, None)],
-    ids=["recorded", "malformed", "unlisted"],
-)
-def test_packages_declared_size_reads_the_record_verify_checksum_finds(
-    filename: str, size: int | str, expected: int | None
-) -> None:
-    pkgs = _new_packages()
-    pkgs.packages = {"pool/foo.deb": make_package("pool/foo.deb", size=size, SHA256="aa")}
-    assert pkgs.declared_size(filename) == expected
+    assert pkgs.record(pool_key) is not None
+    assert pkgs.record("hello_2.10-3_amd64.deb") is None
 
 
 def test_packages_get_indices_paths_concatenates() -> None:

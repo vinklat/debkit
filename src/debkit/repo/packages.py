@@ -12,10 +12,10 @@ from typing import (
     NamedTuple,
 )
 
-from txstore import calc_digests, compare_digests, is_unsafe_path
+from txstore import calc_digests, is_unsafe_path
 
 from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, codec_for, read_capped
-from debkit.repo.hashes import ChecksumException, parse_size
+from debkit.repo.hashes import ChecksumException, largest_recorded_size
 from debkit.repo.package import Package
 from debkit.repo.params import is_safe_name
 from debkit.repo.release import Release, RootRelease
@@ -282,21 +282,21 @@ class Packages:
         Returns:
             The stored index bytes -> [VALIDATION.md](VALIDATION.md#object-sizes).
         """
-        declared: int | None = None
+        recorded: int | None = None
         if self.params.verify_digests:
             key = self.params.release_key(path)
-            sizes = [
-                size
+            # either Release may verify the index, as `_verify_indices_checksum` checks it
+            recorded = largest_recorded_size(
+                release.digests[key]
                 for release in (root_release, self.release)
-                if (size := release.declared_size(key)) is not None
-            ]
-            declared = max(sizes) if sizes else None
+                if key in release.digests
+            )
         # a recorded size tightens the cap, never lifts it: the Release is remote metadata
-        limit = MAX_INDICES_BYTES if declared is None else min(declared, MAX_INDICES_BYTES)
+        limit = MAX_INDICES_BYTES if recorded is None else min(recorded, MAX_INDICES_BYTES)
         try:
             return read_capped(self.storage, path, limit)
         except SizeLimitError as exc:
-            if declared is None or declared > MAX_INDICES_BYTES:
+            if recorded is None or recorded > MAX_INDICES_BYTES:
                 raise PackagesException(f"Stored indices {exc}.") from exc
             raise ChecksumException(f"Mismatch for {path}: {exc}.") from exc
 
@@ -499,34 +499,20 @@ class Packages:
 
         return ret
 
-    def verify_checksum(self, filename: str, incoming_digests: dict[str, str]) -> bool:
-        """Verify checksum of a package.
-
-        Args:
-            filename: The filename to verify.
-            incoming_digests: The checksums to verify.
-
-        Returns:
-            True if the checksum is valid, False otherwise.
-        """
-        # every container keys by the `Filename` field itself, so the index is the lookup
-        package = self.packages.get(filename)
-        if package is None:
-            return False
-
-        return compare_digests(package.get_digests(), incoming_digests)
-
-    def declared_size(self, filename: str) -> int | None:
-        """Get the `Size` the record keyed by `filename` lists, as `verify_checksum` finds it.
+    def record(self, filename: str) -> dict[str, str] | None:
+        """Get the digests and `Size` of the record keyed by `filename`.
 
         Args:
             filename: The `Filename` of the record.
 
         Returns:
-            The recorded size, or None when no record or no well-formed size is listed.
+            The record's digests and `Size`, or None when no record is keyed by it.
         """
+        # every container keys by the `Filename` field itself, so the index is the lookup
         package = self.packages.get(filename)
-        return None if package is None else parse_size(package.fields.get("Size", ""))
+        if package is None:
+            return None
+        return {**package.get_digests(), "Size": str(package.fields.get("Size", ""))}
 
     def __len__(self) -> int:
         """Return the number of packages.

@@ -263,7 +263,7 @@ class ActionPkg(Action):
             for filename in filenames:
                 # the pinned `Size` bounds each read of its payload
                 # -> [VALIDATION.md](VALIDATION.md#object-sizes)
-                max_size = pinned.declared_size(filename) if pinned is not None else None
+                max_size = pinned.recorded_size(filename) if pinned is not None else None
                 # only the pinned `.changes` sets a cap, so a refusal contradicts it
                 with refuse_past_recorded_size(filename, max_size):
                     debfile_obj = DebFile(

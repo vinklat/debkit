@@ -9,6 +9,7 @@ from debkit.repo.hashes import (
     ChecksumException,
     HexDigests,
     has_sha,
+    largest_recorded_size,
     parse_hash_block,
     parse_size,
     refuse_past_recorded_size,
@@ -79,6 +80,35 @@ def test_parse_hash_block_empty_text_yields_nothing() -> None:
 )
 def test_parse_size_reads_only_ascii_digits(value: str, expected: int | None) -> None:
     assert parse_size(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("sizes", "expected"),
+    [(["5", "9"], 9), ([], None), (["9", "2OO"], None), (["9", None], None)],
+    ids=["largest", "no-record", "malformed", "missing"],
+)
+def test_largest_recorded_size_is_lifted_by_a_record_without_a_usable_size(
+    sizes: list[str | None], expected: int | None
+) -> None:
+    """Any record may verify the object, so one without a usable `Size` leaves no cap."""
+    records = [
+        {"SHA256": "aa"} if size is None else {"SHA256": "aa", "Size": size} for size in sizes
+    ]
+    assert largest_recorded_size(records) == expected
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [("a", 42), ("b", None), ("missing", None)],
+    ids=["recorded", "malformed", "unlisted"],
+)
+def test_recorded_size_reads_the_size_the_table_records(
+    filename: str, expected: int | None
+) -> None:
+    table = HexDigests()
+    table.update_digests("a", {"SHA256": "aa", "Size": "42"})
+    table.update_digests("b", {"SHA256": "bb", "Size": "4x"})
+    assert table.recorded_size(filename) == expected
 
 
 # --- has_sha -------------------------------------------------------------------------------------

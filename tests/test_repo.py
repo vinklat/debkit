@@ -270,6 +270,22 @@ def test_max_recorded_size_follows_the_record_verify_checksum_accepts(
     assert repo.max_recorded_size(filename) == 12
 
 
+def test_max_recorded_size_is_none_when_a_record_lists_no_usable_size() -> None:
+    """The record without a usable `Size` may verify the payload, so a smaller `Size` on
+    another record must not cap it -> VALIDATION.md#object-sizes."""
+    repo = _repo()
+    repo.components["main"] = Component(repo.storage, repo.params, repo.release, "main")
+    repo.components["main"].packages = {
+        "amd64": make_packages(repo.storage, repo.params, [make_package(_DEB, size=7)]),
+        "arm64": make_packages(
+            repo.storage, repo.params, [make_package(_DEB, size="2OO", **_DIGEST)]
+        ),
+    }
+
+    assert repo.verify_checksum(_DEB, _DIGEST) is True
+    assert repo.max_recorded_size(_DEB) is None
+
+
 def test_max_recorded_size_is_none_when_no_record_lists_the_file() -> None:
     repo = _repo()
     _with_component_package(repo, _DEB, _DIGEST)

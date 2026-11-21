@@ -11,7 +11,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from debian.deb822 import Deb822
-from txstore import SUPPORT_HASH_LIST, StorageNotFoundException, calc_digests, compare_digests
+from txstore import SUPPORT_HASH_LIST, StorageNotFoundException, calc_digests
 
 from debkit.repo.compress import SizeLimitError, read_capped
 from debkit.repo.gnupg import canonical_text, cleartext_body
@@ -19,7 +19,6 @@ from debkit.repo.hashes import (
     ChecksumException,
     HexDigests,
     parse_hash_block,
-    parse_size,
 )
 from debkit.repo.stanza import parse_stanza
 
@@ -378,14 +377,14 @@ class Release(HexDigests):
 
         key = self.params.release_key(filename)
         checked = self.params.verify_digests
-        declared = root_release.declared_size(key) if checked else None
+        recorded = root_release.recorded_size(key) if checked else None
         # a recorded size tightens the cap, never lifts it
         # -> [VALIDATION.md](VALIDATION.md#object-sizes)
-        limit = MAX_RELEASE_BYTES if declared is None else min(declared, MAX_RELEASE_BYTES)
+        limit = MAX_RELEASE_BYTES if recorded is None else min(recorded, MAX_RELEASE_BYTES)
         try:
             data = read_capped(self.storage, filename, limit)
         except SizeLimitError as exc:
-            if declared is None or declared > MAX_RELEASE_BYTES:
+            if recorded is None or recorded > MAX_RELEASE_BYTES:
                 raise ReleaseReadException(f"{exc}.") from exc
             raise ChecksumException(f"{key} is larger than the root Release records.") from exc
         if checked and not root_release.verify_digests(key, calc_digests(data)):
@@ -734,29 +733,6 @@ class RootRelease(Release):
             raw["InRelease"] = cleartext_body(raw["InRelease"])
 
         return raw["InRelease" if use_inrelease else "Release"]
-
-    def verify_root_digests(self, key: str, incoming_digests: dict[str, str]) -> bool:
-        """Verify a root Release file against the bytes the last load fetched.
-
-        Args:
-            key: `Release`, `InRelease`, or `Release.gpg`.
-            incoming_digests: The digests to verify.
-
-        Returns:
-            True when the last load fetched the file with these digests.
-        """
-        return compare_digests(self.root_digests.get(key, {}), incoming_digests)
-
-    def root_size(self, key: str) -> int | None:
-        """Get the size of a root Release file as the last load fetched it.
-
-        Args:
-            key: `Release`, `InRelease`, or `Release.gpg`.
-
-        Returns:
-            Its size, or None when the last load did not fetch it.
-        """
-        return parse_size(self.root_digests.get(key, {}).get("Size", ""))
 
     def load(self) -> None:
         """Load the root Release file, verifying its signatures when they are checked.

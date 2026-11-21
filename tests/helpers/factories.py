@@ -239,8 +239,8 @@ def _attach_state(
     repo.release.get_indices_paths.side_effect = lambda: list(paths)
     repo.release.verify_digests.return_value = False
     # no recorded size, so a transfer runs uncapped unless a test sets one
-    repo.release.root_size.return_value = None
-    repo.release.declared_size.return_value = None
+    repo.release.root_digests = {}
+    repo.release.recorded_size.return_value = None
     listed = list(listed_indices or [])
     repo.release.listed_indices.side_effect = lambda: list(listed)
     repo.release.digests = {entry.key: entry.digests for entry in listed}

@@ -7,7 +7,7 @@ is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 
 from txstore import COMPARE_HASH_LIST, StorageTooLargeException, compare_digests
@@ -18,12 +18,14 @@ __all__ = [
     "ChecksumException",
     "HexDigests",
     "has_sha",
+    "largest_recorded_size",
     "parse_hash_block",
     "parse_size",
     "refuse_past_recorded_size",
 ]
 
-# The longest `Size` read as a byte count: 2**64 has 20 digits
+# The longest `Size` read as a byte count: every 64-bit size fits, and the bound keeps an
+# overlong run away from `int()`
 MAX_SIZE_DIGITS = 20
 
 # A `Sources` or `.changes` hash-block field -> the algorithm its digests are in; a `Release`
@@ -65,6 +67,29 @@ def parse_size(value: object) -> int | None:
     if len(size) > MAX_SIZE_DIGITS or not (size.isascii() and size.isdigit()):
         return None
     return int(size)
+
+
+def largest_recorded_size(records: Iterable[Mapping[str, str]]) -> int | None:
+    """Get the cap the records one object is checked against set: the largest `Size`.
+
+    Any of the records may verify the object, so one without a well-formed `Size` lifts the
+    cap instead of leaving a smaller record to refuse an object it verifies
+    -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+    Args:
+        records: Each record listing the object, with its digests and `Size`.
+
+    Returns:
+        The largest recorded size, or None when no record lists the object or one lists no
+        well-formed size.
+    """
+    largest: int | None = None
+    for record in records:
+        size = parse_size(record.get("Size", ""))
+        if size is None:
+            return None
+        largest = size if largest is None else max(largest, size)
+    return largest
 
 
 def parse_hash_block(text: str) -> list[tuple[str, str, str]]:
@@ -147,7 +172,7 @@ class HexDigests:
 
         return compare_digests(self.digests[filename], incoming_digests)
 
-    def declared_size(self, filename: str) -> int | None:
+    def recorded_size(self, filename: str) -> int | None:
         """Get the `Size` the digest table records for a file.
 
         Args:
