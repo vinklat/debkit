@@ -145,13 +145,10 @@ Size-capped storage reads on txstore 0.1.3.
 
 ### 0.1.0
 
-Initial public release. debkit continues repo-deb-factory 5.1.2 under a new name, on the public
-txstore storage package; repositories, footmarks, and `.transactions.json` histories written by
-either tool are read by the other.
+Initial public release, on the public txstore storage package.
 
 | Change | Migration |
 | -- | -- |
-| Command and package | `repo-deb-factory` → `debkit`; `python -m repo_deb_factory` → `python -m debkit`. |
 | Variables | Every variable gains the `DEBKIT_` prefix: `TARGET_URL` → `DEBKIT_TARGET_URL`, `S3_SECRET` → `DEBKIT_S3_SECRET`, and so on → [CONFIG.md](CONFIG.md). |
 | Switches | `--skip-verify 1` → `--skip-verify`; `--skip-verify-gpg false` → omit it or pass `--no-skip-verify-gpg`. The same holds for `--skip-verify-ssl` and `--allow-release-rollback`. |
 | Logging | `-l` gains `DEBKIT_LOG_LEVEL` and drops `TRACING`; `--log-format json` is new. |
