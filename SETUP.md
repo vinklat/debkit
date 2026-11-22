@@ -62,8 +62,9 @@ code, `CONFIG.md` flag and variable parity with the option registrations, `EXCEP
 with the exception classes and the `cli.py` exit groups, an exit group, a raise, and a test for
 every exception class, every `Exception (group)` notation, 100-column prose, table rows with as many
 cells as their header, no `TODO` markers in contracts, the `docs/*/README.md` indexes, the README
-version and its `CHANGELOG.md` section, PyPI-only package sources, txstore links pinned to the tag
-of the txstore version `uv.lock` resolves, and the [diagram](#diagrams) fence and embed rules.
+version, a dated `CHANGELOG.md` section for the `pyproject.toml` version, PyPI-only package
+sources, txstore links pinned to the tag of the txstore version `uv.lock` resolves, and the
+[diagram](#diagrams) fence and embed rules.
 
 ## Diagrams
 
@@ -106,8 +107,8 @@ A floor raise names the Debian testing version that satisfies it in the change d
 | Item | Rule |
 | -- | -- |
 | Version | `pyproject.toml` `[project].version` and the `README.md` "Current version" line. |
-| Version parity | `check_docs.py` fails when the two differ, or when [CHANGELOG.md](CHANGELOG.md) has no dated section for the version. |
-| Changelog | A change a user would notice adds its `Change` and `Migration` row under `## Unreleased` in `CHANGELOG.md`, in the same change. |
+| Version parity | `check_docs.py` fails when the two differ. |
+| Changelog | Add each user-visible change as a `Change` and `Migration` row under `## Unreleased`, in the same change; `check_docs.py` fails without a dated section for the version → [CHANGELOG.md](CHANGELOG.md). |
 | `__version__` | Read from the installed distribution. |
 | Version bump | `uv version --bump patch` (or `minor`, `major`), the README line to match, and the `CHANGELOG.md` heading `## Unreleased` renamed to `## <version> - <YYYY-MM-DD>` below a new empty `## Unreleased`. |
 | Steps | Version bump → [quality gates](#quality-gates) → merge to `main` → `git tag vX.Y.Z` on `main` → `git push origin vX.Y.Z`. |
@@ -122,7 +123,7 @@ A floor raise names the Debian testing version that satisfies it in the change d
 | Link check | No relative link is left in the wheel's description. |
 | Metadata check | `twine check --strict` passes, with twine pinned in `release.yml`. |
 | Smoke test | The wheel, installed alone with its dependencies, imports with `debkit.__version__` equal to the tag version, and `debkit --version` prints it. |
-| Stages | TestPyPI, then PyPI, then a GitHub release with the sdist and wheel and a link to `CHANGELOG.md` at the tag. |
+| Stages | TestPyPI, then PyPI, then a GitHub release with the sdist and wheel and a link to the tag's [CHANGELOG.md](CHANGELOG.md). |
 | GitHub environments | `testpypi` and `pypi`; `pypi` has a required reviewer, so the PyPI upload waits for approval. |
 | Tag ruleset | A repository ruleset limits who creates `v*` tags. |
 | Trusted publisher identity | Owner `vinklat`, repo `debkit`, workflow `release.yml`. |

@@ -1,8 +1,7 @@
 # Changelog
 
-Released changes and their upgrade notes, newest first; each row names a change and what an
-upgrade needs. Planned work → [ROADMAP.md](ROADMAP.md); release steps →
-[SETUP.md](SETUP.md#release).
+Released changes and their upgrade notes. Planned work → [ROADMAP.md](ROADMAP.md); entry format
+and release steps → [SETUP.md](SETUP.md#release).
 
 ## Unreleased
 
@@ -19,7 +18,6 @@ Size-capped storage reads on txstore 0.1.3. Release →
 | Stream read failures | A backend error while an S3 or HTTP body is read is now a `StorageException` instead of escaping unwrapped → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
 | Stream read failures in a sync copy | A failed copy is retried, then → `RepoSyncException` (Sync) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
-
 
 ## 0.1.0 - 2026-11-12
 

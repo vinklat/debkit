@@ -7,7 +7,7 @@ Planned releases, deferred work, and places the code does not yet meet a contrac
 
 | Version | Goal | Blocked by |
 | -- | -- | -- |
-| 0.2.0 | Debian package `debkit`; the `debian-testing` CI job then installs txstore from apt → [known deviations](#known-deviations) | txstore 0.2.0 and its Debian package → [SETUP.md](SETUP.md#dependency-policy) |
+| 0.2.0 | Debian package `debkit` | txstore 0.2.0 and its Debian package |
 
 ## Backlog
 
@@ -40,6 +40,8 @@ Restructuring a user would not see.
 | `ReleaseKey`/`StoragePath` NewTypes and a coordinate-aware `Packages` owning its component, arch, and codec | A fifth raw `component.packages` walk outside `Component`, or `IndexKind` or `Layout` starts | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `Repo.slots()` iterator over the coordinate-aware `Packages`, replacing the hand-written component and arch walks in `repo/__init__.py`, `repo/shared_root.py`, and `ActionPkg`, resolving the component and arch selection once, and renaming `Packages.packages` | The coordinate-aware `Packages` lands | [STRUCTURE.md](STRUCTURE.md#layout) |
 | Split `ActionPkg` into its read-only views, `ActionInsert`, and `ActionRemove`, and `ActionHistory` per subcommand, as `ActionSync` and `ActionCheck` are, so no action reads its subcommand's flags as optional | The typed settings work starts, or the `ActionPkg.insert` placement moves into `RepoRW` | [STRUCTURE.md](STRUCTURE.md#layout) |
+| `ActionPkg.insert` placement into `RepoRW`: the pool key, the `.changes` `Size` cap, the digest check, and the held-key refusal through `RepoRW.held_digests` | The `IndexKind` work starts | [STYLE.md](STYLE.md#layers) |
+| Repo-level sync use case owning the target reset after a checksum failure, the freshness floors of each pass, and the verify-before-sync order, so `ActionSync` keeps only the CLI wiring | An action is called from Python, or the typed settings work starts | [STYLE.md](STYLE.md#layers) |
 | `SyncPlanner(source, target, listing)` returning the `SyncPlan`, so `RepoSync` keeps only the transfer, with an optional listing replacing the `existing_files`/`can_list` pair | The `ActionSync` sync policy moves into a repo-level use case, or `RepoSync` gains a second caller | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `ComponentRelease` split out of `Release`, so `load_component` and `setup_component` cannot be called on a `RootRelease` | A third Release role, or a caller of either method on the root | [STRUCTURE.md](STRUCTURE.md#layout) |
 | `IndexKind` value object owning the arch directory, index name, container class, and writability, replacing the `SOURCE_ARCH` comparisons | A second index kind is written, or `insert` of source packages starts | [STRUCTURE.md](STRUCTURE.md#dependencies) |
@@ -49,15 +51,15 @@ Restructuring a user would not see.
 ## Known deviations
 
 Implementation that does not yet meet a root contract. Contracts link here instead of carrying
-TODOs; remove a row when the code meets the rule. `Fix` links the release or backlog row that
-closes the deviation; `—` means none is recorded.
+TODOs; remove a row when the code meets the rule. `Fix` names the release or backlog row that
+closes the deviation by its first words and links its section; `—` means none is recorded.
 
 | Contract | Deviation | Source | Fix |
 | -- | -- | -- | -- |
 | [VALIDATION.md](VALIDATION.md#sources-stanzas) | Read-only-ness on the insert path is inferred per call site: `RepoRW.binary_archs` filters on the source architecture, and the `.changes` and control-field checks refuse it before the transfer. `remove` and `save` already rely on `Sources` returning the base contract's "nothing changed"; a read-only base shared by `Packages` and `Sources` would own insert too. | `repo/repo_rw.py` `RepoRW.binary_archs`, `action/action_pkg.py` `_target_archs` | — |
-| [STYLE.md](STYLE.md#layers) | `ActionPkg.insert` places each `.deb` in the pool, caps its reads at its `.changes` `Size`, checks it against its `.changes` digest, and refuses other bytes under a held pool key through `RepoRW.held_digests`, repo logic an action does not own. | `action/action_pkg.py` `insert` | Moves into `RepoRW` with `IndexKind` → [internal design](#internal-design) |
-| [CRYPTO.md](CRYPTO.md#verification-failures) | `insert` builds the index stanza from a first read of each `.deb` and checks its `.changes` digest on the transfer, a second read, so an incoming-storage writer racing the two could pair other control fields with the verified payload. | `action/action_pkg.py` `insert` | One read from the stored copy → [internal design](#internal-design) |
-| [STYLE.md](STYLE.md#layers) | `ActionSync` decides the sync policy itself: the target reset after a checksum failure, the freshness floors of each pass, and the verify-before-sync order. | `action/action_sync.py` `sync`, `_load_target`, `_sync_until_settled` | Repo-level use case with typed settings → [internal design](#internal-design) |
+| [STYLE.md](STYLE.md#layers) | `ActionPkg.insert` places each `.deb` in the pool, caps its reads at its `.changes` `Size`, checks it against its `.changes` digest, and refuses other bytes under a held pool key through `RepoRW.held_digests`, repo logic an action does not own. | `action/action_pkg.py` `insert` | `ActionPkg.insert` placement into `RepoRW` → [internal design](#internal-design) |
+| [CRYPTO.md](CRYPTO.md#verification-failures) | `insert` builds the index stanza from a first read of each `.deb` and checks its `.changes` digest on the transfer, a second read, so an incoming-storage writer racing the two could pair other control fields with the verified payload. | `action/action_pkg.py` `insert` | `insert` reads each `.deb` control from the stored copy → [internal design](#internal-design) |
+| [STYLE.md](STYLE.md#layers) | `ActionSync` decides the sync policy itself: the target reset after a checksum failure, the freshness floors of each pass, and the verify-before-sync order. | `action/action_sync.py` `sync`, `_load_target`, `_sync_until_settled` | Repo-level sync use case → [internal design](#internal-design) |
 | [VALIDATION.md](VALIDATION.md#index-selection) | A component nested below a selected one, as `main/debug` below `--components main`, keeps its indices, since selection splits a key at the longest selected component, while its payloads are never loaded, so the mirror lists packages it lacks. | `repo/index_selection.py` `_split_component` | — |
 | [VALIDATION.md](VALIDATION.md#repository-index-paths) | `by-hash/` objects are not mirrored because the root `Release` does not list them; an apt client of a mirror whose `Release` advertises `Acquire-By-Hash: yes` falls back to the canonical index path after a 404. | `repo/__init__.py` `Repo._get_indices` | Mirror `by-hash/` indices → [features](#features) |
 | [VALIDATION.md](VALIDATION.md#object-sizes) | An upload inserted with `--deb-filename`, without digest verification, or listed in its `.changes` with no usable `Size`, on a backend that cannot seek, is read whole with `storage.get` before the control caps apply, since no checked `Size` bounds it and python-debian's `ArFile` seeks; only the backend bounds its size. | `repo/debfile.py` `DebFile._read_control` | — |
