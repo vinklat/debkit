@@ -132,7 +132,7 @@ per entry by its transfer; the source is never probed.
 ## Object sizes
 
 Release files, stored indices, and `.changes` files are read by `read_capped()` in
-`repo/compress.py` through txstore's capped `get`, which reads at most one byte past a cap →
+`repo/compress.py` through txstore's capped `get` →
 [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi), so each
 is refused before it is verified or buffered in full. Sync and insert transfers stop the same way
 and leave no target object. Upload control data is capped by `_control_of()` in `repo/debfile.py`,
@@ -149,8 +149,10 @@ it: without GPG verification the source sets both a body and its `Size` →
 | Stored index | At most the largest `Size` a checked root or per-arch Release records, and never past `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
 | Stored index without a `Size` | A Release listing the index with no usable `Size` leaves only `MAX_INDICES_BYTES`. | Past the cap → `PackagesException` (Read) |
 | `.changes` file | At most `MAX_CHANGES_BYTES` (4 MiB), read by `read_capped()` before `--changes-sha256` is checked. | → `ChangesException` (Read) |
-| Sync transfer | At most the largest `Size` of the records `Repo.verify_checksum` checks the object against → [CRYPTO.md](CRYPTO.md#verification-order); unchecked, no record listing the object, or one listing it with no usable `Size` → no cap. | Larger than recorded → `ChecksumException` (Distrustful), not retried |
-| Insert payload | Each `.deb` a checked `.changes` lists is at most the `Size` it records, on its transfer and on a whole-file read by a backend that cannot seek; `--deb-filename`, unchecked, or a `.changes` listing it with no usable `Size` → no cap. | Larger than recorded → `ChecksumException` (Distrustful) |
+| Sync transfer | At most the largest `Size` of the records `Repo.verify_checksum` checks the object against → [CRYPTO.md](CRYPTO.md#verification-order). | Larger than recorded → `ChecksumException` (Distrustful), not retried |
+| Sync transfer without a `Size` | Unchecked, no record listing the object, or one listing it with no usable `Size` → no cap. | — |
+| Insert payload | Each `.deb` a checked `.changes` lists is at most the `Size` it records, on its transfer and on a whole-file read by a backend that cannot seek. | Larger than recorded → `ChecksumException` (Distrustful) |
+| Insert payload without a `Size` | `--deb-filename`, unchecked, or a `.changes` listing the `.deb` with no usable `Size` → no cap. | — |
 | Held object digests | Digest reads of objects the target already holds (`held_digests`, `check`) stream through txstore's `get_digests` with no cap: the target is the operator's storage, and a stream buffers nothing. | — |
 | Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
 | Upload control tar | The `control.tar` decodes to at most `MAX_CONTROL_TAR_BYTES` (64 MiB), which also bounds its member count; it is uncompressed, `.gz`, `.xz`, `.bz2`, `.lzma`, or `.zst`, the last decoded by the `zstd` binary. | Past the limit, another compression, or a stream that does not decode → `DebFileException` (Read) |

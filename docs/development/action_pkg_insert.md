@@ -13,6 +13,15 @@ together. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 
+## Code map
+
+| Concern | Module | Notes |
+| -- | -- | -- |
+| Orchestration | `action/action_pkg.py` | `ActionPkg.insert` takes each `.deb`'s `max_size` from the pinned `.changes` (`recorded_size()`) and checks the transferred digests |
+| Payload cap | `repo/hashes.py` | `refuse_past_recorded_size()` names a capped read or transfer as `ChecksumException` → [VALIDATION.md](../../VALIDATION.md#object-sizes) |
+| Control read | `repo/debfile.py` | `DebFile._read_control()` reads a backend that cannot seek whole, capped at `max_size` |
+| Pool transfer | `repo/repo_rw.py` | `RepoRW.held_digests()` checks the pool key; `RepoRW.transfer_from()` passes `max_size` to the copy |
+
 ## Activity diagram
 
 ![Activity diagram](diagrams/action-pkg-insert-activity.svg)

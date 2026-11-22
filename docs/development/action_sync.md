@@ -11,6 +11,15 @@ target commits every change or discards them all. Rules are owned by
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#mirror-a-repository).
 
+## Code map
+
+| Concern | Module | Notes |
+| -- | -- | -- |
+| Retry loop | `action/action_sync.py` | `ActionSync.sync` runs `_sync_until_settled` inside `maybe_transaction`, at most `MAX_UPDATED_REPO_RETRIES` passes |
+| Plan and copy | `repo/repo_sync.py` | `RepoSync.build_sync_lists()` plans; `RepoSync.sync()` copies each object through `_transfer_file()` |
+| Transfer cap | `repo/__init__.py`, `repo/hashes.py` | The same cap as an index copy → [repo_sync_indices.md](repo_sync_indices.md#code-map) |
+| Target writes | `repo/repo_rw.py` | `RepoRW.transfer_from()` passes `max_size` to the copy; `RepoRW.delete()` drops an object whose digests mismatch |
+
 ## Activity diagram
 
 ![Activity diagram](diagrams/action-sync-activity.svg)
