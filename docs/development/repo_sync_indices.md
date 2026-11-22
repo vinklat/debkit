@@ -27,6 +27,7 @@ rebuilt by name. Rules are owned by [CONFIG.md](../../CONFIG.md#sync) (flags),
 | Shared root | `repo/shared_root.py` | `shared_root_claims()` loads every other `dists/<dist>/`; `SharedRoot.deletable()` keeps what it claims, `SharedRoot.replaceable()` what it pins |
 | Copy reduction | `repo/repo_sync.py` | `RepoSync._reduce_indices()` drops indices the target already holds unchanged |
 | Transfer skip | `repo/repo_sync.py` | `RepoSync.sync()` skips an unproven index whose transfer finds it missing at the source |
+| Transfer cap | `repo/__init__.py`, `repo/hashes.py`, `repo/repo_sync.py` | `Repo.max_recorded_size()` takes the largest `Size` its checked records list (`largest_recorded_size()`); `RepoSync._transfer_file` refuses past it via `refuse_past_recorded_size()` → [VALIDATION.md](../../VALIDATION.md#object-sizes) |
 | Flag wiring | `action/action_sync.py` | `--architectures` and `--indices-exclude` reach both repo params |
 
 ## Activity diagram
