@@ -17,7 +17,7 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 | -- | -- | -- |
 | Retry loop | `action/action_sync.py` | `ActionSync.sync` runs `_sync_until_settled` inside `maybe_transaction`, at most `MAX_UPDATED_REPO_RETRIES` passes |
 | Plan and copy | `repo/repo_sync.py` | `RepoSync.build_sync_lists()` plans; `RepoSync.sync()` copies each object through `_transfer_file()` |
-| Transfer cap | `repo/__init__.py`, `repo/hashes.py` | The same cap as an index copy → [repo_sync_indices.md](repo_sync_indices.md#code-map) |
+| Transfer cap | `repo/__init__.py`, `repo/hashes.py`, `repo/repo_sync.py` | `Repo.max_recorded_size()` sets `max_size`; `RepoSync._transfer_file` refuses past it via `refuse_past_recorded_size()` → [VALIDATION.md](../../VALIDATION.md#object-sizes) |
 | Target writes | `repo/repo_rw.py` | `RepoRW.transfer_from()` passes `max_size` to the copy; `RepoRW.delete()` drops an object whose digests mismatch |
 
 ## Activity diagram
