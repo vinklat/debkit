@@ -137,8 +137,8 @@ Release files, stored indices, and `.changes` files are read by `read_capped()` 
 is refused before it is verified or buffered in full. Sync and insert transfers stop the same way
 and leave no target object. Upload control data is capped by `_control_of()` in `repo/debfile.py`,
 which decodes the `control.tar` member under a limit and walks it as a stream. "Checked" means
-digest verification is on. A recorded `Size` is only as trustworthy as the metadata that lists
-it: without GPG verification the source sets both a body and its `Size` →
+digest verification is on. A recorded `Size` is only as trustworthy as the metadata that lists it:
+without GPG verification the source sets both a body and its `Size` →
 [CRYPTO.md](CRYPTO.md#verification-switches).
 
 | Rule | Constraint | Failure |
