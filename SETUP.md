@@ -137,10 +137,10 @@ Size-capped storage reads on txstore 0.1.3.
 | Change | Migration |
 | -- | -- |
 | txstore | Requires txstore 0.1.3 or later → [Dependency policy](#dependency-policy). |
-| Unsupported operation | An operation the backend lacks → `StorageNotSupportedException` (Generic), no longer an uncaught `NotImplementedError` → [EXCEPTIONS.md](EXCEPTIONS.md#domain-exceptions). |
+| Unsupported operation | An operation the backend lacks → `StorageNotSupportedException` (Generic), no longer an uncaught `NotImplementedError` → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | Oversized objects | A checked copy longer than its recorded `Size` stops → `ChecksumException` (Distrustful); when a cap applies → [VALIDATION.md](VALIDATION.md#object-sizes). |
 | Stream read failures | A backend error while an S3 or HTTP body is read is now a `StorageException` instead of escaping unwrapped → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
-| Stream read failures in sync | A sync copy retries one, then → `RepoSyncException` (Sync) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
+| Stream read failures in a sync copy | A failed copy is retried, then → `RepoSyncException` (Sync) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
 | Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
 
 ### 0.1.0
