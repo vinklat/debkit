@@ -8,7 +8,8 @@ fact; link instead of copying.
 1. The root contract that owns the domain below; `STYLE.md` prevails on style.
 2. Implementation under `src/debkit/` when checking current behavior.
 3. `docs/guides/` for user how-tos, `docs/development/` for contributor explanations and diagrams,
-   and `ROADMAP.md` for planned work and known deviations. All are non-canonical.
+   `ROADMAP.md` for planned work and known deviations, and `CHANGELOG.md` for released changes and
+   upgrade notes. All are non-canonical.
 
 Storage behavior (backends, transactions, footmarks, history, S3 ACLs, digests) is owned by the
 [txstore](https://github.com/vinklat/txstore) contracts; debkit's contracts own only how debkit uses
@@ -27,7 +28,7 @@ second definition.
 | `CONFIG.md` | CLI flags, `DEBKIT_*` variables, resolution order, defaults, secrets |
 | `CRYPTO.md` | GPG verify and sign, Debian hash blocks, verification order, Release freshness |
 | `TESTING.md` | Required coverage, harness rules, gates |
-| `SETUP.md` | Install, run, test, quality gates, diagrams, dependency policy, release, upgrade notes |
+| `SETUP.md` | Install, run, test, quality gates, diagrams, dependency policy, release |
 
 ## Task routing
 
@@ -47,7 +48,7 @@ Read only the relevant sections; locate code from [STRUCTURE.md](STRUCTURE.md#la
 | Bug fix | Owning contract + `EXCEPTIONS.md` | `TESTING.md` |
 | Tests | `TESTING.md` | Contract for the behavior under test |
 | Contract / doc edit | Writing rules below → owning contract | `scripts/check_docs.py`, `SETUP.md` quality gates |
-| Release | `SETUP.md` release | `.github/workflows/release.yml`, `ROADMAP.md` phases |
+| Release | `SETUP.md` release | `.github/workflows/release.yml`, `CHANGELOG.md`, `ROADMAP.md` releases |
 | Quality gate / CI change | `SETUP.md` quality gates | `.github/workflows/ci.yml` |
 | Developer explanation / diagram | `docs/development/` | Owning root contract, `SETUP.md` diagrams |
 | User how-to / future behavior | `docs/guides/` / `ROADMAP.md` | Owning root contract before implementing |

@@ -1,7 +1,7 @@
 # Setup and release contract
 
-Owns: install, run, test, quality gates, diagrams, dependency policy, release, and upgrade notes.
-Routing → [AGENTS.md](AGENTS.md#canonical-sources).
+Owns: install, run, test, quality gates, diagrams, dependency policy, and release. Routing →
+[AGENTS.md](AGENTS.md#canonical-sources).
 
 ## Prerequisites and install
 
@@ -62,8 +62,9 @@ code, `CONFIG.md` flag and variable parity with the option registrations, `EXCEP
 with the exception classes and the `cli.py` exit groups, an exit group, a raise, and a test for
 every exception class, every `Exception (group)` notation, 100-column prose, table rows with as many
 cells as their header, no `TODO` markers in contracts, the `docs/*/README.md` indexes, the README
-version, PyPI-only package sources, txstore links pinned to the tag of the txstore version `uv.lock`
-resolves, and the [diagram](#diagrams) fence and embed rules.
+version, a dated `CHANGELOG.md` section for the `pyproject.toml` version, PyPI-only package sources,
+txstore links pinned to the tag of the txstore version `uv.lock` resolves, and the
+[diagram](#diagrams) fence and embed rules.
 
 ## Diagrams
 
@@ -107,8 +108,9 @@ A floor raise names the Debian testing version that satisfies it in the change d
 | -- | -- |
 | Version | `pyproject.toml` `[project].version` and the `README.md` "Current version" line. |
 | Version parity | `check_docs.py` fails when the two differ. |
+| Changelog | Add each user-visible change as a `Change` and `Migration` row under `## Unreleased`, in the same change → [CHANGELOG.md](CHANGELOG.md). |
 | `__version__` | Read from the installed distribution. |
-| Version bump | `uv version --bump patch` (or `minor`, `major`), the README line to match, and every `Unreleased:` upgrade note renamed to `<version>:`. |
+| Version bump | `uv version --bump patch` (or `minor`, `major`), the README line to match, and the `CHANGELOG.md` heading `## Unreleased` renamed to `## <version> - <YYYY-MM-DD>` below a new empty `## Unreleased`. |
 | Steps | Version bump → [quality gates](#quality-gates) → merge to `main` → `git tag vX.Y.Z` on `main` → `git push origin vX.Y.Z`. |
 | Trigger | Pushing a tag `vX.Y.Z`, with or without a suffix (e.g. `v0.2.0rc1`). |
 | Gates | `ci.yml` runs in full before the build. |
@@ -121,44 +123,9 @@ A floor raise names the Debian testing version that satisfies it in the change d
 | Link check | No relative link is left in the wheel's description. |
 | Metadata check | `twine check --strict` passes, with twine pinned in `release.yml`. |
 | Smoke test | The wheel, installed alone with its dependencies, imports with `debkit.__version__` equal to the tag version, and `debkit --version` prints it. |
-| Stages | TestPyPI, then PyPI, then a GitHub release with the sdist and wheel and a link to the [upgrade notes](#upgrade-notes). |
+| Stages | TestPyPI, then PyPI, then a GitHub release with the sdist and wheel and a link to the tag's [CHANGELOG.md](CHANGELOG.md). |
 | GitHub environments | `testpypi` and `pypi`; `pypi` has a required reviewer, so the PyPI upload waits for approval. |
 | Tag ruleset | A repository ruleset limits who creates `v*` tags. |
 | Trusted publisher identity | Owner `vinklat`, repo `debkit`, workflow `release.yml`. |
 | Trusted publisher on TestPyPI | That identity with environment `testpypi`. |
 | Trusted publisher on PyPI | That identity with environment `pypi`. |
-
-## Upgrade notes
-
-### 0.1.1
-
-Size-capped storage reads on txstore 0.1.3.
-
-| Change | Migration |
-| -- | -- |
-| txstore | Requires txstore 0.1.3 or later → [Dependency policy](#dependency-policy). |
-| Unsupported operation | An operation the backend lacks is now a `StorageNotSupportedException` instead of a bare `NotImplementedError`, handled like any storage failure → [EXCEPTIONS.md](EXCEPTIONS.md#domain-exceptions). |
-| Oversized objects | A checked copy longer than its recorded `Size` stops → `ChecksumException` (Distrustful); when a cap applies → [VALIDATION.md](VALIDATION.md#object-sizes). |
-| Stream read failures | A backend error while an S3 or HTTP body is read is now a `StorageException` instead of escaping unwrapped → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
-| Stream read failures in a sync copy | A failed copy is retried, then → `RepoSyncException` (Sync) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
-| Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
-
-### 0.1.0
-
-Initial public release, on the public txstore storage package.
-
-| Change | Migration |
-| -- | -- |
-| Variables | Every variable gains the `DEBKIT_` prefix: `TARGET_URL` → `DEBKIT_TARGET_URL`, `S3_SECRET` → `DEBKIT_S3_SECRET`, and so on → [CONFIG.md](CONFIG.md). |
-| Switches | `--skip-verify 1` → `--skip-verify`; `--skip-verify-gpg false` → omit it or pass `--no-skip-verify-gpg`. The same holds for `--skip-verify-ssl` and `--allow-release-rollback`. |
-| Logging | `-l` gains `DEBKIT_LOG_LEVEL` and drops `TRACING`; `--log-format json` is new. |
-| Filesystem URLs | `fs://` takes an absolute path only: `fs://debian` → `debian` or `fs:///abs/debian` → [VALIDATION.md](VALIDATION.md#storage-urls). |
-| S3 bucket ACL | A created bucket no longer inherits `--s3-default-acl`; pass `--s3-bucket-acl` to set one. |
-| S3 credentials | Unset S3 credentials fall back to `TXSTORE_S3_ACCESS` / `TXSTORE_S3_SECRET`. |
-| `--history-max-age` | Now has an upper bound → [VALIDATION.md](VALIDATION.md#history-retention). |
-| Help | `--help` no longer prints secret values taken from the environment. |
-| Secret flags | `-t`/`--s3-secret` and `--gnupg-passphrase` are gone: set `DEBKIT_S3_SECRET` and `DEBKIT_GNUPG_PASSPHRASE` instead → [CONFIG.md](CONFIG.md#secrets). |
-| Pool layout | An inserted `.deb` lands in Debian's source pool layout under its source package name, not its upload path's first letter and `Package` name → [VALIDATION.md](VALIDATION.md#filename-safety). Old pool keys stay valid; re-inserting an existing version adds a second stanza under its new key. |
-| GnuPG home | `--gnupg-home` defaults to `~/.gnupg`, not `.gnupg` under the working directory, so a checkout cannot plant the trusted keyring → [CONFIG.md](CONFIG.md#global-flags). Keep a per-directory home with `DEBKIT_GNUPG_HOME=$PWD/.gnupg`. |
-| Trusted keys | Verification reads no `gpg.conf`, so its `keyring` lines and key retrieval or import no longer authenticate a signer: import the keys into the trusted keyring → [CRYPTO.md](CRYPTO.md#gpg). GnuPG has a minimum version → [Prerequisites](#prerequisites-and-install). |
-| Signing without a passphrase | Fixed: with no `DEBKIT_GNUPG_PASSPHRASE`, gpg read the first line of the Release as the passphrase, so `Release.gpg` and `InRelease` signed the Release without it. Re-sign such a repository with any `insert` or `remove`. |

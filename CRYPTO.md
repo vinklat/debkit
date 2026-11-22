@@ -57,7 +57,7 @@ hash-block layer over them is `repo/hashes.py`.
 | Item | Rule |
 | -- | -- |
 | Algorithms | `MD5Sum`, `SHA1`, `SHA256`, `SHA512`; `MD5Sum` exists for Debian compatibility and new behavior never relies on it alone. |
-| `SHA1` | A `SHA1`-only record verifies: debkit filters nothing from txstore's comparison list; how algorithms combine → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#digests); requiring `SHA256` or `SHA512` → [ROADMAP.md](ROADMAP.md#ideas). |
+| `SHA1` | A `SHA1`-only record verifies: debkit filters nothing from txstore's comparison list; how algorithms combine → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#digests); requiring `SHA256` or `SHA512` → [ROADMAP.md](ROADMAP.md#features). |
 | `ChecksumOpen`, `calc_digests`, `compare_digests`, `normalize_digests` | txstore; comparison semantics, including that MD5 alone never makes a match → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#digests). |
 | Non-overlapping, unknown, or mismatched digests | `verify_checksum` returns `False`; what each path raises or logs → [Verification failures](#verification-failures). |
 | Hash blocks | `parse_hash_block()` in `repo/hashes.py` splits a `Release` hash field, a `Checksums-<algorithm>` field, or a `Sources` `Files` field into `(digest, size, filename)` triples; a trailing partial run is dropped. |
@@ -126,7 +126,7 @@ what an older Release no longer lists.
 | `insert --changes-filename` payload mismatch | The transaction discards the staged transfer → [STORAGE.md](STORAGE.md#transactions). |
 | `insert --deb-filename` payload | No manifest lists it, so it is never verified. |
 | `insert` signed `.changes` | Parsed from its `cleartext_body`; its signature is not verified, so `--changes-sha256` is the only check on the file. |
-| `insert` trust in the incoming storage | Trusted like `--deb-filename` input: whoever can write it can publish, since an unpinned `.changes` only shows the upload is consistent with itself. Pin `--changes-sha256` from a channel the uploader cannot write; uploader signatures → [ROADMAP.md](ROADMAP.md#ideas). |
+| `insert` trust in the incoming storage | Trusted like `--deb-filename` input: whoever can write it can publish, since an unpinned `.changes` only shows the upload is consistent with itself. Pin `--changes-sha256` from a channel the uploader cannot write; uploader signatures → [ROADMAP.md](ROADMAP.md#features). |
 | `insert` `.changes` with malformed armor | → `ChangesException` (Read). |
 | Corrupted target indices during `sync` | Logged, target reset, sync proceeds and copies every selected index again → [VALIDATION.md](VALIDATION.md#index-selection); a reset target lists no package for `--verify-existing` to check. |
 | GPG verification failure | `GPGVerifyException` (Read). |
