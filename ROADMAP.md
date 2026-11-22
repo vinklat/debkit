@@ -7,6 +7,7 @@ Planned releases, deferred work, and places the code does not yet meet a contrac
 
 | Version | Goal | Blocked by |
 | -- | -- | -- |
+| 0.1.2 | Nested components: `sync` splits an index key at the longest component the source Release declares, not only the selected ones, so `main/debug` stays out of `--components main` | — |
 | 0.2.0 | Debian package `debkit` | txstore 0.2.0 and its Debian package |
 
 ## Backlog
@@ -51,8 +52,8 @@ Restructuring a user would not see.
 ## Known deviations
 
 Implementation that does not yet meet a root contract. Contracts link here instead of carrying
-TODOs; remove a row when the code meets the rule. `Fix` names the release or backlog row that
-closes the deviation by its first words and links its section; `—` means none is recorded.
+TODOs; remove a row when the code meets the rule. `Fix` names the release or backlog row that closes
+the deviation by its first words and links its section; `—` means none is recorded.
 
 | Contract | Deviation | Source | Fix |
 | -- | -- | -- | -- |
@@ -60,7 +61,7 @@ closes the deviation by its first words and links its section; `—` means none 
 | [STYLE.md](STYLE.md#layers) | `ActionPkg.insert` places each `.deb` in the pool, caps its reads at its `.changes` `Size`, checks it against its `.changes` digest, and refuses other bytes under a held pool key through `RepoRW.held_digests`, repo logic an action does not own. | `action/action_pkg.py` `insert` | `ActionPkg.insert` placement into `RepoRW` → [internal design](#internal-design) |
 | [CRYPTO.md](CRYPTO.md#verification-failures) | `insert` builds the index stanza from a first read of each `.deb` and checks its `.changes` digest on the transfer, a second read, so an incoming-storage writer racing the two could pair other control fields with the verified payload. | `action/action_pkg.py` `insert` | `insert` reads each `.deb` control from the stored copy → [internal design](#internal-design) |
 | [STYLE.md](STYLE.md#layers) | `ActionSync` decides the sync policy itself: the target reset after a checksum failure, the freshness floors of each pass, and the verify-before-sync order. | `action/action_sync.py` `sync`, `_load_target`, `_sync_until_settled` | Repo-level sync use case → [internal design](#internal-design) |
-| [VALIDATION.md](VALIDATION.md#index-selection) | A component nested below a selected one, as `main/debug` below `--components main`, keeps its indices, since selection splits a key at the longest selected component, while its payloads are never loaded, so the mirror lists packages it lacks. | `repo/index_selection.py` `_split_component` | — |
+| [VALIDATION.md](VALIDATION.md#index-selection) | A component nested below a selected one, as `main/debug` below `--components main`, keeps its indices, since selection splits a key at the longest selected component, while its payloads are never loaded, so the mirror lists packages it lacks. | `repo/index_selection.py` `_split_component` | Release 0.1.2 → [releases](#releases) |
 | [VALIDATION.md](VALIDATION.md#repository-index-paths) | `by-hash/` objects are not mirrored because the root `Release` does not list them; an apt client of a mirror whose `Release` advertises `Acquire-By-Hash: yes` falls back to the canonical index path after a 404. | `repo/__init__.py` `Repo._get_indices` | Mirror `by-hash/` indices → [features](#features) |
 | [VALIDATION.md](VALIDATION.md#object-sizes) | An upload inserted with `--deb-filename`, without digest verification, or listed in its `.changes` with no usable `Size`, on a backend that cannot seek, is read whole with `storage.get` before the control caps apply, since no checked `Size` bounds it and python-debian's `ArFile` seeks; only the backend bounds its size. | `repo/debfile.py` `DebFile._read_control` | — |
 | [SETUP.md](SETUP.md#dependency-policy) | The `debian-testing` CI job installs txstore from PyPI, since Debian does not package it yet; every other dependency comes from apt. | `.github/debian-test.sh` | Release 0.2.0 → [releases](#releases) |

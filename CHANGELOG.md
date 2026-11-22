@@ -1,7 +1,7 @@
 # Changelog
 
-Released changes and their upgrade notes. Planned work → [ROADMAP.md](ROADMAP.md); entry format
-and release steps → [SETUP.md](SETUP.md#release).
+Released changes and their upgrade notes. Planned work → [ROADMAP.md](ROADMAP.md); entry format and
+release steps → [SETUP.md](SETUP.md#release).
 
 ## Unreleased
 
@@ -21,9 +21,9 @@ Size-capped storage reads on txstore 0.1.3. Release →
 
 ## 0.1.0 - 2026-11-12
 
-Initial public release, on the public txstore storage package: insert, remove, inspect, sync,
-and check Debian repositories on fs, S3, and HTTP, with transactional writes and history.
-Release → [v0.1.0](https://github.com/vinklat/debkit/releases/tag/v0.1.0).
+Initial public release, on the public txstore storage package: insert, remove, inspect, sync, and
+check Debian repositories on fs, S3, and HTTP, with transactional writes and history. Release →
+[v0.1.0](https://github.com/vinklat/debkit/releases/tag/v0.1.0).
 
 | Change | Migration |
 | -- | -- |
