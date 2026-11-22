@@ -88,7 +88,7 @@ per entry by its transfer; the source is never probed.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Component | The longest selected component the key starts with, followed by `/`, as `updates/main`; a key under none of them is outside the selection and dropped | — |
+| Component | The longest component the source root Release's `Components` field declares that the key starts with, followed by `/`, as `updates/main`; the key is selected only when that component is selected, so `main/debug` stays out of `--components main` → [ROADMAP.md](ROADMAP.md#known-deviations) | — |
 | No component | A key with no `/` belongs to no component and passes | — |
 | Known architectures | The selected architectures plus every root Release token the Release token rule keeps, whatever `--architectures` selects → [Architectures](#architectures) | — |
 | Architecture token | A `-<arch>` run ending at `.`, `/`, or the key end, matched only against the known architectures; where several end at one token the longest owns it | — |

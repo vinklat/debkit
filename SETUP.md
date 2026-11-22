@@ -108,7 +108,7 @@ A floor raise names the Debian testing version that satisfies it in the change d
 | -- | -- |
 | Version | `pyproject.toml` `[project].version` and the `README.md` "Current version" line. |
 | Version parity | `check_docs.py` fails when the two differ. |
-| Changelog | Add each user-visible change as a `Change` and `Migration` row under `## Unreleased`, in the same change; `check_docs.py` fails without a dated section for the version → [CHANGELOG.md](CHANGELOG.md). |
+| Changelog | Add each user-visible change as a `Change` and `Migration` row under `## Unreleased`, in the same change → [CHANGELOG.md](CHANGELOG.md). |
 | `__version__` | Read from the installed distribution. |
 | Version bump | `uv version --bump patch` (or `minor`, `major`), the README line to match, and the `CHANGELOG.md` heading `## Unreleased` renamed to `## <version> - <YYYY-MM-DD>` below a new empty `## Unreleased`. |
 | Steps | Version bump → [quality gates](#quality-gates) → merge to `main` → `git tag vX.Y.Z` on `main` → `git push origin vX.Y.Z`. |
