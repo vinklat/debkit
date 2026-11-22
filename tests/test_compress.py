@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gzip
-import io
 import lzma
 import random
 import struct
@@ -16,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from helpers.binaries import requires_binary
-from txstore import StorageException, StorageMetrics
+from txstore import StorageException, StorageFS
 
 from debkit.repo.compress import (
     CODECS,
@@ -227,56 +226,37 @@ def test_uncompressed_codec_is_discovered_last() -> None:
 # ---------------------------------------------------------------------------
 
 
-class _CountingStream(io.BytesIO):
-    """A stream that records how many bytes were read from it."""
-
-    def __init__(self, data: bytes) -> None:
-        super().__init__(data)
-        self.read_total = 0
-
-    def read(self, size: int | None = -1, /) -> bytes:
-        chunk = super().read(size)
-        self.read_total += len(chunk)
-        return chunk
+def _fs_storage(tmp_path: Path, data: bytes) -> StorageFS:
+    storage = StorageFS(str(tmp_path))
+    storage.put("p", data)
+    return storage
 
 
-def _capped_storage(data: bytes) -> tuple[MagicMock, _CountingStream]:
-    stream = _CountingStream(data)
-    storage = MagicMock()
-    storage.get_stream.return_value = stream
-    storage.metrics = StorageMetrics()
-    return storage, stream
-
-
-def test_read_capped_returns_an_object_at_the_limit() -> None:
-    storage, _ = _capped_storage(b"x" * 10)
+def test_read_capped_returns_an_object_at_the_limit(tmp_path: Path) -> None:
+    storage = _fs_storage(tmp_path, b"x" * 10)
 
     assert read_capped(storage, "p", 10) == b"x" * 10
     assert storage.metrics.read_bytes == 10
 
 
-def test_read_capped_refuses_an_object_past_the_limit_without_reading_it_all() -> None:
-    storage, stream = _capped_storage(b"x" * (3 << 20))
+def test_read_capped_refuses_an_object_past_the_limit_as_a_size_limit_error(
+    tmp_path: Path,
+) -> None:
+    """txstore's cap stops the read; a refusal counts one read error and no bytes."""
+    storage = _fs_storage(tmp_path, b"x" * (3 << 20))
 
-    with pytest.raises(SizeLimitError, match="larger than 10 bytes"):
-        read_capped(storage, "p", 10)
-    assert stream.read_total == 11
-    assert stream.closed
-
-
-class _FailingStream(io.BytesIO):
-    def read(self, size: int | None = -1, /) -> bytes:
-        raise OSError("disk gone")
-
-
-def test_read_capped_maps_a_read_fault_as_txstore_get_does() -> None:
-    storage = MagicMock()
-    storage.get_stream.return_value = _FailingStream()
-    storage.metrics = StorageMetrics()
-
-    with pytest.raises(StorageException, match="Error reading p: disk gone"):
+    with pytest.raises(SizeLimitError, match="p is larger than 10 bytes"):
         read_capped(storage, "p", 10)
     assert storage.metrics.read_errors_total == 1
+    assert storage.metrics.read_bytes == 0
+
+
+def test_read_capped_lets_a_storage_failure_through() -> None:
+    storage = MagicMock()
+    storage.get.side_effect = StorageException("disk gone")
+
+    with pytest.raises(StorageException, match="disk gone"):
+        read_capped(storage, "p", 10)
 
 
 # ---------------------------------------------------------------------------

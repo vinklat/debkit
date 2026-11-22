@@ -9,7 +9,7 @@ participant "Storage\n(target)" as TStor
 ActionSync -> Src: build_sync_lists(target, indices_only)
 Src -> Tgt: held_paths()
 Tgt -> TStor: list()
-Tgt --> Src: existing objects, or None\n[NotImplementedError on http]
+Tgt --> Src: existing objects, or None\n[StorageNotSupportedException on http]
 
 Src -> Src: _get_indices()
 Src -> Rel: get_indices_paths()
@@ -51,10 +51,17 @@ note right: unproven: copied indices the target lacks\nthat no load or parse pro
 
 ActionSync -> Src: sync(target, plan)
 loop each path in plan.copy
-  Src -> Tgt: transfer_from(SStor, path)
+  Src -> Src: max_size = max_recorded_size(path) if digests are checked, else None
+  Src -> Tgt: transfer_from(SStor, path, max_size)
   Tgt -> SStor: transfer(path, TStor)
   alt transferred
     Tgt --> Src: digests
+    opt digests are checked and no record verifies them
+      Src -> Tgt: delete(path)
+      Src --> ActionSync: ChecksumException
+    end
+  else past max_size
+    Src --> ActionSync: ChecksumException\n[copy stopped at the cap; not retried]
   else StorageNotFoundException, path in plan.unproven
     note right of Src: skipped, logged at debug,\nnever retried
   else any other StorageException

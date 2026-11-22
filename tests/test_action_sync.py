@@ -18,7 +18,7 @@ import pytest
 from helpers import trees
 from helpers.factories import make_params
 from helpers.storage import TxnStorageStub, iso_timestamp, seed_history, storage_namespace
-from helpers.trees import write_dist
+from helpers.trees import payload_path, write_dist
 from txstore import (
     HistoryRetention,
     Storage,
@@ -32,6 +32,7 @@ from txstore import (
 from debkit.action import ActionException, OutputType
 from debkit.action.action_sync import MAX_UPDATED_REPO_RETRIES, ActionCheck, ActionSync
 from debkit.repo.component import ComponentException, IndexLoad
+from debkit.repo.hashes import ChecksumException
 from debkit.repo.params import RepoParams
 from debkit.repo.release import ReleaseNotFoundException, ReleaseReadException, RootRelease
 from debkit.repo.repo_diff import RepoDiff
@@ -128,8 +129,6 @@ def test_sync_discards_on_exception() -> None:
 
 def test_sync_discards_on_checksum_exception() -> None:
     """ChecksumException must propagate so the transaction is discarded, not committed."""
-    from debkit.repo.hashes import ChecksumException
-
     txn = TxnStorageStub()
     action = _make_action(storage=txn)
     _source(action).sync.side_effect = ChecksumException("digest mismatch")
@@ -377,6 +376,50 @@ def test_sync_logs_each_release_token_warning_once(
     assert caplog.text.count("'../evil' is not a safe name") == 1
 
 
+@pytest.mark.parametrize("tail", [b"x", b" and an endless tail"], ids=["one-byte-over", "endless"])
+def test_sync_refuses_a_payload_past_its_recorded_size(tmp_path: Path, tail: bytes) -> None:
+    """The transfer stops at the checked `Size`, so an endless body never reaches the target
+    -> VALIDATION.md#object-sizes."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    payload = tmp_path / "src" / payload_path("foo", "3")
+    listed = len(payload.read_bytes())
+    payload.write_bytes(payload.read_bytes() + tail)
+    (tmp_path / "tgt").mkdir()
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+
+    with pytest.raises(ChecksumException, match=f"larger than the {listed} bytes recorded"):
+        action.sync()
+
+    assert not (tmp_path / "tgt" / payload_path("foo", "3")).exists()
+
+
+def test_sync_copies_a_payload_at_its_recorded_size(tmp_path: Path) -> None:
+    """The cap is inclusive: a body exactly its `Size` long is copied."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    payload = tmp_path / "src" / payload_path("foo", "3")
+    (tmp_path / "tgt").mkdir()
+
+    _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt").sync()
+
+    assert (tmp_path / "tgt" / payload_path("foo", "3")).read_bytes() == payload.read_bytes()
+
+
+def test_sync_refuses_an_index_past_its_recorded_size(tmp_path: Path) -> None:
+    """The source load reads the index capped at its Release `Size`, so nothing is copied."""
+    _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
+    index = tmp_path / "src" / _PREFIX / "main/binary-amd64/Packages.gz"
+    listed = len(index.read_bytes())
+    index.write_bytes(index.read_bytes() + b"x")
+    (tmp_path / "tgt").mkdir()
+    action = _fs_action(StorageFS(str(tmp_path / "src")), tmp_path / "tgt")
+
+    with pytest.raises(ChecksumException, match=f"larger than {listed} bytes"):
+        action.sync()
+
+    assert not (tmp_path / "tgt" / "dists").exists()
+    assert not (tmp_path / "tgt" / "pool").exists()
+
+
 class _SwapReleaseOnceFS(StorageFS):
     """Serve other bytes for the first stream of the root Release, as a hostile source may."""
 
@@ -404,8 +447,6 @@ def test_sync_refuses_a_root_release_copy_that_differs_from_the_verified_one(
     tmp_path: Path, swapped_date: str
 ) -> None:
     """Freshness was checked on the loaded bytes; the copy must be those bytes."""
-    from debkit.repo.hashes import ChecksumException
-
     _write_tree(tmp_path / "src", "Thu, 01 Oct 2026 00:00:00 UTC", "3")
     _write_tree(tmp_path / "tgt", "Tue, 01 Sep 2026 00:00:00 UTC", "2")
     real = (tmp_path / "src" / _PREFIX / "Release").read_bytes()
@@ -704,9 +745,11 @@ class _RecordingFS(StorageFS):
         storage_dst: Storage,
         path_dst: str | None = None,
         acl: str | None = None,
+        *,
+        max_size: int | None = None,
     ) -> dict[str, str]:
         self.transferred.append(path_src)
-        return super().transfer(path_src, storage_dst, path_dst, acl)
+        return super().transfer(path_src, storage_dst, path_dst, acl, max_size=max_size)
 
 
 def test_sync_copies_only_the_indices_a_real_tree_changed(tmp_path: Path) -> None:
@@ -1044,10 +1087,10 @@ def test_sync_verify_existing_warns_about_a_failure_it_could_not_delete(
 class _UnreadableIndicesFS(StorageFS):
     """A backend whose every index read and every listing fails."""
 
-    def get(self, path: str) -> bytes:
+    def get(self, path: str, *, max_size: int | None = None) -> bytes:
         if path.startswith("dists/"):
             raise StorageException(f"backend down reading {path}")
-        return super().get(path)
+        return super().get(path, max_size=max_size)
 
     def get_stream(self, path: str) -> IO[bytes]:
         if path.startswith("dists/"):

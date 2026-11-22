@@ -17,6 +17,7 @@ from txstore import (
     HistoryRetention,
     StorageFS,
     StorageNull,
+    StorageTooLargeException,
     TransactionHistory,
     maybe_transaction,
 )
@@ -426,8 +427,11 @@ def _changes_upload(
     changes.get_archs.return_value = field.split()
     changes.names_source_arch.return_value = False
     changes.get_deb_files.return_value = files
+    changes.recorded_size.return_value = None
 
-    def debfile(_storage: object, filename: str, comp: str) -> MagicMock:
+    def debfile(
+        _storage: object, filename: str, comp: str, max_size: int | None = None
+    ) -> MagicMock:
         instance = MagicMock()
         instance.get_package.return_value = make_package(
             filename, Architecture=filename.removesuffix(".deb").rsplit("_", 1)[1]
@@ -875,6 +879,98 @@ def test_insert_checks_each_deb_against_its_changes_digest(
     assert pool.exists() is pooled
     assert not pooled or pool.read_bytes() == listed
     assert not (tmp_path / "repo" / "dists" / "bookworm" / "Release").exists()
+
+
+_LISTED = b"the built package"
+_TAIL = b" and an endless tail"
+
+
+def _capped_insert(
+    tmp_path: Path, mock_debfile_cls: MagicMock, *, verify_digests: bool, tail: bytes = _TAIL
+) -> tuple[ActionPkg, Path]:
+    """An insert whose upload is `tail` past the `Size` its `.changes` lists; returns the pool
+    path."""
+    deb = "foo_1.0_amd64.deb"
+    incoming = StorageFS(str(tmp_path / "in"))
+    incoming.put(deb, _LISTED + tail)
+    incoming.put(
+        "foo_1.0_amd64.changes",
+        f"Format: 1.8\nArchitecture: amd64\nChecksums-Sha256:\n"
+        f" {hashlib.sha256(_LISTED).hexdigest()} {len(_LISTED)} {deb}\n".encode(),
+    )
+    action = _make_pkg_action()
+    action.incoming_storage = incoming
+    action.deb_filename = None
+    action.changes_filename = "foo_1.0_amd64.changes"
+    params = make_params(verify_digests=verify_digests)
+    action.target_repo = RepoRW(StorageFS(str(tmp_path / "repo")), params)
+    instance = MagicMock()
+    instance.get_package.return_value = make_package(
+        f"pool/main/f/foo/{deb}", Package="foo", Version="1.0", Architecture="amd64"
+    )
+    mock_debfile_cls.return_value = instance
+    return action, tmp_path / "repo" / "pool/main/f/foo" / deb
+
+
+@pytest.mark.parametrize("tail", [b"x", _TAIL], ids=["one-byte-over", "endless"])
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_refuses_a_deb_past_the_size_its_changes_lists(
+    mock_debfile_cls: MagicMock, tmp_path: Path, tail: bytes
+) -> None:
+    """An endless upload stops at its pinned `Size` -> VALIDATION.md#object-sizes."""
+    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True, tail=tail)
+
+    with pytest.raises(ChecksumException, match=f"larger than the {len(_LISTED)} bytes recorded"):
+        action.insert()
+    assert not pool.exists()
+    assert mock_debfile_cls.call_args.kwargs["max_size"] == len(_LISTED)
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_takes_a_deb_at_the_size_its_changes_lists(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """The cap is inclusive: a body exactly its `Size` long is inserted."""
+    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True, tail=b"")
+
+    action.insert()
+
+    assert pool.read_bytes() == _LISTED
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_of_an_unchecked_changes_is_uncapped(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    action, pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=False)
+
+    action.insert()
+
+    assert pool.read_bytes() == _LISTED + _TAIL
+    assert mock_debfile_cls.call_args.kwargs["max_size"] is None
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_names_a_capped_debfile_read_a_checksum_failure(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """`DebFile` lets its capped whole-file read's refusal through; the insert names it.
+    The unseekable read itself -> test_debfile.py."""
+    action, _pool = _capped_insert(tmp_path, mock_debfile_cls, verify_digests=True)
+    mock_debfile_cls.side_effect = StorageTooLargeException("foo_1.0_amd64.deb too large")
+
+    with pytest.raises(ChecksumException, match=f"larger than the {len(_LISTED)} bytes recorded"):
+        action.insert()
+
+
+@patch("debkit.action.action_pkg.DebFile")
+def test_insert_of_a_bare_deb_is_uncapped_even_when_checked(
+    mock_debfile_cls: MagicMock, tmp_path: Path
+) -> None:
+    """`--deb-filename` has no record to pin a `Size` -> VALIDATION.md#object-sizes."""
+    _insert_into_real_repo(tmp_path, mock_debfile_cls, "foo", verify_digests=True)
+
+    assert mock_debfile_cls.call_args.kwargs["max_size"] is None
 
 
 @pytest.mark.parametrize("output", [OutputType.brief, OutputType.json])

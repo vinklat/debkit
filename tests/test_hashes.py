@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import pytest
-from txstore import calc_digests
+from txstore import StorageException, StorageTooLargeException, calc_digests
 
-from debkit.repo.hashes import HexDigests, has_sha, parse_hash_block, parse_size
+from debkit.repo.hashes import (
+    ChecksumException,
+    HexDigests,
+    has_sha,
+    largest_recorded_size,
+    parse_hash_block,
+    parse_size,
+    refuse_past_recorded_size,
+)
 
 
 def test_verify_digests_refuses_an_md5_only_entry() -> None:
@@ -47,11 +55,60 @@ def test_parse_hash_block_empty_text_yields_nothing() -> None:
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [("12", 12), ("0", 0), ("12kB", None), ("\u0661\u0662", None), ("", None), (" 1", None)],
-    ids=["digits", "zero", "suffix", "non-ascii-digits", "empty", "padded"],
+    [
+        ("12", 12),
+        ("0", 0),
+        ("9" * 20, int("9" * 20)),
+        ("12kB", None),
+        ("\u0661\u0662", None),
+        ("", None),
+        (" 1", None),
+        ("9" * 21, None),
+        ("9" * 5000, None),
+    ],
+    ids=[
+        "digits",
+        "zero",
+        "max-digits",
+        "suffix",
+        "non-ascii-digits",
+        "empty",
+        "padded",
+        "past-max-digits",
+        "past-int-conversion-limit",
+    ],
 )
 def test_parse_size_reads_only_ascii_digits(value: str, expected: int | None) -> None:
     assert parse_size(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("sizes", "expected"),
+    [(["5", "9"], 9), ([], None), (["9", "2OO"], None), (["9", None], None)],
+    ids=["largest", "no-record", "malformed", "missing"],
+)
+def test_largest_recorded_size_is_lifted_by_a_record_without_a_usable_size(
+    sizes: list[str | None], expected: int | None
+) -> None:
+    """Any record may verify the object, so one without a usable `Size` leaves no cap."""
+    records = [
+        {"SHA256": "aa"} if size is None else {"SHA256": "aa", "Size": size} for size in sizes
+    ]
+    assert largest_recorded_size(records) == expected
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [("a", 42), ("b", None), ("missing", None)],
+    ids=["recorded", "malformed", "unlisted"],
+)
+def test_recorded_size_reads_the_size_the_table_records(
+    filename: str, expected: int | None
+) -> None:
+    table = HexDigests()
+    table.update_digests("a", {"SHA256": "aa", "Size": "42"})
+    table.update_digests("b", {"SHA256": "bb", "Size": "4x"})
+    assert table.recorded_size(filename) == expected
 
 
 # --- has_sha -------------------------------------------------------------------------------------
@@ -73,3 +130,20 @@ def test_has_sha_needs_an_algorithm_comparison_keeps(
     record: dict[str, object], expected: bool
 ) -> None:
     assert has_sha(record) is expected
+
+
+# --- refuse_past_recorded_size ---------------------------------------------------------------
+
+
+def test_refuse_past_recorded_size_names_a_capped_refusal_a_checksum_failure() -> None:
+    with (
+        pytest.raises(ChecksumException, match="p.deb is larger than the 7 bytes recorded"),
+        refuse_past_recorded_size("p.deb", 7),
+    ):
+        raise StorageTooLargeException("too large")
+
+
+def test_refuse_past_recorded_size_lets_a_storage_failure_through() -> None:
+    """A transport failure stays retryable; only the cap contradicts the record."""
+    with pytest.raises(StorageException, match="down"), refuse_past_recorded_size("p.deb", 7):
+        raise StorageException("down")

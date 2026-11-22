@@ -299,7 +299,7 @@ A pruned transaction stays applied and stops being revertable; nothing in the re
 changes. `--orphans` additionally removes hidden footmark objects that belong to no recorded
 transaction, which is how residue of an interrupted write is reclaimed. Use `--history-max-age=0` to
 switch pruning off → [CONFIG.md](../../CONFIG.md#global-flags). The full rule →
-[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#retention).
+[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#retention).
 
 ## Further reading
 

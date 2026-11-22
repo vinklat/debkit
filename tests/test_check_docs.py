@@ -237,6 +237,7 @@ _EXCEPTIONS = """# E
 | `GoneException` | m | w |
 | `StorageException` | `txstore` | w |
 | `StorageNotFoundException` | `txstore` | w |
+| `StorageNotSupportedException` | `txstore` | w |
 
 | Group | Caught exceptions | Exit message | Extra warning |
 | -- | -- | -- | -- |
@@ -270,7 +271,7 @@ def test_exceptions_parity_and_unknown_names(repo: Path) -> None:
         "EXCEPTIONS.md: missing exception BException",
         "EXCEPTIONS.md:6: GoneException is not defined in src/debkit or txstore",
         "EXCEPTIONS.md:6: unknown exception name GoneException",
-        "EXCEPTIONS.md:14: unknown exception name GoneException",
+        "EXCEPTIONS.md:15: unknown exception name GoneException",
         "X.md:1: unknown exception name CException",
     ]
 
@@ -284,7 +285,7 @@ def test_exit_groups_match_cli_handlers(repo: Path) -> None:
     }
     assert check_docs.check_exit_groups({"EXCEPTIONS.md": _EXCEPTIONS}, handlers) == [
         "EXCEPTIONS.md: cli.py handler (BException) → Other. has no row",
-        "EXCEPTIONS.md:14: exit group Stale matches no cli.py handler",
+        "EXCEPTIONS.md:15: exit group Stale matches no cli.py handler",
     ]
 
 

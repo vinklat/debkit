@@ -13,7 +13,7 @@ from typing import IO, TYPE_CHECKING
 
 from debian import debfile
 from debian.arfile import ArError
-from txstore import StorageException, is_unsafe_path
+from txstore import StorageException, StorageTooLargeException, is_unsafe_path
 
 from debkit.repo.compress import CODECS, CorruptStreamError, SizeLimitError, zstd_decompress
 from debkit.repo.package import Package
@@ -122,22 +122,36 @@ class DebFile:
         control: Content of the ``control`` file in ``control.tar``.
     """
 
-    def __init__(self, storage: Storage, path: str, comp: str | None = None) -> None:
+    def __init__(
+        self,
+        storage: Storage,
+        path: str,
+        comp: str | None = None,
+        *,
+        max_size: int | None = None,
+    ) -> None:
         """Initialize DebFile object.
 
         Args:
             storage: Storage backend.
             path: Path to the Debian package file.
             comp: Component name. Defaults to None.
+            max_size: The cap on a whole-file read by a backend that cannot seek; None reads
+                any size. A streaming backend never reads the whole file, so it ignores it.
 
         Raises:
+            StorageTooLargeException: If a whole-file read passes `max_size`; it is not a
+                parse failure, so it is not wrapped, and the caller that chose the cap names it.
             DebFileException: If the underlying ``.deb`` cannot be read or parsed.
         """
         self.storage = storage
         self.path = path
         self.comp = comp
         try:
-            self.control = self._read_control()
+            self.control = self._read_control(max_size)
+        except StorageTooLargeException:
+            # before `StorageException`, its base: the caller that chose the cap names it
+            raise
         except StorageException as exc:
             raise DebFileException(f"Cannot read .deb file {path}: {exc}") from exc
         # `ArError` is the base of `DebError`; a truncated ar header raises a bare `OSError`, a
@@ -146,8 +160,14 @@ class DebFile:
         except (ArError, tarfile.TarError, EOFError, OSError, lzma.LZMAError, zlib.error) as exc:
             raise DebFileException(f"Invalid .deb file {path}: {exc}") from exc
 
-    def _read_control(self) -> bytes | None:
+    def _read_control(self, max_size: int | None) -> bytes | None:
         """Read the ``control`` file, streaming when the backend can seek.
+
+        python-debian's `ArFile` seeks, so a backend that cannot is read whole, capped at
+        `max_size` -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+        Args:
+            max_size: The cap on a whole-file read; None reads any size.
 
         Returns:
             The ``control`` file content.
@@ -157,7 +177,7 @@ class DebFile:
                 return _control_of(fp, self.path)
         except UnsupportedOperation as exc:
             logger.debug("%s cannot stream (%s); reading it into memory.", self.path, exc)
-        with BytesIO(self.storage.get(self.path)) as fp:
+        with BytesIO(self.storage.get(self.path, max_size=max_size)) as fp:
             return _control_of(fp, self.path)
 
     def get_package(self) -> Package:

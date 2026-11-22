@@ -35,6 +35,7 @@ statuses. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 | `ChecksumException` | `repo/hashes.py` | Digest mismatch or distrustful object |
 | `StorageException` | `txstore` | Backend failure; its remapping at construction → [STORAGE.md](STORAGE.md#construction) |
 | `StorageNotFoundException` | `txstore` | Object missing on `get` / `get_stream`; subclass of `StorageException` |
+| `StorageNotSupportedException` | `txstore` | Operation a read-only, write-only, or non-transactional backend lacks; subclass of `StorageException` and `NotImplementedError` |
 
 ## CLI exit groups
 
@@ -55,7 +56,6 @@ Exits outside the groups:
 | -- | -- |
 | Argparse usage error, including `ArgumentTypeError` from a type converter, an invalid `DEBKIT_*` value, or a missing required option | Usage text, status 2 (group Usage) |
 | `check` finds an inconsistent repository | `Repository is not consistent.`, status 1 |
-| `NotImplementedError` from a capability stub | Uncaught → [ROADMAP.md](ROADMAP.md#known-deviations) |
 | A builtin `ValueError` or other programming error | Uncaught: a traceback, never an input-error message |
 
 ## Orchestration vs repo semantics

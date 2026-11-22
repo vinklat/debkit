@@ -10,10 +10,10 @@ from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from txstore import StorageException, is_unsafe_path
+from txstore import StorageException, compare_digests, is_unsafe_path
 
 from debkit.repo.component import Component, IndexLoad
-from debkit.repo.hashes import parse_size
+from debkit.repo.hashes import largest_recorded_size, parse_size
 from debkit.repo.index_selection import match_index_tail, select_index_entry
 from debkit.repo.package import PackageException
 from debkit.repo.packages import diff_packages
@@ -450,6 +450,49 @@ class Repo:
         """
         return {key for release in self._release_blocks() for key in release.digests}
 
+    def _records(self, filename: str) -> list[dict[str, str]]:
+        """Collect the records a file is checked against, each with its digests and `Size`.
+
+        `verify_checksum` and `max_recorded_size` both read them, so a transfer capped by the
+        records is refused only when none of them could verify it.
+
+        Args:
+            filename: The name of the file.
+
+        Returns:
+            Every record listing the file; empty when none does.
+        """
+        release_key = self.params.release_key(filename)
+
+        # no digest block lists the root Release files, so each copy is bound to the bytes
+        # the load fetched and verified, and no stanza may vouch for one
+        # -> [CRYPTO.md](CRYPTO.md#verification-order)
+        if release_key in ROOT_RELEASE_KEYS:
+            fetched = self.release.root_digests.get(release_key)
+            return [] if fetched is None else [fetched]
+
+        # a package index is remote metadata, so a stanza naming a path the signed Release
+        # also covers would define that path's content instead of the GPG-rooted Release.
+        # The Release owns every key inside its digest block, keyed by the path it lists, and
+        # is checked against exactly the blocks that granted it that ownership
+        # -> [CRYPTO.md](CRYPTO.md#verification-order)
+        if self._release_owns(release_key):
+            return [
+                release.digests[release_key]
+                for release in self._release_blocks()
+                if release_key in release.digests
+            ]
+
+        # only paths outside every block fall to the containers, each keyed by the `Filename`
+        # field it parsed, so this is one dict lookup and a path no index names simply misses.
+        # A suffix gate here would have to track every compression `dpkg-source` emits
+        return [
+            record
+            for component in self.components.values()
+            for packages in component.containers()
+            if (record := packages.record(filename)) is not None
+        ]
+
     def verify_checksum(self, filename: str, incoming_digests: dict[str, str]) -> bool:
         """Verify file checksum in all available indices files.
 
@@ -460,33 +503,19 @@ class Repo:
         Returns:
             Whether the file checksum was verified.
         """
-        release_key = self.params.release_key(filename)
+        return any(compare_digests(record, incoming_digests) for record in self._records(filename))
 
-        # no digest block lists the root Release files, so each copy is bound to the bytes
-        # the load fetched and verified, and no stanza may vouch for one
-        # -> [CRYPTO.md](CRYPTO.md#verification-order)
-        if release_key in ROOT_RELEASE_KEYS:
-            return self.release.verify_root_digests(release_key, incoming_digests)
+    def max_recorded_size(self, filename: str) -> int | None:
+        """Get the largest `Size` of the records `verify_checksum` checks a file against.
 
-        # a package index is remote metadata, so a stanza naming a path the signed Release
-        # also covers would define that path's content instead of the GPG-rooted Release.
-        # The Release owns every key inside its digest block, keyed by the path it lists, and
-        # is checked against exactly the blocks that granted it that ownership
-        # -> [CRYPTO.md](CRYPTO.md#verification-order)
-        if self._release_owns(release_key):
-            return any(
-                release.verify_digests(release_key, incoming_digests)
-                for release in self._release_blocks()
-            )
+        Args:
+            filename: The name of the file.
 
-        # only paths outside every block fall to the containers, each keyed by the `Filename`
-        # field it parsed, so this is one dict lookup and a path no index names simply misses.
-        # A suffix gate here would have to track every compression `dpkg-source` emits
-        return any(
-            packages.verify_checksum(filename, incoming_digests)
-            for component in self.components.values()
-            for packages in component.containers()
-        )
+        Returns:
+            The largest recorded size, or None when no record lists the file or one lists no
+            well-formed size -> [VALIDATION.md](VALIDATION.md#object-sizes).
+        """
+        return largest_recorded_size(self._records(filename))
 
     def _get_indices(self) -> dict[str, IndexTarget]:
         """Get every repository index file to mirror, with its expected digests.

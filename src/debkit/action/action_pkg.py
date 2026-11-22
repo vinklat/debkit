@@ -22,7 +22,7 @@ from debkit.argtypes import component_type, pkg_pattern_type
 from debkit.repo.changes import Changes
 from debkit.repo.component import IndexLoad
 from debkit.repo.debfile import DebFile
-from debkit.repo.hashes import ChecksumException
+from debkit.repo.hashes import ChecksumException, refuse_past_recorded_size
 from debkit.repo.params import ARCH_ANY, SOURCE_ARCH, is_valid_arch
 from debkit.repo.release import ReleaseNotFoundException
 
@@ -238,7 +238,8 @@ class ActionPkg(Action):
             ActionException: If the package control field names the source architecture.
             ActionException: If an `all` or arch-less package finds no binary architecture
                 in the target.
-            ChecksumException: If a transferred `.deb` does not match its `.changes` digest.
+            ChecksumException: If a transferred `.deb` does not match its `.changes` digest,
+                or is larger than the `Size` it lists.
         """
         # `--incoming-url` is required for `insert`, so argparse already refused a missing one
         assert self.incoming_storage is not None, "insert without --incoming-url"
@@ -253,28 +254,34 @@ class ActionPkg(Action):
             assert self.deb_filename is not None
             filenames = [self.deb_filename]
 
+        # a checked `.changes` pins each payload's `Size` and digest; unchecked, it pins nothing
+        pinned = changes if self.target_repo.params.verify_digests else None
+
         with maybe_transaction(self.target_repo.storage, self.history_retention):
             target_before = self._load_target_or_setup()
             binary_archs = self.target_repo.binary_archs()
             for filename in filenames:
-                debfile_obj = DebFile(self.incoming_storage, filename, comp=self.component)
+                # the pinned `Size` bounds each read of its payload
+                # -> [VALIDATION.md](VALIDATION.md#object-sizes)
+                max_size = pinned.recorded_size(filename) if pinned is not None else None
+                # only the pinned `.changes` sets a cap, so a refusal contradicts it
+                with refuse_past_recorded_size(filename, max_size):
+                    debfile_obj = DebFile(
+                        self.incoming_storage, filename, comp=self.component, max_size=max_size
+                    )
                 package = debfile_obj.get_package()
                 archs = self._target_archs(filename, package, binary_archs)
 
                 pool_key = package.get_filename()
                 held = self.target_repo.held_digests(pool_key)
-                digests = self.target_repo.transfer_from(
-                    self.incoming_storage, filename, path_dst=pool_key
-                )
-                # the pinned `.changes` lists each payload's digest, so a payload swapped in
-                # the incoming storage is refused before any other check can misname it;
-                # raising discards the staged transfer
+                with refuse_past_recorded_size(filename, max_size):
+                    digests = self.target_repo.transfer_from(
+                        self.incoming_storage, filename, path_dst=pool_key, max_size=max_size
+                    )
+                # the pinned digest refuses a payload swapped in the incoming storage before
+                # any other check can misname it; raising discards the staged transfer
                 # -> [CRYPTO.md](CRYPTO.md#verification-failures)
-                if (
-                    changes is not None
-                    and self.target_repo.params.verify_digests
-                    and not changes.verify_digests(filename, digests)
-                ):
+                if pinned is not None and not pinned.verify_digests(filename, digests):
                     raise ChecksumException(
                         f"{filename} does not match its digest in {self.changes_filename}"
                     )

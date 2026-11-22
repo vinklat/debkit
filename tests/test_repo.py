@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 
 import pytest
 from helpers.factories import make_package, make_packages, make_params, make_storage_mock
@@ -182,6 +183,114 @@ def test_verify_checksum_accepts_a_source_payload_through_its_index(filename: st
 
     assert repo.verify_checksum(filename, _DIGEST) is True
     assert repo.verify_checksum(filename, _OTHER_DIGEST) is False
+
+
+# --- recorded sizes: the sync transfer cap -> VALIDATION.md#object-sizes ----------------------
+
+
+def test_max_recorded_size_of_a_payload_is_the_largest_size_its_records_list() -> None:
+    """`verify_checksum` accepts any matching record, so the cap is the largest one."""
+    repo = _repo()
+    _with_component_package(repo, _DEB, _DIGEST)
+    _with_component_package(repo, _DEB, _DIGEST, arch="arm64")
+    repo.components["main"].packages["amd64"] = make_packages(
+        repo.storage, repo.params, [make_package(_DEB, size=7, **_DIGEST)]
+    )
+
+    assert repo.max_recorded_size(_DEB) == 7
+
+
+def test_max_recorded_size_of_a_root_release_file_is_the_size_the_load_fetched() -> None:
+    repo = _repo()
+    repo.release.root_digests = {"InRelease": {**_DIGEST, "Size": "12"}}
+
+    assert repo.max_recorded_size("dists/bookworm/InRelease") == 12
+    assert repo.max_recorded_size("dists/bookworm/Release") is None
+
+
+@pytest.mark.parametrize(("root", "component"), [(5, 9), (9, 5)], ids=["component", "root"])
+def test_max_recorded_size_of_a_listed_index_is_the_largest_release_block(
+    root: int, component: int
+) -> None:
+    """Each Release block may verify the index, so the cap is the largest; a stanza shadowing
+    the index must not widen it."""
+    key = "main/binary-amd64/Packages"
+    path = f"dists/bookworm/{key}"
+    repo = _repo()
+    repo.components["main"] = Component(repo.storage, repo.params, repo.release, "main")
+    repo.components["main"].packages = {
+        "amd64": make_packages(repo.storage, repo.params, [make_package(path, size=999)])
+    }
+    repo.release.digests = {key: {**_DIGEST, "Size": str(root)}}
+    repo.components["main"].packages["amd64"].release.digests = {
+        key: {**_DIGEST, "Size": str(component)}
+    }
+
+    assert repo.max_recorded_size(path) == 9
+
+
+def _root_release_file(repo: Repo) -> str:
+    repo.release.root_digests = {"InRelease": {**_DIGEST, "Size": "12"}}
+    _with_component_package(repo, "dists/bookworm/InRelease", _DIGEST)
+    return "dists/bookworm/InRelease"
+
+
+def _release_listed_index(repo: Repo) -> str:
+    key = "main/binary-amd64/Packages"
+    _with_component_package(repo, f"dists/bookworm/{key}", _DIGEST)
+    repo.release.digests = {key: {**_DIGEST, "Size": "12"}}
+    return f"dists/bookworm/{key}"
+
+
+def _indexed_payload(repo: Repo) -> str:
+    repo.components["main"] = Component(repo.storage, repo.params, repo.release, "main")
+    repo.components["main"].packages = {
+        "amd64": make_packages(repo.storage, repo.params, [make_package(_DEB, size=12, **_DIGEST)])
+    }
+    return _DEB
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [_root_release_file, _release_listed_index, _indexed_payload],
+    ids=["root-release", "release-listed-index", "indexed-payload"],
+)
+def test_max_recorded_size_follows_the_record_verify_checksum_accepts(
+    setup: Callable[[Repo], str],
+) -> None:
+    """Both walk the same branches; a cap from another branch would refuse a verified object.
+
+    The root Release and index cases also carry a stanza listing another size, so a routing
+    that drifts between the two methods returns that size or None.
+    """
+    repo = _repo()
+    filename = setup(repo)
+
+    assert repo.verify_checksum(filename, _DIGEST) is True
+    assert repo.max_recorded_size(filename) == 12
+
+
+def test_max_recorded_size_is_none_when_a_record_lists_no_usable_size() -> None:
+    """The record without a usable `Size` may verify the payload, so a smaller `Size` on
+    another record must not cap it -> VALIDATION.md#object-sizes."""
+    repo = _repo()
+    repo.components["main"] = Component(repo.storage, repo.params, repo.release, "main")
+    repo.components["main"].packages = {
+        "amd64": make_packages(repo.storage, repo.params, [make_package(_DEB, size=7)]),
+        "arm64": make_packages(
+            repo.storage, repo.params, [make_package(_DEB, size="2OO", **_DIGEST)]
+        ),
+    }
+
+    assert repo.verify_checksum(_DEB, _DIGEST) is True
+    assert repo.max_recorded_size(_DEB) is None
+
+
+def test_max_recorded_size_is_none_when_no_record_lists_the_file() -> None:
+    repo = _repo()
+    _with_component_package(repo, _DEB, _DIGEST)
+
+    assert repo.max_recorded_size("pool/main/o/other/other_1_amd64.deb") is None
 
 
 # --- component and architecture resolution ------------------------------------------------------

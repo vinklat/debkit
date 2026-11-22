@@ -130,15 +130,25 @@ A floor raise names the Debian testing version that satisfies it in the change d
 
 ## Upgrade notes
 
-### 0.1.0
+### 0.1.1
 
-Initial public release. debkit continues repo-deb-factory 5.1.2 under a new name, on the public
-txstore storage package; repositories, footmarks, and `.transactions.json` histories written by
-either tool are read by the other.
+Size-capped storage reads on txstore 0.1.3.
 
 | Change | Migration |
 | -- | -- |
-| Command and package | `repo-deb-factory` → `debkit`; `python -m repo_deb_factory` → `python -m debkit`. |
+| txstore | Requires txstore 0.1.3 or later → [Dependency policy](#dependency-policy). |
+| Unsupported operation | An operation the backend lacks is now a `StorageNotSupportedException` instead of a bare `NotImplementedError`, handled like any storage failure → [EXCEPTIONS.md](EXCEPTIONS.md#domain-exceptions). |
+| Oversized objects | A checked copy longer than its recorded `Size` stops → `ChecksumException` (Distrustful); when a cap applies → [VALIDATION.md](VALIDATION.md#object-sizes). |
+| Stream read failures | A backend error while an S3 or HTTP body is read is now a `StorageException` instead of escaping unwrapped → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
+| Stream read failures in a sync copy | A failed copy is retried, then → `RepoSyncException` (Sync) → [EXCEPTIONS.md](EXCEPTIONS.md#cli-exit-groups). |
+| Read metrics | A read refused at its cap counts one read error and no read bytes in the `-o json` metrics → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi). |
+
+### 0.1.0
+
+Initial public release, on the public txstore storage package.
+
+| Change | Migration |
+| -- | -- |
 | Variables | Every variable gains the `DEBKIT_` prefix: `TARGET_URL` → `DEBKIT_TARGET_URL`, `S3_SECRET` → `DEBKIT_S3_SECRET`, and so on → [CONFIG.md](CONFIG.md). |
 | Switches | `--skip-verify 1` → `--skip-verify`; `--skip-verify-gpg false` → omit it or pass `--no-skip-verify-gpg`. The same holds for `--skip-verify-ssl` and `--allow-release-rollback`. |
 | Logging | `-l` gains `DEBKIT_LOG_LEVEL` and drops `TRACING`; `--log-format json` is new. |

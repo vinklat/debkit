@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
@@ -11,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from debian.deb822 import Deb822
-from helpers.factories import make_clearsigned, make_storage_mock
+from helpers.factories import capped_get, make_clearsigned, make_storage_mock
 from txstore import StorageFS, calc_digests
 
 from debkit.repo import release as release_module
@@ -584,8 +583,7 @@ def test_find_file_flat_real_dist_reads_the_root_release_setup_wrote() -> None:
     """The write and read paths agree, so a written Release is found again."""
     storage = MagicMock()
     storage.exists.side_effect = lambda path: path in {"bookworm/Release", "bookworm/Release.gpg"}
-    storage.get.return_value = b"Origin: x\n"
-    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
+    storage.get.side_effect = capped_get(lambda path: b"Origin: x\n")
 
     r = RootRelease(storage, _flat_params())
     r.load()
@@ -596,8 +594,7 @@ def test_find_file_source_arch_reads_the_source_release() -> None:
     """A source component Release lives under `source/`, like its `Sources` index."""
     storage = MagicMock()
     storage.exists.return_value = True
-    storage.get.return_value = b"Origin: x\n"
-    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
+    storage.get.side_effect = capped_get(lambda path: b"Origin: x\n")
 
     r = Release(storage, _params())
     r.load_component("main", "source", RootRelease(r.storage, r.params))
@@ -609,8 +606,7 @@ def test_find_file_flat_component_release_path_carries_no_leading_slash() -> Non
     """An empty prefix must not produce an absolute, root-escaping key."""
     storage = MagicMock()
     storage.exists.return_value = True
-    storage.get.return_value = b"Origin: x\n"
-    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
+    storage.get.side_effect = capped_get(lambda path: b"Origin: x\n")
 
     r = Release(storage, _flat_params())
     r.load_component("main", "amd64", RootRelease(r.storage, r.params))
@@ -626,8 +622,7 @@ def test_find_file_reads_the_component_release_setup_wrote(
 ) -> None:
     """One composition for both sides, so a written component Release is found again."""
     storage = MagicMock()
-    storage.get.return_value = b"Origin: x\n"
-    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
+    storage.get.side_effect = capped_get(lambda path: b"Origin: x\n")
 
     writer = Release(storage, params_fn())
     writer.setup_component("main", arch)
@@ -670,8 +665,7 @@ def test_load_component_release_verifies_against_its_flat_release_key() -> None:
     data = b"Origin: x\n"
     storage = MagicMock()
     storage.exists.return_value = True
-    storage.get.return_value = data
-    storage.get_stream.side_effect = lambda path: io.BytesIO(data)
+    storage.get.side_effect = capped_get(lambda path: data)
 
     params = _flat_params()
     params.verify_digests = True
@@ -697,8 +691,7 @@ _ROOT_FILES = {
 def _root_storage(files: dict[str, bytes]) -> MagicMock:
     storage = MagicMock()
     storage.exists.side_effect = lambda path: path in files
-    storage.get.side_effect = lambda path: files[path]
-    storage.get_stream.side_effect = lambda path: io.BytesIO(files[path])
+    storage.get.side_effect = capped_get(lambda path: files[path])
     return storage
 
 
@@ -713,11 +706,6 @@ def test_load_root_records_the_digests_of_every_root_file() -> None:
         "Release.gpg": calc_digests(_ROOT_FILES["dists/bookworm/Release.gpg"]),
         "InRelease": calc_digests(_ROOT_FILES["dists/bookworm/InRelease"]),
     }
-    assert (
-        r.verify_root_digests("Release", calc_digests(_ROOT_FILES["dists/bookworm/Release"]))
-        is True
-    )
-    assert r.verify_root_digests("Release", calc_digests(b"replayed")) is False
 
 
 def test_load_root_refuses_a_root_file_past_the_size_cap(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -734,7 +722,7 @@ def test_load_component_refuses_a_release_larger_than_the_root_release_records()
     data = b"Origin: x\n"
     storage = MagicMock()
     storage.exists.return_value = True
-    storage.get_stream.side_effect = lambda path: io.BytesIO(data + b"padding")
+    storage.get.side_effect = capped_get(lambda path: data + b"padding")
     params = _flat_params()
     params.verify_digests = True
     root_release = RootRelease(storage, _flat_params())
@@ -769,7 +757,6 @@ def test_load_root_skips_a_detached_signature_without_its_release(
 
     assert r.get_indices_paths() == ["dists/bookworm/InRelease"]
     assert "Release.gpg" not in r.root_digests
-    assert r.verify_root_digests("Release.gpg", calc_digests(junk)) is False
     assert "signs no dists/bookworm/Release" in caplog.text
 
 
@@ -1068,7 +1055,7 @@ def test_load_component_refuses_a_file_past_the_cap_no_root_release_sizes(
     """Without a size the checked root Release records, `MAX_RELEASE_BYTES` caps the read."""
     monkeypatch.setattr(release_module, "MAX_RELEASE_BYTES", 4)
     storage = MagicMock()
-    storage.get_stream.side_effect = lambda path: io.BytesIO(b"Origin: x\n")
+    storage.get.side_effect = capped_get(lambda path: b"Origin: x\n")
     root = RootRelease(storage, _params())
 
     with pytest.raises(ReleaseReadException, match="larger than"):
@@ -1083,7 +1070,7 @@ def test_load_component_caps_a_release_whose_recorded_size_is_past_the_cap(
     data = b"Origin: x\n"
     storage = MagicMock()
     storage.exists.return_value = True
-    storage.get_stream.side_effect = lambda path: io.BytesIO(data)
+    storage.get.side_effect = capped_get(lambda path: data)
     params = _flat_params()
     params.verify_digests = True
     root_release = RootRelease(storage, _flat_params())

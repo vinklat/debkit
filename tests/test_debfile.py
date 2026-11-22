@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 from helpers.binaries import requires_binary
 from helpers.factories import make_deb, make_tar_gz
-from txstore import StorageFS
+from txstore import StorageFS, StorageTooLargeException
 
 from debkit.repo import debfile as debfile_module
 from debkit.repo.compress import codec_for
@@ -38,9 +38,9 @@ class _TrackingFS(StorageFS):
         self.handles.append(handle)
         return handle
 
-    def get(self, path: str) -> bytes:
+    def get(self, path: str, *, max_size: int | None = None) -> bytes:
         self.gets += 1
-        return super().get(path)
+        return super().get(path, max_size=max_size)
 
     def all_closed(self) -> bool:
         """At least one stream was opened, and every one of them is closed."""
@@ -98,6 +98,30 @@ def test_init_falls_back_to_get_when_the_stream_cannot_seek(tmp_path: Path) -> N
     assert deb.control == _CONTROL
     assert storage.gets == 1
     assert storage.all_closed()
+
+
+@pytest.mark.parametrize("slack", [0, 1], ids=["at-the-cap", "under-the-cap"])
+def test_init_reads_an_unseekable_deb_within_its_recorded_size(tmp_path: Path, slack: int) -> None:
+    data = make_deb(_CONTROL)
+    storage = _storage(tmp_path, data, _UnseekableFS)
+
+    assert DebFile(storage, _PATH, max_size=len(data) + slack).control == _CONTROL
+
+
+def test_init_streams_a_seekable_deb_whatever_its_cap(tmp_path: Path) -> None:
+    """A backend that seeks never reads the whole file, so the cap does not apply."""
+    storage = _storage(tmp_path, make_deb(_CONTROL))
+
+    assert DebFile(storage, _PATH, max_size=1).control == _CONTROL
+
+
+def test_init_lets_an_unseekable_deb_past_its_cap_through(tmp_path: Path) -> None:
+    """The whole-file fallback stops at the cap; the caller that set it names the failure."""
+    data = make_deb(_CONTROL)
+    storage = _storage(tmp_path, data, _UnseekableFS)
+
+    with pytest.raises(StorageTooLargeException):
+        DebFile(storage, _PATH, max_size=len(data) - 1)
 
 
 @pytest.mark.parametrize(

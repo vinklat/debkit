@@ -10,7 +10,12 @@ import re
 from email.utils import formatdate
 from typing import TYPE_CHECKING, NamedTuple
 
-from txstore import StorageException, StorageNull, compare_digests, normalize_digests
+from txstore import (
+    StorageException,
+    StorageNotSupportedException,
+    compare_digests,
+    normalize_digests,
+)
 
 from debkit.repo import Repo
 from debkit.repo.component import Component
@@ -174,21 +179,33 @@ class RepoRW(Repo):
         component.insert_pkg(arch, package)
 
     def transfer_from(
-        self, source_storage: Storage, path_src: str, path_dst: str | None = None
+        self,
+        source_storage: Storage,
+        path_src: str,
+        path_dst: str | None = None,
+        *,
+        max_size: int | None,
     ) -> dict[str, str]:
         """Transfer a file from an external storage into this repo's storage.
 
-        The destination storage applies its own ACL -> txstore.
+        The destination storage applies its own ACL -> txstore. A capped transfer stops one
+        byte past `max_size` and leaves no destination object
+        -> [VALIDATION.md](VALIDATION.md#object-sizes).
 
         Args:
             source_storage: The storage to read from.
             path_src: Source path in `source_storage`.
             path_dst: Destination path in this repo. Defaults to `path_src`.
+            max_size: The cap on the transfer, or None for no cap; required, so every caller
+                decides it and names a refusal.
+
+        Raises:
+            StorageTooLargeException: The object is larger than `max_size`.
 
         Returns:
             Digests of the transferred object.
         """
-        return source_storage.transfer(path_src, self.storage, path_dst=path_dst)
+        return source_storage.transfer(path_src, self.storage, path_dst=path_dst, max_size=max_size)
 
     def metadata_agrees(self, path: str, digests: dict[str, str]) -> bool:
         """Report whether the stored metadata of `path` records `digests`.
@@ -237,7 +254,7 @@ class RepoRW(Repo):
         """
         if not self.storage.exists(path):
             return None
-        return self._read_digests(path)
+        return self.storage.get_digests(path)
 
     def shared_root(
         self, existing: set[str] | None = None, *, with_digests: bool = False
@@ -391,7 +408,7 @@ class RepoRW(Repo):
         """
         try:
             return set(self.storage.list())
-        except NotImplementedError:
+        except StorageNotSupportedException:
             return None
 
     def delete(self, file: str) -> None:
@@ -424,21 +441,9 @@ class RepoRW(Repo):
         """
         logger.info("Verify (%d/%d): %s", progress[0], progress[1], file)
 
-        digests = self._read_digests(file)
+        digests = self.storage.get_digests(file)
 
         if self.params.verify_digests and not self.verify_checksum(file, digests):
             return False, digests
 
         return True, digests
-
-    def _read_digests(self, path: str) -> dict[str, str]:
-        """Read an object of this repo's storage through and return its digests.
-
-        Args:
-            path: The object path.
-
-        Returns:
-            Its digests.
-        """
-        # read through to a digest sink -> [ROADMAP.md](ROADMAP.md#known-deviations)
-        return self.storage.transfer(path, StorageNull())

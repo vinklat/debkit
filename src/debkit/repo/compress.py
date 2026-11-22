@@ -13,7 +13,7 @@ from collections.abc import Buffer, Callable
 from functools import partial
 from typing import IO, TYPE_CHECKING, NamedTuple, Protocol
 
-from txstore import StorageException
+from txstore import StorageTooLargeException
 
 from debkit._env import child_env
 
@@ -29,16 +29,11 @@ class CorruptStreamError(ValueError):
     """Encoded data is truncated or does not decode."""
 
 
-# the read size of `read_capped`; the cap, not the chunk, bounds what is buffered
-_READ_CHUNK = 1 << 20
-
-
 def read_capped(storage: Storage, path: str, limit: int) -> bytes:
     """Read a stored object, refusing it as soon as it passes `limit` bytes.
 
-    Unlike `Storage.get`, which buffers the whole body, at most `limit + 1` bytes are read,
-    so an oversized object is refused before it is verified or buffered in full
-    -> [VALIDATION.md](VALIDATION.md#object-sizes).
+    txstore's capped `get` reads at most `limit + 1` bytes, so an oversized object is refused
+    before it is verified or buffered in full -> [VALIDATION.md](VALIDATION.md#object-sizes).
 
     Args:
         storage: The storage holding the object.
@@ -52,24 +47,10 @@ def read_capped(storage: Storage, path: str, limit: int) -> bytes:
     Returns:
         The object content.
     """
-    out = bytearray()
-    with storage.get_stream(path) as stream:
-        while len(out) <= limit:
-            try:
-                chunk = stream.read(min(_READ_CHUNK, limit + 1 - len(out)))
-            except OSError as exc:
-                # as txstore's own `get` maps it -> [ROADMAP.md](ROADMAP.md#known-deviations)
-                storage.metrics.read_errors_inc()
-                raise StorageException(f"Error reading {path}: {exc}") from exc
-            size = len(out)
-            out += chunk
-            # a stream that yields no bytes has ended
-            if len(out) == size:
-                break
-    storage.metrics.read_bytes_inc(len(out))
-    if len(out) > limit:
-        raise SizeLimitError(f"{path} is larger than {limit} bytes")
-    return bytes(out)
+    try:
+        return storage.get(path, max_size=limit)
+    except StorageTooLargeException as exc:
+        raise SizeLimitError(f"{path} is larger than {limit} bytes") from exc
 
 
 class Codec(NamedTuple):

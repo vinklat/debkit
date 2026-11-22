@@ -20,7 +20,12 @@ from helpers.factories import (
     make_repo_sync,
     make_storage_mock,
 )
-from txstore import StorageException, StorageNotFoundException
+from txstore import (
+    StorageException,
+    StorageNotFoundException,
+    StorageNotSupportedException,
+    StorageTooLargeException,
+)
 
 from debkit.repo.hashes import ChecksumException
 from debkit.repo.package import Package
@@ -54,7 +59,7 @@ def _two_repos(
     src_components: dict[str, dict[str, list[Package]]],
     tgt_components: dict[str, dict[str, list[Package]]],
     tgt_list: list[str] | None = None,
-    tgt_list_raises: type[BaseException] | None = None,
+    tgt_list_raises: BaseException | None = None,
     tgt_metadata: dict[str, str] | None = None,
     same_hash: bool = False,
     verify_digests: bool = True,
@@ -344,7 +349,7 @@ def test_build_sync_lists_non_listable_target_skips_orphan_and_repair() -> None:
     src, tgt = _two_repos(
         src_components={"main": {"amd64": [p1, p2]}},
         tgt_components={"main": {"amd64": [p1]}},
-        tgt_list_raises=NotImplementedError,
+        tgt_list_raises=StorageNotSupportedException("list"),
     )
 
     copy_list, delete_list, _ = src.build_sync_lists(tgt)
@@ -803,7 +808,7 @@ def test_consistency_lists_keeps_every_held_index_and_payload() -> None:
 
 def test_consistency_lists_proves_nothing_on_a_storage_that_cannot_list() -> None:
     src = _self_check_repo([])
-    _mock_storage(src).list.side_effect = NotImplementedError
+    _mock_storage(src).list.side_effect = StorageNotSupportedException("list")
 
     lists = src.consistency_lists(src._payload_files())
     assert (lists.missing, lists.orphans) == ([], [])
@@ -859,6 +864,34 @@ def test_transfer_storage_exception_is_retried_then_fails_the_sync() -> None:
         src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
 
     assert _mock_storage(src).transfer.call_count == TRANSFER_MAX_ERR_RETRIES
+    tgt_storage = _mock_storage(tgt)
+    tgt_storage.delete.assert_not_called()
+    tgt_storage.add_metadata.assert_not_called()
+
+
+@pytest.mark.parametrize(("verify_digests", "expected"), [(True, 42), (False, None)])
+def test_transfer_is_capped_at_the_recorded_size_only_when_digests_are_checked(
+    verify_digests: bool, expected: int | None
+) -> None:
+    """An unchecked record bounds nothing -> VALIDATION.md#object-sizes."""
+    src, tgt = _transfer_setup(verify_digests=verify_digests)
+    src.max_recorded_size = MagicMock(return_value=42)  # type: ignore[method-assign]
+
+    src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
+
+    assert _mock_storage(src).transfer.call_args.kwargs["max_size"] == expected
+
+
+def test_transfer_past_the_recorded_size_is_distrustful_and_not_retried() -> None:
+    """The source contradicts its own record, so a retry would read the same body."""
+    src, tgt = _transfer_setup()
+    src.max_recorded_size = MagicMock(return_value=1)  # type: ignore[method-assign]
+    _mock_storage(src).transfer.side_effect = StorageTooLargeException("p1.deb too large")
+
+    with pytest.raises(ChecksumException, match="larger than the 1 bytes recorded"):
+        src.sync(tgt, SyncPlan(["p1.deb"], [], set()))
+
+    assert _mock_storage(src).transfer.call_count == 1
     tgt_storage = _mock_storage(tgt)
     tgt_storage.delete.assert_not_called()
     tgt_storage.add_metadata.assert_not_called()
@@ -1484,7 +1517,7 @@ def test_build_sync_lists_same_hash_unlistable_target_copies_no_index() -> None:
     src, tgt = _two_repos(
         src_components={"main": {"amd64": [pkg]}},
         tgt_components={"main": {"amd64": [pkg]}},
-        tgt_list_raises=NotImplementedError,
+        tgt_list_raises=StorageNotSupportedException("list"),
         listed=[listed],
         tgt_listed=[listed],
         same_hash=True,

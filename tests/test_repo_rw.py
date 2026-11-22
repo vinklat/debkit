@@ -22,7 +22,12 @@ import txstore
 from helpers import trees
 from helpers.factories import make_package, make_params, make_storage_mock
 from helpers.trees import payload_path, write_dist
-from txstore import Storage, StorageException, StorageFS
+from txstore import (
+    StorageException,
+    StorageFS,
+    StorageNotSupportedException,
+    StorageTooLargeException,
+)
 
 import debkit.repo as repo_package
 from debkit.repo import Repo
@@ -149,14 +154,21 @@ def test_remove_pkg_deletes_through_the_repo_delete_seam(monkeypatch: pytest.Mon
 
 @pytest.mark.parametrize(
     ("list_raises", "expected"),
-    [(None, {"pool/a.deb"}), (NotImplementedError, None)],
+    [(None, {"pool/a.deb"}), (StorageNotSupportedException("list"), None)],
     ids=["listed", "unlistable"],
 )
 def test_held_paths_is_none_only_when_the_storage_cannot_list(
-    list_raises: type[BaseException] | None, expected: set[str] | None
+    list_raises: BaseException | None, expected: set[str] | None
 ) -> None:
     storage = make_storage_mock(list_result=["pool/a.deb"], list_raises=list_raises)
     assert RepoRW(storage, make_params()).held_paths() == expected
+
+
+def test_held_paths_propagates_a_programming_not_implemented_error() -> None:
+    """Only txstore's capability stub means "cannot list"; a bare one is a bug, not a listing."""
+    storage = make_storage_mock(list_raises=NotImplementedError())
+    with pytest.raises(NotImplementedError):
+        RepoRW(storage, make_params()).held_paths()
 
 
 def test_remove_pkg_propagates_a_delete_failure() -> None:
@@ -175,12 +187,34 @@ def test_transfer_from_does_not_pass_acl_kwarg() -> None:
     src = make_storage_mock()
     src.transfer.return_value = {"SHA256": "deadbeef"}
 
-    digests = repo.transfer_from(src, "incoming/foo.deb")
+    digests = repo.transfer_from(src, "incoming/foo.deb", max_size=None)
 
     assert digests == {"SHA256": "deadbeef"}
     _, kwargs = src.transfer.call_args
     assert "acl" not in kwargs
     assert kwargs.get("path_dst") is None
+
+
+def test_transfer_from_forwards_the_size_cap() -> None:
+    repo, _release = _repo()
+    src = make_storage_mock()
+
+    repo.transfer_from(src, "incoming/foo.deb", max_size=7)
+
+    assert src.transfer.call_args.kwargs["max_size"] == 7
+
+
+@pytest.mark.parametrize(
+    "raised", [StorageTooLargeException("too large"), StorageException("down")], ids=str
+)
+def test_transfer_from_lets_a_storage_failure_through(raised: StorageException) -> None:
+    """The caller that set the cap names a refusal; a transport failure stays retryable."""
+    repo, _release = _repo()
+    src = make_storage_mock()
+    src.transfer.side_effect = raised
+
+    with pytest.raises(type(raised)):
+        repo.transfer_from(src, "incoming/foo.deb", max_size=7)
 
 
 def test_reset_clears_state() -> None:
@@ -267,13 +301,32 @@ def test_shared_root_of_a_flat_layout_lists_nothing() -> None:
 
 
 def test_shared_root_of_a_storage_that_cannot_list_keeps_all_but_the_own_tree() -> None:
-    repo = RepoRW(make_storage_mock(list_raises=NotImplementedError), make_params())
+    repo = RepoRW(
+        make_storage_mock(list_raises=StorageNotSupportedException("list")), make_params()
+    )
 
     shared = repo.shared_root()
 
     assert not shared.complete
     assert not shared.deletable("pool/main/f/foo/foo_1_amd64.deb")
     assert shared.deletable("dists/bookworm/main/binary-amd64/Packages.gz")
+
+
+def test_shared_root_propagates_a_programming_not_implemented_error() -> None:
+    """Only txstore's capability stub means "cannot list"; a bare one is a bug, not a listing."""
+    repo = RepoRW(make_storage_mock(list_raises=NotImplementedError()), make_params())
+
+    with pytest.raises(NotImplementedError):
+        repo.shared_root()
+
+
+def test_held_digests_reads_through_txstore_without_a_sink() -> None:
+    storage = make_storage_mock()
+    storage.get_digests.return_value = {"SHA256": "ab"}
+
+    assert RepoRW(storage, make_params()).held_digests("p") == {"SHA256": "ab"}
+    storage.get_digests.assert_called_once_with("p")
+    storage.transfer.assert_not_called()
 
 
 def test_held_digests_reads_what_the_storage_holds(tmp_path: Path) -> None:
@@ -482,16 +535,10 @@ class _FaultyFS(StorageFS):
         self.unwritable = unwritable
         self.metadata_writes: list[tuple[str, dict[str, str], str | None]] = []
 
-    def transfer(
-        self,
-        path_src: str,
-        storage_dst: Storage,
-        path_dst: str | None = None,
-        acl: str | None = None,
-    ) -> dict[str, str]:
-        if path_src == self.unreadable:
-            raise StorageException(f"backend down reading {path_src}")
-        return super().transfer(path_src, storage_dst, path_dst, acl)
+    def get_digests(self, path: str, *, max_size: int | None = None) -> dict[str, str]:
+        if path == self.unreadable:
+            raise StorageException(f"backend down reading {path}")
+        return super().get_digests(path, max_size=max_size)
 
     def delete(self, path: str) -> None:
         if path == self.undeletable:
@@ -961,7 +1008,9 @@ def test_shared_root_is_unknown_while_another_dist_lists_an_unsafe_component(
 
 def test_consistency_lists_of_a_flat_layout_on_an_unlisted_storage_share_no_root() -> None:
     """A flat layout has no `dists/` tree, so no other dist can claim anything."""
-    repo = RepoRW(make_storage_mock(list_raises=NotImplementedError), make_params(flat=True))
+    repo = RepoRW(
+        make_storage_mock(list_raises=StorageNotSupportedException("list")), make_params(flat=True)
+    )
 
     shared = repo.consistency_lists(set()).shared
 

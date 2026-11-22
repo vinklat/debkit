@@ -8,9 +8,19 @@ together. Rules are owned by [STYLE.md](../../STYLE.md#layers) (action layer),
 [VALIDATION.md](../../VALIDATION.md#debian-source-strings) (deb source and file rules),
 [VALIDATION.md](../../VALIDATION.md#filename-safety) (upload names),
 [CRYPTO.md](../../CRYPTO.md#verification-failures) (`.changes` and payload digests),
+[VALIDATION.md](../../VALIDATION.md#object-sizes) (payload size caps),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups) (exit groups), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
+
+## Code map
+
+| Concern | Module | Notes |
+| -- | -- | -- |
+| Orchestration | `action/action_pkg.py` | `ActionPkg.insert` takes each `.deb`'s `max_size` from the pinned `.changes` (`recorded_size()`) and checks the transferred digests |
+| Payload cap | `repo/hashes.py` | `refuse_past_recorded_size()` names a capped read or transfer as `ChecksumException` → [VALIDATION.md](../../VALIDATION.md#object-sizes) |
+| Control read | `repo/debfile.py` | `DebFile._read_control()` reads a backend that cannot seek whole, capped at `max_size` |
+| Pool transfer | `repo/repo_rw.py` | `RepoRW.held_digests()` checks the pool key; `RepoRW.transfer_from()` passes `max_size` to the copy |
 
 ## Activity diagram
 
@@ -27,7 +37,7 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
   [EXCEPTIONS.md](../../EXCEPTIONS.md#orchestration-vs-repo-semantics).
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
   concurrent writer on the same root waits and — on S3 — fails after txstore's lock acquire timeout
-  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
+  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The target is loaded and copied for the diff only after `history_lock` is granted, so a peer that
@@ -36,7 +46,9 @@ in [examples.md](../guides/examples.md#add-packages-from-a-changes-upload).
 - An unsafe `.changes` entry, `Package` or `Source` name, `Version`, or pool path is refused before
   any transfer → [VALIDATION.md](../../VALIDATION.md#filename-safety). A `.deb` whose transferred
   digests differ from its `.changes` entry is refused after it →
-  [CRYPTO.md](../../CRYPTO.md#verification-failures).
+  [CRYPTO.md](../../CRYPTO.md#verification-failures); with digests checked, one longer than the
+  `Size` that entry lists is refused during it, or during the whole-file read of a backend that
+  cannot seek; when a cap applies → [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - The pool key holds no dist and no arch beyond the upload file name, so other dists and arch
   indices may list it; a pool key already holding different bytes is refused after the transfer and
   the `.changes` digest check, read through once before it, and an identical upload passes →
@@ -59,7 +71,11 @@ wiring (begin/commit on success, discard on failure, no-op on a non-transactiona
 `tests/test_repo_rw.py` covers the index mutations; `tests/test_debfile.py` and
 `tests/test_changes.py` cover the upload-name refusals; `tests/test_action_pkg.py` refuses other
 bytes under a held pool key on a real `StorageFS` and keeps a peer's insert committed while the run
-waited for the lock → [TESTING.md](../../TESTING.md#required-coverage).
+waited for the lock; `tests/test_action_pkg.py` also refuses a `.deb` past the `Size` its checked
+`.changes` lists, takes one at that size, and leaves an unchecked `.changes` or a bare `.deb`
+uncapped; `tests/test_debfile.py` covers the capped whole-file read of a backend that cannot seek;
+`tests/test_repo_rw.py` covers `transfer_from` forwarding the cap →
+[TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
 
@@ -67,7 +83,8 @@ waited for the lock → [TESTING.md](../../TESTING.md#required-coverage).
   [VALIDATION.md](../../VALIDATION.md#debian-source-strings),
   [VALIDATION.md](../../VALIDATION.md#filename-safety),
   [CRYPTO.md](../../CRYPTO.md#verification-failures),
+  [VALIDATION.md](../../VALIDATION.md#object-sizes),
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [action_pkg_remove.md](action_pkg_remove.md), [action_sync.md](action_sync.md),
   [repo_sync_indices.md](repo_sync_indices.md),
-  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.2/docs/development/class.md).
+  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.3/docs/development/class.md).

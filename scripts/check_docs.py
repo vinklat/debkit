@@ -65,6 +65,7 @@ ENV_ONLY_CALL = "add_env_variable"
 EXTERNAL_EXCEPTIONS: dict[str, tuple[str, ...]] = {
     "StorageException": ("Exception",),
     "StorageNotFoundException": ("StorageException",),
+    "StorageNotSupportedException": ("StorageException", "NotImplementedError"),
 }
 # Exit groups for failures raised outside `cli.py` handlers: an argparse type converter exits
 # through the Usage group → EXCEPTIONS.md#cli-exit-groups.

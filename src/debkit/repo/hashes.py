@@ -7,9 +7,10 @@ is Debian-specific on top of them -> [CRYPTO.md](CRYPTO.md#checksums).
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 
-from txstore import COMPARE_HASH_LIST, compare_digests
+from txstore import COMPARE_HASH_LIST, StorageTooLargeException, compare_digests
 
 __all__ = [
     "CHECKSUMS_SHA256",
@@ -17,9 +18,15 @@ __all__ = [
     "ChecksumException",
     "HexDigests",
     "has_sha",
+    "largest_recorded_size",
     "parse_hash_block",
     "parse_size",
+    "refuse_past_recorded_size",
 ]
+
+# The longest `Size` read as a byte count: every 64-bit size fits, and the bound keeps an
+# overlong run away from `int()`
+MAX_SIZE_DIGITS = 20
 
 # A `Sources` or `.changes` hash-block field -> the algorithm its digests are in; a `Release`
 # names its hash fields after the algorithm itself -> [CRYPTO.md](CRYPTO.md#checksums)
@@ -52,10 +59,37 @@ def parse_size(value: object) -> int | None:
         value: The field value.
 
     Returns:
-        The byte count, or None when the value is not a run of ASCII digits.
+        The byte count, or None when the value is not a run of at most `MAX_SIZE_DIGITS` ASCII
+        digits -> [VALIDATION.md](VALIDATION.md#object-sizes).
     """
     size = str(value)
-    return int(size) if size.isascii() and size.isdigit() else None
+    # an overlong run would make `int()` raise past the CLI's exception groups
+    if len(size) > MAX_SIZE_DIGITS or not (size.isascii() and size.isdigit()):
+        return None
+    return int(size)
+
+
+def largest_recorded_size(records: Iterable[Mapping[str, str]]) -> int | None:
+    """Get the cap the records one object is checked against set: the largest `Size`.
+
+    Any of the records may verify the object, so one without a well-formed `Size` lifts the
+    cap instead of leaving a smaller record to refuse an object it verifies
+    -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+    Args:
+        records: Each record listing the object, with its digests and `Size`.
+
+    Returns:
+        The largest recorded size, or None when no record lists the object or one lists no
+        well-formed size.
+    """
+    largest: int | None = None
+    for record in records:
+        size = parse_size(record.get("Size", ""))
+        if size is None:
+            return None
+        largest = size if largest is None else max(largest, size)
+    return largest
 
 
 def parse_hash_block(text: str) -> list[tuple[str, str, str]]:
@@ -89,6 +123,29 @@ class ChecksumException(Exception):
         super().__init__(f"Checksum: {message}")
 
 
+@contextmanager
+def refuse_past_recorded_size(path: str, size: int | None) -> Iterator[None]:
+    """Name a capped read's refusal as a checksum failure.
+
+    Wrap only a read capped at `size` from a checked record: the object then contradicts its
+    own record -> [VALIDATION.md](VALIDATION.md#object-sizes).
+
+    Args:
+        path: The object path, for the message.
+        size: The recorded `Size` the read was capped at.
+
+    Yields:
+        Control to the capped read.
+
+    Raises:
+        ChecksumException: If the read raises `StorageTooLargeException`.
+    """
+    try:
+        yield
+    except StorageTooLargeException as exc:
+        raise ChecksumException(f"{path} is larger than the {size} bytes recorded for it") from exc
+
+
 class HexDigests:
     """Class for managing checksums of files.
 
@@ -115,7 +172,7 @@ class HexDigests:
 
         return compare_digests(self.digests[filename], incoming_digests)
 
-    def declared_size(self, filename: str) -> int | None:
+    def recorded_size(self, filename: str) -> int | None:
         """Get the `Size` the digest table records for a file.
 
         Args:

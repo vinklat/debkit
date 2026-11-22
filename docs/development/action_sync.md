@@ -6,9 +6,19 @@ target commits every change or discards them all. Rules are owned by
 [STYLE.md](../../STYLE.md#layers) (action layer), [CONFIG.md](../../CONFIG.md#sync) (flags),
 [CRYPTO.md](../../CRYPTO.md#release-freshness) (source Release freshness),
 [CRYPTO.md](../../CRYPTO.md#verification-failures) (checksum abort),
+[VALIDATION.md](../../VALIDATION.md#object-sizes) (transfer size caps),
 [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups) (exit groups), and
 [STORAGE.md](../../STORAGE.md#transactions) (transaction behavior). The user-facing walkthrough is
 in [examples.md](../guides/examples.md#mirror-a-repository).
+
+## Code map
+
+| Concern | Module | Notes |
+| -- | -- | -- |
+| Retry loop | `action/action_sync.py` | `ActionSync.sync` runs `_sync_until_settled` inside `maybe_transaction`, at most `MAX_UPDATED_REPO_RETRIES` passes |
+| Plan and copy | `repo/repo_sync.py` | `RepoSync.build_sync_lists()` plans; `RepoSync.sync()` copies each object through `_transfer_file()` |
+| Transfer cap | `repo/__init__.py`, `repo/hashes.py`, `repo/repo_sync.py` | `Repo.max_recorded_size()` sets `max_size`; `RepoSync._transfer_file` refuses past it via `refuse_past_recorded_size()` → [VALIDATION.md](../../VALIDATION.md#object-sizes) |
+| Target writes | `repo/repo_rw.py` | `RepoRW.transfer_from()` passes `max_size` to the copy; `RepoRW.delete()` drops an object whose digests mismatch |
 
 ## Activity diagram
 
@@ -22,7 +32,7 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 
 - `maybe_transaction` holds `history_lock` for the whole body, bulk transfers included, so a
   concurrent writer on the same root waits and — on S3 — fails after txstore's lock acquire timeout
-  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.2/STORAGE.md#locking). A
+  → [txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#locking). A
   malformed `.transactions.json` aborts the run before `transaction_begin` →
   [STORAGE.md](../../STORAGE.md#transactions).
 - The target is loaded inside that body, so a peer that commits while this run waits for the lock is
@@ -41,9 +51,11 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
   as the run found it; a failure there discards what earlier passes staged.
   `--allow-release-rollback` skips the check and warns once →
   [CRYPTO.md](../../CRYPTO.md#release-freshness).
-- A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop; the mismatching target
-  object is deleted and every staged footmark is discarded, so no partial commit is produced →
-  [CRYPTO.md](../../CRYPTO.md#verification-failures).
+- A `ChecksumException` from `RepoSync.sync` aborts the whole retry loop and every staged footmark
+  is discarded, so no partial commit is produced. A digest mismatch also deletes the mismatching
+  target object → [CRYPTO.md](../../CRYPTO.md#verification-failures); with digests checked, a
+  transfer past its recorded `Size` stops without leaving one, and is not retried; when a cap
+  applies → [VALIDATION.md](../../VALIDATION.md#object-sizes).
 - Corrupted target indices reset the target, and the sync proceeds →
   [CRYPTO.md](../../CRYPTO.md#verification-failures).
 - A target with neither `Release` nor `InRelease` is synced as empty; any other read failure stops
@@ -62,7 +74,10 @@ in [examples.md](../guides/examples.md#mirror-a-repository).
 
 `tests/test_action_sync.py` covers the retry loop, checksum abort, the per-pass freshness check and
 its skips, transaction wiring, and `--verify-existing`; `tests/test_release.py` covers each
-freshness rule; `tests/test_repo_sync.py` covers list building and transfer →
+freshness rule; `tests/test_repo_sync.py` covers list building and transfer, including the
+recorded-`Size` cap and its refusal without retry; `tests/test_action_sync.py` refuses a payload and
+an index past their recorded `Size` on a real tree; `tests/test_repo.py` covers
+`max_recorded_size` →
 [TESTING.md](../../TESTING.md#required-coverage).
 
 ## Related contracts
@@ -70,7 +85,8 @@ freshness rule; `tests/test_repo_sync.py` covers list building and transfer →
 - [STYLE.md](../../STYLE.md#layers), [CONFIG.md](../../CONFIG.md#sync),
   [CRYPTO.md](../../CRYPTO.md#release-freshness),
   [CRYPTO.md](../../CRYPTO.md#verification-failures),
+  [VALIDATION.md](../../VALIDATION.md#object-sizes),
   [EXCEPTIONS.md](../../EXCEPTIONS.md#cli-exit-groups), [STORAGE.md](../../STORAGE.md#transactions).
 - Sibling pages: [repo_sync_indices.md](repo_sync_indices.md),
   [action_pkg_insert.md](action_pkg_insert.md), [action_pkg_remove.md](action_pkg_remove.md),
-  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.2/docs/development/class.md).
+  [txstore class map](https://github.com/vinklat/txstore/blob/v0.1.3/docs/development/class.md).

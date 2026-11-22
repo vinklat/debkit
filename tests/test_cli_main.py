@@ -15,7 +15,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from txstore import StorageException
+from txstore import StorageException, StorageNotSupportedException
 
 import debkit.cli as cli
 from debkit.action import ActionException
@@ -247,6 +247,8 @@ def test_main_exception_group_maps_to_exit(
         ActionException("boom-action"),
         RepoParamsException("boom-params"),
         StorageException("boom-storage"),
+        # a capability stub of a read-only, write-only, or non-transactional backend
+        StorageNotSupportedException("boom-unsupported"),
     ],
 )
 def test_main_generic_group_exits_with_original_message(

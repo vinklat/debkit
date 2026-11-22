@@ -476,7 +476,7 @@ wheels = [
 
 [[package]]
 name = "debkit"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "humanize" },
@@ -500,7 +500,7 @@ requires-dist = [
     { name = "humanize", specifier = ">=4.14.0,<5" },
     { name = "python-debian", specifier = ">=1.0.1,<2" },
     { name = "python-gnupg", specifier = ">=0.5.5,<0.6" },
-    { name = "txstore", specifier = ">=0.1.2,<0.2" },
+    { name = "txstore", specifier = ">=0.1.3,<0.2" },
     { name = "urllib3", specifier = ">=2.7.0,<3" },
 ]
 
@@ -1682,17 +1682,18 @@ wheels = [
 
 [[package]]
 name = "txstore"
-version = "0.1.2"
+version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "pyxattr" },
     { name = "requests" },
+    { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/c4/5b702b96ca3f14cfe73417c9d6ed9e1455ad2e3a8837b111762cabf7e501/txstore-0.1.2.tar.gz", hash = "sha256:d443e9d964439a6b4f693fe323f8916bd5f9db5635390f9c0593f353fe3f9c19", size = 371459, upload-time = "2026-11-08T08:30:37.961Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/03/5c9da7c4e61ae2b545615311c23f2bf9a2339dfdec354e5450bc6694a6ba/txstore-0.1.3.tar.gz", hash = "sha256:d9a7d721126fb1d330a957918113fb976b1b8d575e05d2776932bf3b86d33a95", size = 383915, upload-time = "2026-11-21T12:42:22.972Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/6b/3534d198775ffca4682c936dca9f92068aa1db1d4f049bc133d89a214300/txstore-0.1.2-py3-none-any.whl", hash = "sha256:7e79e6561c7ed5767a8f1ca85ab698ded4de0d33b6a8d5325f61b57b10ee3c3b", size = 90088, upload-time = "2026-11-08T08:30:36.271Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/b2/2cf7de710e4cedac6718dc1eda532d384e1153dabee6133b052235af3eda/txstore-0.1.3-py3-none-any.whl", hash = "sha256:306acb4197b7d55515a2293770b8ae65ad7c68a9cf31dcec6b908d9ca7835e75", size = 93894, upload-time = "2026-11-21T12:42:21.529Z" },
 ]
 
 [[package]]

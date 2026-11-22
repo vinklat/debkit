@@ -17,7 +17,7 @@ skips, or recopies. Routing → [AGENTS.md](AGENTS.md#canonical-sources).
 
 Implemented by `storage_url()` in `action/__init__.py` for `--target-url`, `--source-url`, and
 `--incoming-url`; txstore validates what it receives →
-[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#storage-urls),
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.3/VALIDATION.md#storage-urls),
 including HTTP joins and the S3 path split.
 
 | Rule | Constraint | Failure |
@@ -132,17 +132,28 @@ per entry by its transfer; the source is never probed.
 ## Object sizes
 
 Release files, stored indices, and `.changes` files are read by `read_capped()` in
-`repo/compress.py`, which reads at most one byte past a cap, so each is refused before it is
-verified or buffered in full. Upload control data is capped by `_control_of()` in `repo/debfile.py`,
+`repo/compress.py` through txstore's capped `get` →
+[txstore STORAGE.md](https://github.com/vinklat/txstore/blob/v0.1.3/STORAGE.md#storage-abi), so each
+is refused before it is verified or buffered in full. Sync and insert transfers stop the same way
+and leave no target object. Upload control data is capped by `_control_of()` in `repo/debfile.py`,
 which decodes the `control.tar` member under a limit and walks it as a stream. "Checked" means
-digest verification is on.
+digest verification is on. A recorded `Size` is only as trustworthy as the metadata that lists it:
+without GPG verification the source sets both a body and its `Size` →
+[CRYPTO.md](CRYPTO.md#verification-switches).
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
+| Recorded `Size` | A run of at most `MAX_SIZE_DIGITS` (20) ASCII digits, read by `parse_size()` in `repo/hashes.py`. | Any other value → no `Size` recorded |
 | Root Release files | `Release`, `InRelease`, and `Release.gpg` are at most `MAX_RELEASE_BYTES` (16 MiB): no signed file records their size. | → `ReleaseReadException` (Read) |
 | Per-arch Release | At most the `Size` the checked root Release records, and never past `MAX_RELEASE_BYTES`. | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `ReleaseReadException` (Read) |
 | Stored index | At most the largest `Size` a checked root or per-arch Release records, and never past `MAX_INDICES_BYTES` (256 MiB), the decoded cap → [Index decoding](#index-decoding). | Larger than recorded → `ChecksumException` (Distrustful); past the cap → `PackagesException` (Read) |
+| Stored index without a `Size` | A Release listing the index with no usable `Size` leaves only `MAX_INDICES_BYTES`. | Past the cap → `PackagesException` (Read) |
 | `.changes` file | At most `MAX_CHANGES_BYTES` (4 MiB), read by `read_capped()` before `--changes-sha256` is checked. | → `ChangesException` (Read) |
+| Sync transfer | At most the largest `Size` of the records `Repo.verify_checksum` checks the object against → [CRYPTO.md](CRYPTO.md#verification-order). | Larger than recorded → `ChecksumException` (Distrustful), not retried |
+| Sync transfer without a `Size` | Unchecked, no record listing the object, or one listing it with no usable `Size` → no cap. | — |
+| Insert payload | Each `.deb` a checked `.changes` lists is at most the `Size` it records, on its transfer and on a whole-file read by a backend that cannot seek. | Larger than recorded → `ChecksumException` (Distrustful) |
+| Insert payload without a `Size` | `--deb-filename`, unchecked, or a `.changes` listing the `.deb` with no usable `Size` → no cap. | — |
+| Held object digests | Digest reads of objects the target already holds (`held_digests`, `check`) stream through txstore's `get_digests` with no cap: the target is the operator's storage, and a stream buffers nothing. | — |
 | Upload control data | The compressed `control.tar` member and its `control` file are each at most `MAX_CONTROL_BYTES` (4 MiB). | → `DebFileException` (Read) |
 | Upload control tar | The `control.tar` decodes to at most `MAX_CONTROL_TAR_BYTES` (64 MiB), which also bounds its member count; it is uncompressed, `.gz`, `.xz`, `.bz2`, `.lzma`, or `.zst`, the last decoded by the `zstd` binary. | Past the limit, another compression, or a stream that does not decode → `DebFileException` (Read) |
 
@@ -223,7 +234,7 @@ checks below constrain both; unsafe names fail before any storage mutation.
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
-| Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#filename-safety). | — |
+| Unsafe key | txstore's `is_unsafe_path()`, shared by every caller below → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.3/VALIDATION.md#filename-safety). | — |
 | `Packages.remove()` | Matched package filename passes the unsafe-key rule. | → `PackagesException` (Read) |
 | `RepoSync` index set | Release-listed index key and path pass the unsafe-key rule. | Entry dropped from the index set and logged |
 | `Packages` index parse | Stanza `Filename`, POSIX-normalized, passes `is_safe_name()`: not empty, not `.`, and the unsafe-key rule. | Stanza dropped from the container and logged |
@@ -236,7 +247,7 @@ checks below constrain both; unsafe names fail before any storage mutation.
 | Insert pool object | A pool key the target already holds is replaced only by identical bytes: every dist of the root and every arch index may list it, and their records name the bytes it holds. An identical upload passes. | Different bytes → `ActionException` (Generic), the staged transfer discarded |
 | Insert pool prefix | `lib` and the next letter for a source name longer than 3 starting with `lib`, else its first letter. | — |
 | `.changes` file list | Every `Checksums-Sha256` entry is a bare file name: no `/` segment, and it passes the unsafe-key rule. | → `ChangesException` (Read) |
-| Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
+| Storage paths | Confinement, reserved names, and footmark reclaim → [txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.3/VALIDATION.md#filename-safety). | → `StorageException` (Generic) |
 
 ## Control file encoding
 
@@ -356,7 +367,7 @@ path.
 
 Implemented by `object_acl_type()` and `bucket_acl_type()` in `argtypes.py` over txstore's
 `parse_object_acl()` and `parse_bucket_acl()`; values →
-[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.2/VALIDATION.md#s3-canned-acls).
+[txstore VALIDATION.md](https://github.com/vinklat/txstore/blob/v0.1.3/VALIDATION.md#s3-canned-acls).
 
 | Rule | Constraint | Failure |
 | -- | -- | -- |
