@@ -38,7 +38,7 @@ Homepage = "https://github.com/vinklat/debkit"
 Source = "https://github.com/vinklat/debkit"
 Issues = "https://github.com/vinklat/debkit/issues"
 Documentation = "https://github.com/vinklat/debkit/blob/main/docs/guides/README.md"
-Changelog = "https://github.com/vinklat/debkit/blob/main/SETUP.md#upgrade-notes"
+Changelog = "https://github.com/vinklat/debkit/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

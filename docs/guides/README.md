@@ -34,6 +34,7 @@ The full list of contracts and what each owns is
 [AGENTS.md#canonical-sources](../../AGENTS.md#canonical-sources), the routing table that says which
 contract owns which subject.
 
-Two root documents are not contracts: [ROADMAP.md](../../ROADMAP.md) records planned work and known
-deviations, and `AGENTS.md` itself routes rather than rules. Contributor-facing diagrams and
-explanations are in [docs/development/](../development/README.md).
+Three root documents are not contracts: [ROADMAP.md](../../ROADMAP.md) records planned work and
+known deviations, [CHANGELOG.md](../../CHANGELOG.md) records released changes and upgrade notes,
+and `AGENTS.md` itself routes rather than rules. Contributor-facing diagrams and explanations are in
+[docs/development/](../development/README.md).

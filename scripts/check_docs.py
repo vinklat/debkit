@@ -27,7 +27,8 @@ Checks (SETUP.md quality gates; AGENTS.md contract writing rules):
 - root contracts carry no ``TODO``/``FIXME``/``XXX`` outside inline code (``ROADMAP.md`` exempt);
 - every ``ROOT.md#anchor`` cited in ``src/`` or ``tests/`` names a root document and a heading;
 - every ``docs/<dir>/`` holding pages has a ``README.md`` that links each sibling page;
-- the ``README.md`` "Current version" line equals ``[project].version``;
+- the ``README.md`` "Current version" line equals ``[project].version``, and ``CHANGELOG.md`` has
+  a dated section for that version;
 - packages resolve from public PyPI only: ``pyproject.toml`` declares no custom index and every
   ``uv.lock`` registry is ``https://pypi.org/simple``;
 - every link into the txstore repository names the tag of the txstore version ``uv.lock`` resolves,
@@ -91,6 +92,8 @@ TABLE_SEP_RE = re.compile(r"^\|[\s:|-]+\|?\s*$")
 CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
 README_VERSION_RE = re.compile(r"Current version: \*\*([^*]+)\*\*")
+# A released ``CHANGELOG.md`` section: ``## <version> - <YYYY-MM-DD>``.
+CHANGELOG_VERSION_RE = re.compile(r"^## (\S+) - \d{4}-\d{2}-\d{2}\s*$", re.MULTILINE)
 TXSTORE_LINK_RE = re.compile(r"https://github\.com/vinklat/txstore/(?:blob|tree)/([^/\s)#]+)")
 TODO_RE = re.compile(r"\b(?:TODO|FIXME|XXX)\b")
 URL_RE = re.compile(r"https?://")
@@ -683,14 +686,28 @@ def check_docs_index(docs: dict[str, str]) -> list[str]:
     return errors
 
 
+def _project_version() -> str:
+    """``[project].version`` of ``pyproject.toml``."""
+    version: str = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]["version"]
+    return version
+
+
 def check_version(docs: dict[str, str]) -> list[str]:
     """The ``README.md`` "Current version" line carries ``[project].version``."""
-    expected = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]["version"]
+    expected = _project_version()
     readme = README_VERSION_RE.search(docs.get("README.md", ""))
     found = readme.group(1) if readme else None
     if found == expected:
         return []
     return [f"README.md: version {found or 'missing'}, pyproject.toml has {expected}"]
+
+
+def check_changelog(docs: dict[str, str]) -> list[str]:
+    """``CHANGELOG.md`` has a dated ``## <version> - <date>`` section for ``[project].version``."""
+    expected = _project_version()
+    if expected in CHANGELOG_VERSION_RE.findall(docs.get("CHANGELOG.md", "")):
+        return []
+    return [f"CHANGELOG.md: no dated section for {expected}"]
 
 
 def check_txstore_links(docs: dict[str, str]) -> list[str]:
@@ -762,6 +779,7 @@ def main() -> int:
         *check_code_references(docs),
         *check_docs_index(all_docs),
         *check_version(docs),
+        *check_changelog(docs),
         *check_package_sources(),
         *check_txstore_links(all_docs),
     ]
